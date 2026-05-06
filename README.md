@@ -261,3 +261,5 @@ Please read [`specs/Architecture.md`](./Architecture.md) before contributing to 
 Copyright (c) 2026 Kyhle Öhlinger.
 
 Licensed under the MIT License — see [`LICENSE`](../LICENSE) for the full text.
+
+Update
