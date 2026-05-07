@@ -1,0 +1,904 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Global resets ───────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #16171a;
+  color: #e2e8f0;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── CodeMirror host ─────────────────────────────────────────── */
+.cm-editor {
+  height: 100%;
+  font-size: 15px;
+  line-height: 1.85;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+/* ── Fenced code blocks ───────────────────────────────────────── */
+.cm-code-block-line {
+  background: rgba(0, 0, 0, 0.38) !important;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 13px;
+}
+
+/* Rounded top on the opening fence line */
+.cm-code-block-first {
+  border-top: 1px solid #2d3748;
+  border-left: 3px solid #4c1d95;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 4px;
+  padding-top: 4px !important;
+}
+
+/* Rounded bottom on the closing fence line */
+.cm-code-block-last {
+  border-bottom: 1px solid #2d3748;
+  border-left: 3px solid #4c1d95;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 4px;
+  padding-bottom: 4px !important;
+}
+
+/* Middle lines: left accent only */
+.cm-code-block-line:not(.cm-code-block-first):not(.cm-code-block-last) {
+  border-left: 3px solid #4c1d95;
+}
+
+/* ── Code fence action bar (language badge + copy button) ──────── */
+.cm-code-fence-actions {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 0.5rem;
+}
+
+.cm-code-lang-badge {
+  font-size: 0.62rem;
+  font-family: "JetBrains Mono", monospace;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.7;
+  user-select: none;
+}
+
+.cm-copy-btn {
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-family: "Inter", system-ui, sans-serif;
+  border-radius: 4px;
+  background: rgba(124, 58, 237, 0.15);
+  color: #7c3aed;
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  user-select: none;
+  line-height: 1.6;
+}
+
+/* Reveal on hover of the fence actions container */
+.cm-line:has(.cm-code-fence-actions):hover .cm-copy-btn {
+  opacity: 1;
+}
+
+.cm-copy-btn:hover {
+  background: rgba(124, 58, 237, 0.28);
+}
+
+.cm-copy-btn--copied {
+  opacity: 1 !important;
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.4);
+  background: rgba(134, 239, 172, 0.08) !important;
+}
+
+/* Dark editor presets — lighten code wells so black/slate stay readable */
+[data-color-scheme="dark"] .cm-code-block-line {
+  background: rgba(255, 255, 255, 0.055) !important;
+}
+
+[data-color-scheme="dark"] .cm-code-block-first {
+  border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-color-scheme="dark"] .cm-code-block-last {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Light-background overrides for code blocks ─────────────── */
+/* Applied when the editor root carries data-color-scheme="light" */
+
+[data-color-scheme="light"] .cm-code-block-line {
+  background: rgba(0, 0, 0, 0.075) !important;
+}
+
+[data-color-scheme="light"] .cm-code-block-first {
+  border-top-color: #d1d5db;
+}
+
+[data-color-scheme="light"] .cm-code-block-last {
+  border-bottom-color: #d1d5db;
+}
+
+/* Badge and copy button on light backgrounds */
+[data-color-scheme="light"] .cm-code-lang-badge {
+  color: #6d28d9;
+}
+
+[data-color-scheme="light"] .cm-copy-btn {
+  background: rgba(109, 40, 217, 0.08);
+  color: #6d28d9;
+  border-color: rgba(109, 40, 217, 0.25);
+}
+
+[data-color-scheme="light"] .cm-copy-btn:hover {
+  background: rgba(109, 40, 217, 0.16);
+}
+
+/* Visual-tab preview code blocks on light backgrounds */
+[data-color-scheme="light"] .preview-prose {
+  color: #334155;
+}
+
+[data-color-scheme="light"] .preview-prose h1 {
+  color: #0f172a;
+  border-bottom-color: #e2e8f0;
+}
+
+[data-color-scheme="light"] .preview-prose h2 {
+  color: #0f172a;
+}
+
+[data-color-scheme="light"] .preview-prose h3 {
+  color: #1e293b;
+}
+
+[data-color-scheme="light"] .preview-prose h4,
+[data-color-scheme="light"] .preview-prose h5,
+[data-color-scheme="light"] .preview-prose h6 {
+  color: #334155;
+}
+
+[data-color-scheme="light"] .preview-prose strong {
+  color: #0f172a;
+}
+
+[data-color-scheme="light"] .preview-prose em {
+  color: #334155;
+}
+
+[data-color-scheme="light"] .preview-prose del {
+  color: #94a3b8;
+}
+
+[data-color-scheme="light"] .preview-prose blockquote {
+  color: #475569;
+  background: rgba(109, 40, 217, 0.06);
+  border-left-color: #7c3aed;
+}
+
+[data-color-scheme="light"] .preview-prose th,
+[data-color-scheme="light"] .preview-prose td {
+  border-color: #e2e8f0;
+}
+
+[data-color-scheme="light"] .preview-prose th {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+[data-color-scheme="light"] .preview-prose tr:nth-child(even) {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-color-scheme="light"] .preview-prose hr {
+  border-top-color: #e2e8f0;
+}
+
+[data-color-scheme="light"] .preview-prose a.preview-link {
+  color: #6d28d9;
+  text-decoration-color: rgba(109, 40, 217, 0.35);
+}
+
+[data-color-scheme="light"] .preview-prose a.preview-link:hover {
+  color: #5b21b6;
+  text-decoration-color: rgba(91, 33, 182, 0.5);
+}
+
+[data-color-scheme="light"] .preview-prose a.preview-wikilink {
+  color: #6d28d9;
+  border-bottom-color: #7c3aed;
+}
+
+[data-color-scheme="light"] .preview-prose a.preview-wikilink:hover {
+  color: #5b21b6;
+  border-bottom-color: #6d28d9;
+}
+
+[data-color-scheme="light"] .preview-prose img {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+[data-color-scheme="light"] .preview-prose pre {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: #cbd5e1;
+  border-left-color: #6d28d9;
+}
+
+[data-color-scheme="light"] .preview-prose pre code {
+  color: #1e293b;
+}
+
+[data-color-scheme="light"] .preview-prose :not(pre) > code {
+  color: #5b21b6;
+  background: rgba(91, 33, 182, 0.09);
+  border: 1px solid rgba(91, 33, 182, 0.2);
+}
+
+[data-color-scheme="light"] .cm-wikilink {
+  color: #6d28d9;
+  border-bottom-color: #7c3aed;
+}
+
+[data-color-scheme="light"] .cm-wikilink:hover {
+  color: #5b21b6;
+  border-bottom-color: #6d28d9;
+}
+
+/* ── Visual mode — dim markdown syntax markers ───────────────── */
+.cm-md-syntax-dim {
+  opacity: 0.28;
+}
+
+/* ── Planner theming bridge (uses editor color preset vars) ──── */
+.planner-theme {
+  background-color: var(--planner-surface-base);
+  color: var(--planner-text-primary);
+}
+
+.planner-theme .bg-surface-base {
+  background-color: var(--planner-surface-base) !important;
+}
+
+.planner-theme .bg-surface-raised,
+.planner-theme .bg-surface-raised\/70 {
+  background-color: var(--planner-surface-raised) !important;
+}
+
+.planner-theme .bg-surface-overlay,
+.planner-theme .bg-surface-overlay\/30,
+.planner-theme .bg-surface-overlay\/60,
+.planner-theme .bg-surface-overlay\/70 {
+  background-color: color-mix(in srgb, var(--planner-surface-overlay) 100%, transparent) !important;
+}
+
+.planner-theme .border-border {
+  border-color: var(--planner-border) !important;
+}
+
+.planner-theme .text-text-primary {
+  color: var(--planner-text-primary) !important;
+}
+
+.planner-theme .text-text-secondary {
+  color: var(--planner-text-secondary) !important;
+}
+
+.planner-theme .text-text-muted {
+  color: var(--planner-text-muted) !important;
+}
+
+/* ── Callout blocks  > [!TYPE] ───────────────────────────────── */
+.cm-callout {
+  border-left: 3px solid #64748b;
+  padding-left: 0.75rem !important;
+}
+
+.cm-callout-header {
+  font-weight: 600;
+}
+
+.cm-callout-info,
+.cm-callout-note {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+.cm-callout-tip,
+.cm-callout-success {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.06) !important;
+}
+
+.cm-callout-warning,
+.cm-callout-caution {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+
+.cm-callout-danger,
+.cm-callout-failure,
+.cm-callout-bug {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.06) !important;
+}
+
+.cm-callout-important,
+.cm-callout-question {
+  border-color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.06) !important;
+}
+
+.cm-callout-example {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.06) !important;
+}
+
+.cm-callout-quote {
+  border-color: #64748b;
+  background: rgba(100, 116, 139, 0.06) !important;
+}
+
+/* ── WikiLinks [[filename]] ──────────────────────────────────── */
+.cm-wikilink {
+  color: #a78bfa;
+  border-bottom: 1px dotted #7c3aed;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.cm-wikilink:hover {
+  color: #c4b5fd;
+  border-bottom-color: #a78bfa;
+}
+
+/* ── Collapsed markdown links [text](url) in source mode ─────── */
+.cm-markdown-link-collapsed {
+  color: #60a5fa;
+  text-decoration-line: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-decoration-color: #60a5fa;
+  cursor: text;
+}
+
+[data-color-scheme="light"] .cm-markdown-link-collapsed {
+  color: #2563eb;
+  text-decoration-color: #2563eb;
+}
+
+/* ── Task markers `- [ ]` / `- [x]` in source mode ───────────── */
+.cm-task-checkbox {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background-color 0.1s;
+}
+
+.cm-task-checkbox:hover {
+  background: rgba(124, 58, 237, 0.14);
+}
+
+[data-color-scheme="light"] .cm-task-checkbox:hover {
+  background: rgba(109, 40, 217, 0.12);
+}
+
+/* ── CodeMirror autocomplete dropdown ────────────────────────── */
+.cm-tooltip-autocomplete {
+  background: #1e1f24 !important;
+  border: 1px solid #3d3e45 !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  padding: 4px !important;
+  font-family: "Inter", system-ui, sans-serif !important;
+  font-size: 13px !important;
+}
+
+.cm-tooltip-autocomplete ul {
+  max-height: 220px !important;
+}
+
+.cm-tooltip-autocomplete li {
+  padding: 4px 10px !important;
+  border-radius: 4px !important;
+  color: #cbd5e1 !important;
+}
+
+.cm-tooltip-autocomplete li[aria-selected] {
+  background: rgba(124, 58, 237, 0.2) !important;
+  color: #e2e8f0 !important;
+}
+
+.cm-tooltip-autocomplete li:hover {
+  background: rgba(124, 58, 237, 0.12) !important;
+}
+
+/* ── CodeMirror search panel ─────────────────────────────────── */
+.cm-search {
+  background: #1e1f24 !important;
+  border-bottom: 1px solid #2d2e35 !important;
+  padding: 6px 12px !important;
+  font-family: "Inter", system-ui, sans-serif !important;
+  font-size: 13px !important;
+  color: #e2e8f0 !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 4px 8px !important;
+}
+
+.cm-search label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+.cm-search label:hover {
+  color: #e2e8f0 !important;
+}
+
+.cm-search input[type="checkbox"] {
+  accent-color: #7c3aed !important;
+}
+
+.cm-search .cm-textfield {
+  background: #16171a !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #3d3e45 !important;
+  border-radius: 4px !important;
+  padding: 3px 8px !important;
+  font-family: "JetBrains Mono", "Fira Code", monospace !important;
+  font-size: 12px !important;
+  outline: none !important;
+  min-width: 160px !important;
+}
+
+.cm-search .cm-textfield:focus {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.3) !important;
+}
+
+.cm-search .cm-button {
+  background: rgba(124, 58, 237, 0.15) !important;
+  color: #a78bfa !important;
+  border: 1px solid rgba(124, 58, 237, 0.3) !important;
+  border-radius: 4px !important;
+  padding: 2px 10px !important;
+  font-size: 12px !important;
+  font-family: "Inter", system-ui, sans-serif !important;
+  cursor: pointer !important;
+  transition: background 0.15s !important;
+}
+
+.cm-search .cm-button:hover {
+  background: rgba(124, 58, 237, 0.28) !important;
+}
+
+.cm-search .cm-button:active {
+  background: rgba(124, 58, 237, 0.4) !important;
+}
+
+.cm-search br {
+  display: none !important;
+}
+
+.cm-searchMatch {
+  background: rgba(250, 204, 21, 0.25) !important;
+  outline: 1px solid rgba(250, 204, 21, 0.5);
+  border-radius: 2px;
+}
+
+.cm-searchMatch-selected {
+  background: rgba(124, 58, 237, 0.4) !important;
+  outline: 1px solid #7c3aed;
+}
+
+[data-color-scheme="light"] .cm-search {
+  background: #f1f5f9 !important;
+  border-bottom-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+[data-color-scheme="light"] .cm-search .cm-textfield {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-color-scheme="light"] .cm-search .cm-textfield:focus {
+  border-color: #6d28d9 !important;
+  box-shadow: 0 0 0 1px rgba(109, 40, 217, 0.3) !important;
+}
+
+[data-color-scheme="light"] .cm-search label {
+  color: #64748b !important;
+}
+
+[data-color-scheme="light"] .cm-search label:hover {
+  color: #1e293b !important;
+}
+
+[data-color-scheme="light"] .cm-search .cm-button {
+  background: rgba(109, 40, 217, 0.08) !important;
+  color: #6d28d9 !important;
+  border-color: rgba(109, 40, 217, 0.25) !important;
+}
+
+[data-color-scheme="light"] .cm-search .cm-button:hover {
+  background: rgba(109, 40, 217, 0.16) !important;
+}
+
+[data-color-scheme="light"] .cm-searchMatch {
+  background: rgba(250, 204, 21, 0.3) !important;
+  outline-color: rgba(202, 138, 4, 0.6);
+}
+
+[data-color-scheme="light"] .cm-searchMatch-selected {
+  background: rgba(109, 40, 217, 0.25) !important;
+  outline-color: #6d28d9;
+}
+
+/* ── Spellcheck lint underlines ──────────────────────────────── */
+.cm-lintRange-warning {
+  background-image: none !important;
+  text-decoration: wavy underline rgba(250, 204, 21, 0.7);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 2px;
+}
+
+[data-color-scheme="light"] .cm-lintRange-warning {
+  text-decoration-color: rgba(202, 138, 4, 0.7);
+}
+
+/* ── Spellcheck lint tooltip ──────────────────────────────────── */
+.cm-tooltip-lint {
+  background: var(--color-surface-raised, #1e1f24) !important;
+  border: 1px solid var(--color-border, #3d3e45) !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4) !important;
+  overflow: hidden !important;
+  max-width: 340px !important;
+}
+
+.cm-diagnostic {
+  padding: 6px 10px !important;
+  border-left: none !important;
+  font-size: 12px !important;
+  color: var(--color-text-secondary, #cbd5e1) !important;
+}
+
+.cm-diagnostic-warning {
+  border-left: none !important;
+}
+
+.cm-diagnosticAction {
+  display: inline-block !important;
+  margin: 3px 4px 2px 0 !important;
+  padding: 2px 8px !important;
+  border-radius: 4px !important;
+  background: rgba(124, 58, 237, 0.15) !important;
+  color: var(--color-accent, #7c3aed) !important;
+  border: 1px solid rgba(124, 58, 237, 0.3) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: background 100ms, border-color 100ms !important;
+}
+
+.cm-diagnosticAction:hover {
+  background: rgba(124, 58, 237, 0.3) !important;
+  border-color: rgba(124, 58, 237, 0.5) !important;
+}
+
+[data-color-scheme="light"] .cm-tooltip-lint {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+}
+
+[data-color-scheme="light"] .cm-diagnostic {
+  color: #475569 !important;
+}
+
+[data-color-scheme="light"] .cm-diagnosticAction {
+  background: rgba(124, 58, 237, 0.08) !important;
+  border-color: rgba(124, 58, 237, 0.2) !important;
+}
+
+[data-color-scheme="light"] .cm-diagnosticAction:hover {
+  background: rgba(124, 58, 237, 0.18) !important;
+}
+
+/* Style the lint gutter dots to be small and subtle */
+.cm-lint-marker-warning {
+  content: none;
+}
+
+.cm-gutter-lint {
+  width: 8px !important;
+}
+
+.cm-gutter-lint .cm-gutterElement {
+  padding: 0 !important;
+}
+
+/* ── Inline image widget (visual mode) ───────────────────────── */
+.cm-image-widget {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.cm-image-widget-img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 6px;
+  margin: 0.25rem 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.cm-image-widget-fallback {
+  color: #f87171;
+  font-size: 0.8em;
+  font-style: italic;
+}
+
+/* ── Slash menu — section headers inside the autocomplete tooltip ─── */
+.cm-completionSection {
+  padding: 4px 10px 2px !important;
+  font-size: 0.65rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: #475569 !important;
+  border-top: 1px solid #2d2e35 !important;
+  margin-top: 2px !important;
+  user-select: none !important;
+  pointer-events: none !important;
+}
+
+/* Remove top border from the very first section header */
+.cm-tooltip-autocomplete ul li:first-child .cm-completionSection,
+.cm-completionSection:first-child {
+  border-top: none !important;
+  margin-top: 0 !important;
+}
+
+/* Slash menu items are slightly taller than wikilink items */
+.cm-tooltip-autocomplete li {
+  padding: 5px 10px !important;
+}
+
+/* Completion detail (the markdown syntax preview) */
+.cm-completionDetail {
+  font-family: "JetBrains Mono", "Fira Code", monospace !important;
+  font-size: 0.75rem !important;
+  color: #475569 !important;
+  margin-left: auto !important;
+  padding-left: 1rem !important;
+  opacity: 0.85;
+}
+
+/* ── Preview mode prose (visual tab rendered markdown) ──────────── */
+.preview-prose {
+  color: #e2e8f0;
+  font-family: "Inter", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.85;
+  /* No max-width — let the preview fill the full pane width so it
+     uses all available space, especially in fullscreen mode. */
+  padding: 1.5rem 3rem 4rem;
+  /* Wrap long tokens (URLs, hashes, unbroken strings) so they never
+     cause horizontal overflow. overflow-wrap handles normal text;
+     word-break: break-word is the legacy alias respected by WebKit. */
+  overflow-wrap: break-word;
+  word-break: break-word;
+  overflow-x: hidden;
+}
+
+.preview-prose h1 {
+  font-size: 1.75em;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 1.5em 0 0.5em;
+  border-bottom: 1px solid #2d2e35;
+  padding-bottom: 0.3em;
+}
+.preview-prose h2 {
+  font-size: 1.35em;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 1.4em 0 0.4em;
+}
+.preview-prose h3 {
+  font-size: 1.15em;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 1.2em 0 0.35em;
+}
+.preview-prose h4,
+.preview-prose h5,
+.preview-prose h6 {
+  font-weight: 600;
+  color: #cbd5e1;
+  margin: 1em 0 0.3em;
+}
+
+.preview-prose p { margin: 0.75em 0; }
+
+.preview-prose strong { font-weight: 700; color: #f1f5f9; }
+.preview-prose em     { font-style: italic; color: #e2e8f0; }
+.preview-prose del    { text-decoration: line-through; color: #64748b; }
+
+/* Inline code */
+.preview-prose :not(pre) > code {
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.87em;
+  color: #a78bfa;
+  background: rgba(124, 58, 237, 0.12);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+
+/* Fenced code blocks — scroll horizontally rather than wrapping so
+   code structure is preserved. Reset word-break from the prose rule. */
+.preview-prose pre {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid #2d3748;
+  border-left: 3px solid #4c1d95;
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: pre;
+  margin: 1em 0;
+}
+.preview-prose pre code {
+  background: none;
+  padding: 0;
+  color: #e2e8f0;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 13px;
+}
+
+/* Blockquotes */
+.preview-prose blockquote {
+  border-left: 3px solid #4c1d95;
+  margin: 1em 0;
+  padding: 0.5em 1.25em;
+  color: #94a3b8;
+  background: rgba(124, 58, 237, 0.05);
+  border-radius: 0 6px 6px 0;
+}
+.preview-prose blockquote p { margin: 0.3em 0; }
+
+/* Lists */
+.preview-prose ul,
+.preview-prose ol {
+  padding-left: 1.6em;
+  margin: 0.75em 0;
+}
+.preview-prose li          { margin: 0.3em 0; }
+.preview-prose ul          { list-style-type: disc; }
+.preview-prose ol          { list-style-type: decimal; }
+.preview-prose li > ul,
+.preview-prose li > ol     { margin: 0.2em 0; }
+
+/* Task list checkboxes */
+.preview-prose li input[type="checkbox"] {
+  margin-right: 0.45em;
+  accent-color: #7c3aed;
+  vertical-align: middle;
+  cursor: default;
+}
+
+/* Tables */
+.preview-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.25em 0;
+  font-size: 0.92em;
+}
+.preview-prose th,
+.preview-prose td {
+  border: 1px solid #2d2e35;
+  padding: 0.5em 0.85em;
+  text-align: left;
+}
+.preview-prose th {
+  background: #1e1f24;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.preview-prose tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Images */
+.preview-prose img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.75em 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
+  display: block;
+}
+
+/* Horizontal rule */
+.preview-prose hr {
+  border: none;
+  border-top: 1px solid #2d2e35;
+  margin: 2em 0;
+}
+
+/* External links */
+.preview-prose a.preview-link {
+  color: #a78bfa;
+  text-decoration: underline;
+  text-decoration-color: rgba(167, 139, 250, 0.35);
+  text-underline-offset: 2px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.preview-prose a.preview-link:hover {
+  color: #c4b5fd;
+  text-decoration-color: rgba(196, 181, 253, 0.55);
+}
+
+/* Wikilinks */
+.preview-prose a.preview-wikilink {
+  color: #a78bfa;
+  border-bottom: 1px dotted #7c3aed;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.preview-prose a.preview-wikilink:hover {
+  color: #c4b5fd;
+  border-bottom-color: #a78bfa;
+}
+
+/* Drag-over highlight — applied imperatively via data attribute to avoid
+   React re-renders on every pointermove during a drag operation. */
+[data-drag-over="true"] {
+  outline: 1px solid #7c3aed !important;
+  background: rgba(124, 58, 237, 0.12) !important;
+  border-radius: 4px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2d2e35;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3d3e45;
+}
