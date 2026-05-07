@@ -1,0 +1,39 @@
+[package]
+name = "metis"
+version = "0.1.0"
+edition = "2021"
+description = "A local-first, AI-augmented personal knowledge ecosystem."
+authors = ["Kyhle Öhlinger"]
+license = "MIT"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+# Official Tauri plugin for native folder/file picker dialogs
+tauri-plugin-dialog = "2"
+# Native HTTP client (reqwest) that bypasses WebKit CORS restrictions.
+# native-tls uses the OS certificate store (macOS Keychain / Windows SChannel /
+# Linux OpenSSL) so corporate/internal CAs are trusted automatically — unlike
+# the default rustls backend which only ships Mozilla's root CA bundle.
+tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls", "http2", "charset", "macos-system-configuration", "cookies"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Cross-platform file-system event watching — well-established crate
+notify = "6"
+# Base-64 encode/decode for clipboard image paste — well-established crate
+base64 = "0.22"
+# Open URLs / files in the OS default application — well-established crate
+open = "5"
+regex = "1.12.3"
+# Pure Rust Hunspell-compatible spellchecker — from the Helix editor team
+spellbook = "0.4"
+
+[profile.release]
+# Strip debug symbols to minimise binary size in production
+strip = true
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"

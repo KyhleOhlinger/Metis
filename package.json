@@ -1,0 +1,52 @@
+{
+  "name": "metis",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A local-first, AI-augmented personal knowledge ecosystem.",
+  "author": "Kyhle Öhlinger",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "preview": "vite preview",
+    "vite:dev": "vite",
+    "vite:build": "tsc && vite build"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.1",
+    "@codemirror/commands": "^6.7.1",
+    "@codemirror/lang-markdown": "^6.3.1",
+    "@codemirror/language": "^6.10.6",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/lint": "^6.9.5",
+    "@codemirror/search": "^6.6.0",
+    "@codemirror/state": "^6.5.1",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "@codemirror/view": "^6.35.3",
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/plugin-dialog": "^2.0.3",
+    "@tauri-apps/plugin-http": "^2.5.8",
+    "@types/dompurify": "^3.0.5",
+    "codemirror": "^6.0.1",
+    "dompurify": "^3.3.3",
+    "fuse.js": "^7.1.0",
+    "lucide-react": "^1.7.0",
+    "marked": "^17.0.6",
+    "openai": "^6.33.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.2",
+    "vite": "^6.0.1"
+  }
+}
