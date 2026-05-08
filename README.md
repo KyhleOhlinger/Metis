@@ -1,7 +1,7 @@
 # Metis
 
 <p align="center">
-<img width="400" height="400" alt="metis_icon" src="https://github.com/user-attachments/assets/9020f41f-24c5-4789-9617-0831a02376f8" />
+<img width="1024" height="434" alt="metis_banner" src="https://github.com/user-attachments/assets/1d55e417-f6a3-48d9-8640-7ba23972e77c" />
 </p>
 
 > A local-first, AI-augmented personal knowledge base built for writers, engineers, and thinkers.
