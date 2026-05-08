@@ -223,11 +223,8 @@ Metis/
 │   ├── src/main.rs             # All Rust commands + FS watcher + menu
 │   ├── resources/dictionaries/ # Bundled Hunspell .aff/.dic files (en_US, en_GB)
 │   └── tauri.conf.json         # App config, CSP, asset protocol
-├── specs/                      # Product specs and architecture docs
 └── wiki/                       # Project wiki (Git Wiki style)
 ```
-
-See [`specs/Architecture.md`](./Architecture.md) for a full breakdown of the architecture, data flow, AI subsystem, and extension points.
 
 ---
 
@@ -306,8 +303,6 @@ Metis is designed and built by **Kyhle Öhlinger**.
 2. Create a feature branch (`git checkout -b feat/my-feature`)
 3. Commit your changes
 4. Open a pull request
-
-Please read [`specs/Architecture.md`](./Architecture.md) before contributing to ensure changes align with the overall design.
 
 ---
 
