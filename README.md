@@ -1,12 +1,17 @@
 # Metis
 
-> A local-first, AI-augmented personal knowledge base built for writers, engineers, and thinkers.
+<p align="center">
+<img width="400" height="400" alt="metis_icon" src="https://github.com/user-attachments/assets/9020f41f-24c5-4789-9617-0831a02376f8" />
+</p>
 
+> A local-first, AI-augmented personal knowledge base built for writers, engineers, and thinkers.
+> 
 In Greek mythology, **Metis** was the Titaness of wisdom, deep thought, and counsel — the first wife of Zeus and mother of Athena. Her name literally means *"wisdom"* or *"skill and craft"*, and she was revered as the embodiment of prudent intelligence: not raw knowledge, but the ability to think clearly, connect ideas, and act with purpose. Zeus, fearing her wisdom would surpass his own power, swallowed Metis whole — yet her counsel guided him from within, and her daughter Athena was later born fully formed, armoured and wise.
 
 This application takes her name for the same reason: a knowledge base should not merely store information, it should help you think. Metis pairs your own writing and ideas with AI personas that reason alongside you — surfacing connections, refining your thoughts, and acting on your behalf — all while keeping every word on your own machine. Like the goddess, the intelligence here is a guide embedded in the work, not a separate oracle you consult from afar.
 
 Metis is a desktop markdown editor that stores your notes as plain `.md` files on your own filesystem — no cloud sync, no lock-in, no subscription. It pairs a powerful CodeMirror 6 editor with a clean three-pane layout, rich markdown rendering, a persona-driven AI writing assistant, and a growing set of smart writing tools.
+
 
 ---
 
@@ -35,6 +40,9 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - **Multi-window support** — opening a different vault spawns a new Metis window without losing your current one
 - Real-time sidebar sync when files change on disk (Rust FS watcher)
 
+<img width="1381" height="661" alt="image-1778254924442" src="https://github.com/user-attachments/assets/98e6b2f4-cf52-4431-b9c0-6a411fe892a4" />
+
+
 ### Rich markdown editor
 - **Source mode** — raw markdown with GFM syntax highlighting, inline image rendering, and `Cmd+Click` link following
 - **Visual mode** — full HTML preview with tables, task lists, callouts, and image rendering
@@ -44,6 +52,8 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - Theme picker remains interactive in Planner mode and resets popovers cleanly across tab/file transitions
 - YAML frontmatter editing panel below the editor
 - Auto-save 1 second after your last keystroke
+
+<img width="1392" height="854" alt="image-1778255034159" src="https://github.com/user-attachments/assets/66e3345d-ae5e-400b-841c-01a4e3fd6b78" />
 
 ### Writing ergonomics
 - Slash menu (`/` at line start) for quick block insertion
@@ -60,6 +70,8 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - **Aliases** — comma-separated alternative names; searched by `[[` wikilink autocomplete
 - **Tags** — editable tag chips
 - **Links** — read-only list of all `[[wikilinks]]` found in the note body
+
+<img width="835" height="406" alt="image-1778255125354" src="https://github.com/user-attachments/assets/873a679d-da63-4f93-9dcf-146b5bfb76cc" />
 
 ### Search & replace
 - **In-editor** — `Cmd+F` opens find, `Cmd+R` opens find-and-replace; supports case-sensitive and regex toggles, Replace / Replace All
@@ -82,6 +94,8 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - Calendar button creates or opens today's daily note
 - `todo.md` always sorts to the top of the folder it lives in (`summaries/` by default)
 
+<img width="235" height="356" alt="image-1778255094639" src="https://github.com/user-attachments/assets/cf6f9191-9a71-45fa-81aa-a677ff4302cc" />
+
 ### Planner workspace
 - Accessed from the dedicated **Planner** button at the bottom of the left sidebar (works even when no file is selected)
 - Tabs: **Daily Log**, **Weekly Review**, **Monthly Review**, **Templates**, **PTO & Events**
@@ -93,6 +107,8 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - Monthly reviews render as a consolidated single-page year view (all 12 months)
 - Public holiday import supports country + province/state selection, with strict date deduplication and merge-to-notes behavior
 - Daily/Weekly/Monthly review block templates are editable in the Templates tab and apply from the current date/time window onward (past entries stay as-is)
+
+<img width="1365" height="817" alt="image-1778255067455" src="https://github.com/user-attachments/assets/a0115e3a-138e-44ee-87eb-044e95003168" />
 
 ### AI writing assistant (Command Center — AI tab)
 - **System Default personas** (built-in, protected):
@@ -106,6 +122,9 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - **Floating selection toolbar** — highlight any text to instantly improve, summarise, expand, or extract action items
 - **Supports OpenAI, Google Gemini, Groq, and Perplexity AI** — configure any provider with your own API key; fetch the latest available models on demand
 - **Enable / disable personas** — hide personas from the chip bar without deleting them
+
+<img width="314" height="517" alt="image-1778255163396" src="https://github.com/user-attachments/assets/2f9dda42-e3e6-4bf8-8482-55fda8a5b35c" />
+
 
 ---
 
