@@ -327,4 +327,4 @@ Metis is designed and built by **Kyhle Öhlinger**.
 
 Copyright (c) 2026 Kyhle Öhlinger.
 
-Licensed under the MIT License — see [`LICENSE`](../LICENSE) for the full text.
+Licensed under the MIT License — see [`LICENSE`](/LICENSE) for the full text.
