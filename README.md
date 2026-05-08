@@ -301,8 +301,6 @@ Metis is designed to be safe by default. The security model operates on the prin
 - `open_url` validates the scheme is `https://` before opening a URL in the browser
 - `reveal_in_finder` (macOS) rejects paths containing `"`, `\n`, or `\r` before embedding them in an AppleScript string literal
 
-See [`Architecture.md`](./Architecture.md#63-security-model) for the full security model table.
-
 ---
 
 ## Author
