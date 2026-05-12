@@ -1,0 +1,59 @@
+# npm / Node
+node_modules/
+.npm/
+*.tgz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Frontend build (Vite)
+dist/
+dist-ssr/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+
+# Logs and caches
+*.log
+.eslintcache
+.turbo
+*.tsbuildinfo
+
+# Environment and secrets — never commit API keys or local overrides
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE / editors (keep shared Cursor rules if you add them under .cursor/rules/)
+.idea/
+*.swp
+*.swo
+*~
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
+# Certificates and keys (local-only)
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+*.key
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Debug and local tooling
+*.local
