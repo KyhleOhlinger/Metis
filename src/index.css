@@ -215,24 +215,17 @@ body,
   border-top-color: #e2e8f0;
 }
 
-[data-color-scheme="light"] .preview-prose a.preview-link {
-  color: #6d28d9;
-  text-decoration-color: rgba(109, 40, 217, 0.35);
+/* Visual preview: marked/DOMPurify emit plain <a href> without utility classes */
+[data-color-scheme="light"] .preview-prose a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-decoration-color: #2563eb;
+  text-underline-offset: 2px;
 }
 
-[data-color-scheme="light"] .preview-prose a.preview-link:hover {
-  color: #5b21b6;
-  text-decoration-color: rgba(91, 33, 182, 0.5);
-}
-
-[data-color-scheme="light"] .preview-prose a.preview-wikilink {
-  color: #6d28d9;
-  border-bottom-color: #7c3aed;
-}
-
-[data-color-scheme="light"] .preview-prose a.preview-wikilink:hover {
-  color: #5b21b6;
-  border-bottom-color: #6d28d9;
+[data-color-scheme="light"] .preview-prose a:hover {
+  color: #1d4ed8;
+  text-decoration-color: #1d4ed8;
 }
 
 [data-color-scheme="light"] .preview-prose img {
@@ -361,15 +354,28 @@ body,
 
 /* ── WikiLinks [[filename]] ──────────────────────────────────── */
 .cm-wikilink {
-  color: #a78bfa;
-  border-bottom: 1px dotted #7c3aed;
+  color: #60a5fa;
+  text-decoration: underline;
+  text-decoration-style: solid;
+  text-decoration-thickness: 1px;
+  text-decoration-color: #60a5fa;
   cursor: pointer;
-  transition: color 0.1s, border-color 0.1s;
+  transition: color 0.1s, text-decoration-color 0.1s;
 }
 
 .cm-wikilink:hover {
-  color: #c4b5fd;
-  border-bottom-color: #a78bfa;
+  color: #93c5fd;
+  text-decoration-color: #93c5fd;
+}
+
+[data-color-scheme="light"] .cm-wikilink {
+  color: #2563eb;
+  text-decoration-color: #2563eb;
+}
+
+[data-color-scheme="light"] .cm-wikilink:hover {
+  color: #1d4ed8;
+  text-decoration-color: #1d4ed8;
 }
 
 /* ── Collapsed markdown links [text](url) in source mode ─────── */
@@ -837,6 +843,51 @@ body,
   background: rgba(255, 255, 255, 0.025);
 }
 
+/* Source-mode GFM tables: collapsed preview widget while caret is outside the block */
+.cm-md-table-preview {
+  margin: 8px 0 14px;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(0, 0, 0, 0.22);
+  padding: 8px 10px;
+}
+.cm-md-table-preview--collapsed {
+  cursor: pointer;
+}
+.cm-md-table-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88em;
+}
+.cm-md-table-preview-table th,
+.cm-md-table-preview-table td {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  padding: 4px 8px;
+  text-align: left;
+}
+.cm-md-table-preview-table th {
+  background: rgba(30, 31, 36, 0.95);
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.cm-md-table-preview-table tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+[data-color-scheme="light"] .cm-md-table-preview {
+  background: rgba(248, 250, 252, 0.96);
+  border-color: #e2e8f0;
+}
+[data-color-scheme="light"] .cm-md-table-preview-table th {
+  background: #f1f5f9;
+  color: #334155;
+}
+[data-color-scheme="light"] .cm-md-table-preview-table th,
+[data-color-scheme="light"] .cm-md-table-preview-table td {
+  border-color: #e2e8f0;
+}
+
 /* Images */
 .preview-prose img {
   max-width: 100%;
@@ -853,30 +904,18 @@ body,
   margin: 2em 0;
 }
 
-/* External links */
-.preview-prose a.preview-link {
-  color: #a78bfa;
+/* Links in visual preview — marked outputs bare <a>; override prose text color from parent */
+.preview-prose a {
+  color: #60a5fa;
   text-decoration: underline;
-  text-decoration-color: rgba(167, 139, 250, 0.35);
+  text-decoration-color: #60a5fa;
   text-underline-offset: 2px;
+  cursor: pointer;
   transition: color 0.15s, text-decoration-color 0.15s;
 }
-.preview-prose a.preview-link:hover {
-  color: #c4b5fd;
-  text-decoration-color: rgba(196, 181, 253, 0.55);
-}
-
-/* Wikilinks */
-.preview-prose a.preview-wikilink {
-  color: #a78bfa;
-  border-bottom: 1px dotted #7c3aed;
-  text-decoration: none;
-  cursor: pointer;
-  transition: color 0.1s, border-color 0.1s;
-}
-.preview-prose a.preview-wikilink:hover {
-  color: #c4b5fd;
-  border-bottom-color: #a78bfa;
+.preview-prose a:hover {
+  color: #93c5fd;
+  text-decoration-color: #93c5fd;
 }
 
 /* Drag-over highlight — applied imperatively via data attribute to avoid

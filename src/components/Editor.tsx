@@ -611,6 +611,17 @@ export default function Editor() {
     setShowBgPicker(false);
   }, [editorMode, activeFilePath]);
 
+  // ── Anchor editor viewport at bottom when switching Source / Visual / Planner ──
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      if (editorMode === "source" && viewRef.current) {
+        const dom = viewRef.current.scrollDOM;
+        dom.scrollTop = Math.max(0, dom.scrollHeight - dom.clientHeight);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [editorMode]);
+
   // ── Empty state ───────────────────────────────────────────────────────────────
   // Planner is a workspace view and should be accessible even when no file is open.
   if (!activeFilePath && editorMode !== "planner") {

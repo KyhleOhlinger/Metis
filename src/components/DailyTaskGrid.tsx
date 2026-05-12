@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { EditorView } from "@codemirror/view";
+import Toolbar from "./Toolbar";
+import PlannerCodeMirrorField from "./PlannerCodeMirrorField";
 
 type DayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 type TaskStatus = "work" | "holiday" | "sick" | "pto" | "personal" | "offsite";
-type PlannerTab = "daily" | "weekly" | "monthly" | "templates" | "tracker";
+type PlannerTab = "daily" | "weekly" | "monthly" | "templates" | "tracker" | "goals";
 type TemplateCadence = "daily" | "weekly" | "monthly" | "interval";
 type TrackerStatus = "Complete" | "Coming Up" | "Pending";
 
@@ -21,7 +24,7 @@ type DayEntry = {
 
 type WeekEntry = Partial<Record<DayName, DayEntry>>;
 type WeeklyReviewEntry = { content: string };
-type MonthlyReviewEntry = { content: string; date_completed?: string };
+type MonthlyReviewEntry = { content: string; achievements?: string; date_completed?: string };
 type MonthEntry = {
   daily_logs: Record<string, WeekEntry>;
   weekly_reviews: Record<string, WeeklyReviewEntry>;
@@ -103,6 +106,13 @@ type PlannerLayoutTemplates = {
 const STORAGE_KEY = "metis_daily_task_view_v1";
 const TEMPLATE_STORAGE_KEY = "metis_daily_task_templates_v1";
 const LAYOUT_TEMPLATE_STORAGE_KEY = "metis_planner_layout_templates_v1";
+const GOALS_STORAGE_KEY = "metis_planner_goals_v1";
+
+export type GoalSection = {
+  id: string;
+  title: string;
+  content: string;
+};
 const TEMPLATE_FUTURE_HORIZON_DAYS = 365;
 const DAY_NAMES: DayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const MONTH_INDEX: Record<string, number> = {
@@ -196,7 +206,7 @@ function makeEmptyMonthEntry(): MonthEntry {
   return {
     daily_logs: {},
     weekly_reviews: {},
-    monthly_review: { content: "" },
+    monthly_review: { content: "", achievements: "" },
   };
 }
 
@@ -289,6 +299,10 @@ function loadManifest(): TaskManifest {
               content:
                 typeof monthlyReview.content === "string"
                   ? monthlyReview.content
+                  : "",
+              achievements:
+                typeof monthlyReview.achievements === "string"
+                  ? monthlyReview.achievements
                   : "",
               date_completed:
                 typeof monthlyReview.date_completed === "string"
@@ -431,6 +445,18 @@ function weekKey(monday: Date): string {
   return `week_${String(monday.getDate()).padStart(2, "0")}_${String(friday.getDate()).padStart(2, "0")}`;
 }
 
+/** Parse `${weekKey}_${DayName}` from Daily Log expanded-cell state. */
+function parseDailyExpandedFocus(key: string | null): { wk: string; day: DayName } | null {
+  if (!key) return null;
+  for (const d of DAY_NAMES) {
+    const suf = `_${d}`;
+    if (key.endsWith(suf)) {
+      return { wk: key.slice(0, -suf.length), day: d };
+    }
+  }
+  return null;
+}
+
 function weekHeader(monday: Date): string {
   const friday = addDays(monday, 4);
   const sameMonth = monday.getMonth() === friday.getMonth();
@@ -565,6 +591,40 @@ function matchingTemplatesForDate(date: Date, templates: PlanTemplate[]): PlanTe
 
 function makeRowId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function defaultGoalSections(): GoalSection[] {
+  return [
+    { id: makeRowId(), title: "Business related", content: "" },
+    { id: makeRowId(), title: "Self-Improvement", content: "" },
+  ];
+}
+
+function loadGoals(): GoalSection[] {
+  try {
+    const raw = localStorage.getItem(GOALS_STORAGE_KEY);
+    if (!raw) return defaultGoalSections();
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return defaultGoalSections();
+    if (parsed.length === 0) return [];
+    const out: GoalSection[] = [];
+    for (const item of parsed) {
+      const row = item as Partial<GoalSection>;
+      if (!row || typeof row.title !== "string") continue;
+      out.push({
+        id: typeof row.id === "string" ? row.id : makeRowId(),
+        title: row.title,
+        content: typeof row.content === "string" ? row.content : "",
+      });
+    }
+    return out.length ? out : defaultGoalSections();
+  } catch {
+    return defaultGoalSections();
+  }
+}
+
+function saveGoals(sections: GoalSection[]) {
+  localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(sections, null, 2));
 }
 
 function isTrackerActive(status: TrackerStatus): boolean {
@@ -703,7 +763,7 @@ function setWeeklyReview(manifest: TaskManifest, monday: Date, content: string):
 function setMonthlyReview(
   manifest: TaskManifest,
   monday: Date,
-  content: string,
+  patch: { content?: string; achievements?: string },
   dateCompleted: string,
 ): TaskManifest {
   const year = String(monday.getFullYear());
@@ -717,7 +777,9 @@ function setMonthlyReview(
       [month]: {
         ...monthEntry,
         monthly_review: {
-          content,
+          ...monthEntry.monthly_review,
+          ...(patch.content !== undefined ? { content: patch.content } : {}),
+          ...(patch.achievements !== undefined ? { achievements: patch.achievements } : {}),
           date_completed: dateCompleted,
         },
       },
@@ -999,6 +1061,8 @@ export default function DailyTaskGrid() {
     type: "holiday" | "pto" | "conference" | "trip";
     id: string;
   } | null>(null);
+  const plannerToolbarViewRef = useRef<EditorView | null>(null);
+  const plannerScrollRef = useRef<HTMLDivElement>(null);
   const [importCountry, setImportCountry] = useState("CA");
   const [importRegion, setImportRegion] = useState("ALL");
   const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
@@ -1008,6 +1072,9 @@ export default function DailyTaskGrid() {
     action: "disable" | "delete";
     cutoffDate: string;
   } | null>(null);
+  const [goalSections, setGoalSections] = useState<GoalSection[]>(() => loadGoals());
+  const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
+  const dailyGridShellRef = useRef<HTMLDivElement>(null);
   const visibleWeeks = useMemo(
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
     [anchorWeek],
@@ -1064,10 +1131,56 @@ export default function DailyTaskGrid() {
   }, [layoutTemplates]);
 
   useEffect(() => {
+    saveGoals(goalSections);
+  }, [goalSections]);
+
+  useEffect(() => {
     if (importRegion === "ALL") return;
     const allowed = new Set((HOLIDAY_REGIONS[importCountry] ?? []).map((region) => region.code));
     if (!allowed.has(importRegion)) setImportRegion("ALL");
   }, [importCountry, importRegion]);
+
+  useEffect(() => {
+    const el = plannerScrollRef.current;
+    if (!el || (tab === "daily" && dailyExpandedCellKey)) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+  }, [tab, dailyExpandedCellKey]);
+
+  useEffect(() => {
+    if (tab !== "daily") setDailyExpandedCellKey(null);
+  }, [tab]);
+
+  useEffect(() => {
+    setDailyExpandedCellKey(null);
+  }, [anchorWeek]);
+
+  const dailyExpandedParsed = useMemo(() => parseDailyExpandedFocus(dailyExpandedCellKey), [dailyExpandedCellKey]);
+  const dailyGridWeightedWeekIdx = useMemo(() => {
+    if (!dailyExpandedParsed) return -1;
+    return visibleWeeks.findIndex((m) => weekKey(m) === dailyExpandedParsed.wk);
+  }, [dailyExpandedParsed, visibleWeeks]);
+  const dailyGridWeightedDayIdx = useMemo(
+    () => (dailyExpandedParsed ? DAY_NAMES.indexOf(dailyExpandedParsed.day) : -1),
+    [dailyExpandedParsed],
+  );
+  const dailyGridWeighted =
+    dailyExpandedParsed !== null && dailyGridWeightedWeekIdx >= 0 && dailyGridWeightedDayIdx >= 0;
+
+  const dailyGridTemplateColumns =
+    dailyGridWeighted && dailyGridWeightedWeekIdx >= 0
+      ? `110px ${[0, 1, 2, 3]
+          .map((i) => (i === dailyGridWeightedWeekIdx ? "minmax(0, 4fr)" : "minmax(0, 1fr)"))
+          .join(" ")}`
+      : `110px repeat(4, minmax(210px, 1fr))`;
+
+  const dailyGridTemplateRows =
+    dailyGridWeighted && dailyGridWeightedDayIdx >= 0
+      ? `auto ${[0, 1, 2, 3, 4]
+          .map((i) => (i === dailyGridWeightedDayIdx ? "minmax(0, 3fr)" : "minmax(0, 1fr)"))
+          .join(" ")}`
+      : undefined;
 
   const isOnOrAfterToday = (date: Date) => startOfDay(date).getTime() >= today.getTime();
   const useWeeklyTemplateForDate = (monday: Date) => monday.getTime() >= todayWeekStart.getTime();
@@ -1096,10 +1209,29 @@ export default function DailyTaskGrid() {
   const updateMonthlyReview = (monday: Date, content: string) => {
     const monthLastFriday = lastFridayOfMonth(monday);
     setManifest((prev) => {
-      const updated = setMonthlyReview(prev, monday, content, toIsoDate(monthLastFriday));
+      const updated = setMonthlyReview(prev, monday, { content }, toIsoDate(monthLastFriday));
       saveManifest(updated);
       return updated;
     });
+  };
+
+  const updateMonthlyAchievements = (monday: Date, achievements: string) => {
+    const monthLastFriday = lastFridayOfMonth(monday);
+    setManifest((prev) => {
+      const updated = setMonthlyReview(prev, monday, { achievements }, toIsoDate(monthLastFriday));
+      saveManifest(updated);
+      return updated;
+    });
+  };
+
+  const updateGoalSection = (id: string, patch: Partial<Pick<GoalSection, "title" | "content">>) => {
+    setGoalSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  };
+  const addGoalSection = () => {
+    setGoalSections((prev) => [...prev, { id: makeRowId(), title: "New goal section", content: "" }]);
+  };
+  const removeGoalSection = (id: string) => {
+    setGoalSections((prev) => prev.filter((s) => s.id !== id));
   };
 
   const updateTracker = (updater: (current: TrackerData) => TrackerData) => {
@@ -1413,6 +1545,7 @@ export default function DailyTaskGrid() {
             ["daily", "Daily Log"],
             ["weekly", "Weekly Review"],
             ["monthly", "Monthly Review"],
+            ["goals", "Goals"],
             ["templates", "Templates"],
             ["tracker", "PTO & Events"],
           ] as const).map(([id, label]) => (
@@ -1478,144 +1611,216 @@ export default function DailyTaskGrid() {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div
+        ref={plannerScrollRef}
+        className={[
+          "min-h-0 flex-1 p-3",
+          tab === "daily" && dailyExpandedCellKey ? "flex flex-col overflow-x-auto overflow-y-hidden" : "overflow-auto",
+        ].join(" ")}
+      >
+        {(tab === "weekly" || tab === "monthly" || tab === "templates" || tab === "goals") && (
+          <Toolbar
+            viewRef={plannerToolbarViewRef}
+            spellcheck={false}
+            onToggleSpellcheck={() => {}}
+          />
+        )}
         {tab === "daily" && (
-          <div className="grid min-w-[980px] grid-cols-[110px_repeat(4,minmax(210px,1fr))] gap-1.5">
-              <div />
-              {visibleWeeks.map((monday) => (
+          <div
+            ref={dailyGridShellRef}
+            className={[
+              "grid min-w-[980px] gap-1.5",
+              dailyGridWeighted ? "min-h-0 flex-1" : "",
+            ].join(" ")}
+            style={{
+              gridTemplateColumns: dailyGridTemplateColumns,
+              ...(dailyGridTemplateRows ? { gridTemplateRows: dailyGridTemplateRows } : {}),
+            }}
+          >
+            <div style={{ gridColumn: 1, gridRow: 1 }} />
+            {visibleWeeks.map((monday, wi) => (
+              <div
+                key={`hdr-${monday.toISOString()}`}
+                style={{ gridColumn: wi + 2, gridRow: 1 }}
+                className="rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white"
+              >
+                {weekHeader(monday)}
+              </div>
+            ))}
+
+            {DAY_NAMES.map((day, di) => (
+              <Fragment key={day}>
                 <div
-                  key={monday.toISOString()}
+                  style={{ gridColumn: 1, gridRow: di + 2 }}
                   className="rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white"
                 >
-                  {weekHeader(monday)}
+                  {day}
                 </div>
-              ))}
+                {visibleWeeks.map((monday, wi) => {
+                  const cell = getEntry(manifest, monday, day);
+                  const isSpecial = cell.status !== "work";
+                  const trackerControlled = Boolean(cell.trackerSourceType && cell.trackerSourceId);
+                  const cellDate = dayDate(monday, day);
+                  const isTodayCell =
+                    startOfDay(cellDate).getTime() === today.getTime() && !isSpecial;
+                  const cellFocusKey = `${weekKey(monday)}_${day}`;
+                  const dailyExpanded = !isSpecial && dailyExpandedCellKey === cellFocusKey;
+                  const workBlocksWrapClass = dailyExpanded
+                    ? "flex min-h-0 flex-1 flex-col gap-2"
+                    : "space-y-2";
+                  const workLabelWrapClass = dailyExpanded
+                    ? "flex min-h-0 flex-1 flex-col text-[10px] font-semibold text-text-secondary"
+                    : "block text-[10px] font-semibold text-text-secondary";
+                  const workTextareaClass = [
+                    "mt-1 w-full resize-none rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-primary",
+                    dailyExpanded ? "min-h-0 flex-1" : "h-16",
+                  ].join(" ");
+                  const useTemplateLabels = isOnOrAfterToday(cellDate);
+                  const plannedLabel = useTemplateLabels
+                    ? layoutTemplates.dailyPrimaryLabel
+                    : DEFAULT_LAYOUT_TEMPLATES.dailyPrimaryLabel;
+                  const didEnabled = useTemplateLabels
+                    ? layoutTemplates.dailySecondaryEnabled
+                    : true;
+                  const didLabel = useTemplateLabels
+                    ? layoutTemplates.dailySecondaryLabel
+                    : DEFAULT_LAYOUT_TEMPLATES.dailySecondaryLabel;
+                  const specialBlockClass = dailyGridWeighted
+                    ? "flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto py-2 text-center text-[12px] font-semibold text-green-400"
+                    : "flex h-[158px] items-center justify-center text-center text-[12px] font-semibold text-green-400";
 
-              {DAY_NAMES.map((day) => (
-                <div key={day} className="contents">
-                  <div className="rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white">
-                    {day}
-                  </div>
-                  {visibleWeeks.map((monday) => {
-                    const cell = getEntry(manifest, monday, day);
-                    const isSpecial = cell.status !== "work";
-                    const trackerControlled = Boolean(cell.trackerSourceType && cell.trackerSourceId);
-                    const cellDate = dayDate(monday, day);
-                    const useTemplateLabels = isOnOrAfterToday(cellDate);
-                    const plannedLabel = useTemplateLabels
-                      ? layoutTemplates.dailyPrimaryLabel
-                      : DEFAULT_LAYOUT_TEMPLATES.dailyPrimaryLabel;
-                    const didEnabled = useTemplateLabels
-                      ? layoutTemplates.dailySecondaryEnabled
-                      : true;
-                    const didLabel = useTemplateLabels
-                      ? layoutTemplates.dailySecondaryLabel
-                      : DEFAULT_LAYOUT_TEMPLATES.dailySecondaryLabel;
-                    return (
-                      <div
-                        key={`${monday.toISOString()}-${day}`}
-                        className="rounded-md border border-border bg-surface-overlay/30 p-2"
-                      >
-                        {cell.officeTripBanner && (
-                          <div className="mb-2 rounded border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-200">
-                            <div className="font-semibold">{cell.officeTripBanner}</div>
-                            {cell.officeTripEventId && (
+                  return (
+                    <div
+                      key={`${monday.toISOString()}-${day}`}
+                      style={{ gridColumn: wi + 2, gridRow: di + 2 }}
+                      className={[
+                        "rounded-md border border-border bg-surface-overlay/30 p-2",
+                        dailyGridWeighted ? "flex min-h-0 h-full flex-col overflow-hidden" : "",
+                        isTodayCell ? "ring-1 ring-accent/35" : "",
+                        dailyExpanded ? "ring-2 ring-accent/55" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onPointerDownCapture={(e) => {
+                        if (isSpecial) return;
+                        const t = e.target as HTMLElement;
+                        if (t.closest("button")) return;
+                        setDailyExpandedCellKey(cellFocusKey);
+                      }}
+                      onBlur={(e) => {
+                        if (isSpecial) return;
+                        const rt = e.relatedTarget as Node | null;
+                        if (rt && e.currentTarget.contains(rt)) return;
+                        setDailyExpandedCellKey((cur) => (cur === cellFocusKey ? null : cur));
+                      }}
+                    >
+                      {cell.officeTripBanner && (
+                        <div className="mb-2 shrink-0 rounded border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-200">
+                          <div className="font-semibold">{cell.officeTripBanner}</div>
+                          {cell.officeTripEventId && (
+                            <button
+                              onClick={() => {
+                                setTab("tracker");
+                                setTrackerFocus({
+                                  type: "trip",
+                                  id: cell.officeTripEventId!,
+                                });
+                              }}
+                              className="mt-1 underline underline-offset-2 text-sky-200"
+                            >
+                              Edit Event
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <div className="mb-2 shrink-0">
+                        <select
+                          value={cell.status}
+                          disabled={trackerControlled}
+                          onChange={(e) => {
+                            const nextStatus = e.target.value as TaskStatus;
+                            updateEntry(monday, day, {
+                              ...cell,
+                              status: nextStatus,
+                              label: nextStatus === "work" ? undefined : SPECIAL_LABELS[nextStatus],
+                            });
+                          }}
+                          className="w-full rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-secondary"
+                        >
+                          <option value="work">Work</option>
+                          <option value="holiday">Public Holiday</option>
+                          <option value="sick">Sick Day</option>
+                          <option value="pto">PTO</option>
+                          <option value="personal">Personal</option>
+                          <option value="offsite">Off-site / Conference</option>
+                        </select>
+                      </div>
+
+                      {isSpecial ? (
+                        <div className={specialBlockClass}>
+                          <div>
+                            <div>{cell.label ?? SPECIAL_LABELS[cell.status as Exclude<TaskStatus, "work">]}</div>
+                            {trackerControlled && (
                               <button
                                 onClick={() => {
                                   setTab("tracker");
                                   setTrackerFocus({
-                                    type: "trip",
-                                    id: cell.officeTripEventId!,
+                                    type: cell.trackerSourceType!,
+                                    id: cell.trackerSourceId!,
                                   });
                                 }}
-                                className="mt-1 underline underline-offset-2 text-sky-200"
+                                className="mt-2 text-[10px] underline underline-offset-2 text-accent"
                               >
                                 Edit Event
                               </button>
                             )}
                           </div>
-                        )}
-                        <div className="mb-2">
-                          <select
-                            value={cell.status}
-                            disabled={trackerControlled}
-                            onChange={(e) => {
-                              const nextStatus = e.target.value as TaskStatus;
-                              updateEntry(monday, day, {
-                                ...cell,
-                                status: nextStatus,
-                                label: nextStatus === "work" ? undefined : SPECIAL_LABELS[nextStatus],
-                              });
-                            }}
-                            className="w-full rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-secondary"
-                          >
-                            <option value="work">Work</option>
-                            <option value="holiday">Public Holiday</option>
-                            <option value="sick">Sick Day</option>
-                            <option value="pto">PTO</option>
-                            <option value="personal">Personal</option>
-                            <option value="offsite">Off-site / Conference</option>
-                          </select>
                         </div>
-
-                        {isSpecial ? (
-                          <div className="flex h-[158px] items-center justify-center text-center text-[12px] font-semibold text-green-400">
-                            <div>
-                              <div>{cell.label ?? SPECIAL_LABELS[cell.status as Exclude<TaskStatus, "work">]}</div>
-                              {trackerControlled && (
-                                <button
-                                  onClick={() => {
-                                    setTab("tracker");
-                                    setTrackerFocus({
-                                      type: cell.trackerSourceType!,
-                                      id: cell.trackerSourceId!,
-                                    });
-                                  }}
-                                  className="mt-2 text-[10px] underline underline-offset-2 text-accent"
-                                >
-                                  Edit Event
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <label className="block text-[10px] font-semibold text-text-secondary">
-                              {plannedLabel}:
+                      ) : (
+                        <div className={[workBlocksWrapClass, dailyGridWeighted ? "min-h-0 flex-1" : ""].filter(Boolean).join(" ")}>
+                          <label className={workLabelWrapClass}>
+                            {plannedLabel}:
+                            <textarea
+                              value={cell.planned ?? ""}
+                              onChange={(e) =>
+                                updateEntry(monday, day, {
+                                  ...cell,
+                                  planned: e.target.value,
+                                  status: "work",
+                                  label: undefined,
+                                  plannedAutoGenerated: false,
+                                  plannedTemplateIds: undefined,
+                                })
+                              }
+                              onFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                              className={workTextareaClass}
+                            />
+                          </label>
+                          {didEnabled && (
+                            <label className={workLabelWrapClass}>
+                              {didLabel}:
                               <textarea
-                                value={cell.planned ?? ""}
+                                value={cell.did ?? ""}
                                 onChange={(e) =>
                                   updateEntry(monday, day, {
                                     ...cell,
-                                    planned: e.target.value,
+                                    did: e.target.value,
                                     status: "work",
                                     label: undefined,
-                                    plannedAutoGenerated: false,
-                                    plannedTemplateIds: undefined,
                                   })
                                 }
-                                className="mt-1 h-16 w-full resize-none rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-primary"
+                                onFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                                className={workTextareaClass}
                               />
                             </label>
-                            {didEnabled && (
-                              <label className="block text-[10px] font-semibold text-text-secondary">
-                                {didLabel}:
-                                <textarea
-                                  value={cell.did ?? ""}
-                                  onChange={(e) =>
-                                    updateEntry(monday, day, { ...cell, did: e.target.value, status: "work", label: undefined })
-                                  }
-                                  className="mt-1 h-16 w-full resize-none rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-primary"
-                                />
-                              </label>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </Fragment>
+            ))}
           </div>
         )}
 
@@ -1670,12 +1875,15 @@ export default function DailyTaskGrid() {
               </select>
             </div>
             <div className="mt-2 flex items-start gap-2">
-              <textarea
-                value={templateContent}
-                onChange={(e) => setTemplateContent(e.target.value)}
-                placeholder="Template tasks (markdown supported)"
-                className="h-16 flex-1 resize-none rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-              />
+              <div className="min-h-[64px] flex-1">
+                <PlannerCodeMirrorField
+                  key="template-new"
+                  value={templateContent}
+                  onChange={setTemplateContent}
+                  minHeightPx={64}
+                  toolbarViewRef={plannerToolbarViewRef}
+                />
+              </div>
               <button
                 onClick={addTemplate}
                 className="rounded border border-accent/40 bg-accent/20 px-3 py-1.5 text-[10px] font-semibold text-accent"
@@ -1797,11 +2005,15 @@ export default function DailyTaskGrid() {
                     ))}
                   </select>
                 </div>
-                <textarea
-                  value={editTemplateContent}
-                  onChange={(e) => setEditTemplateContent(e.target.value)}
-                  className="mt-2 h-16 w-full resize-none rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-                />
+                <div className="mt-2 min-h-[64px] w-full">
+                  <PlannerCodeMirrorField
+                    key={`template-edit-${editingTemplateId}`}
+                    value={editTemplateContent}
+                    onChange={setEditTemplateContent}
+                    minHeightPx={64}
+                    toolbarViewRef={plannerToolbarViewRef}
+                  />
+                </div>
                 <div className="mt-2 flex items-center gap-1.5">
                   <button
                     onClick={saveTemplateEdits}
@@ -1879,11 +2091,15 @@ export default function DailyTaskGrid() {
                 </div>
                 <label className="mt-2 block text-[10px] text-text-secondary">
                   Default weekly review content
-                  <textarea
-                    value={layoutTemplates.weeklyDefaultContent}
-                    onChange={(e) => updateLayoutTemplates({ weeklyDefaultContent: e.target.value })}
-                    className="mt-1 h-20 w-full resize-none rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                  />
+                  <div className="mt-1 min-h-[80px]">
+                    <PlannerCodeMirrorField
+                      key="weekly-default-layout"
+                      value={layoutTemplates.weeklyDefaultContent}
+                      onChange={(v) => updateLayoutTemplates({ weeklyDefaultContent: v })}
+                      minHeightPx={80}
+                      toolbarViewRef={plannerToolbarViewRef}
+                    />
+                  </div>
                 </label>
               </div>
 
@@ -1909,11 +2125,15 @@ export default function DailyTaskGrid() {
                 </div>
                 <label className="mt-2 block text-[10px] text-text-secondary">
                   Monthly prompts (one per line)
-                  <textarea
-                    value={monthlyPromptDraft}
-                    onChange={(e) => setMonthlyPromptDraft(e.target.value)}
-                    className="mt-1 h-24 w-full resize-none rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                  />
+                  <div className="mt-1 min-h-[96px]">
+                    <PlannerCodeMirrorField
+                      key="monthly-prompts-draft"
+                      value={monthlyPromptDraft}
+                      onChange={setMonthlyPromptDraft}
+                      minHeightPx={96}
+                      toolbarViewRef={plannerToolbarViewRef}
+                    />
+                  </div>
                 </label>
                 <button
                   onClick={applyMonthlyPromptTemplate}
@@ -1923,6 +2143,58 @@ export default function DailyTaskGrid() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === "goals" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-semibold text-text-primary">Goals</p>
+                <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
+                  Create sections with editable titles and notes. Stored locally in this browser.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addGoalSection}
+                className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
+              >
+                Add goal section
+              </button>
+            </div>
+            {goalSections.length === 0 ? (
+              <p className="text-[10px] text-text-muted">No sections yet. Use Add goal section to create one.</p>
+            ) : (
+              goalSections.map((section) => (
+                <div key={section.id} className="rounded-md border border-border bg-surface-overlay/30 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={section.title}
+                      onChange={(e) => updateGoalSection(section.id, { title: e.target.value })}
+                      className="min-w-[12rem] flex-1 rounded border border-border bg-surface-raised px-2 py-1 text-[11px] font-semibold text-text-primary"
+                      aria-label="Goal section title"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeGoalSection(section.id)}
+                      className="shrink-0 rounded border border-border px-2 py-1 text-[10px] text-red-300 hover:text-red-200"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <div className="mt-2">
+                    <PlannerCodeMirrorField
+                      key={`goal-${section.id}`}
+                      value={section.content}
+                      onChange={(next) => updateGoalSection(section.id, { content: next })}
+                      minHeightPx={140}
+                      toolbarViewRef={plannerToolbarViewRef}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
 
@@ -2279,10 +2551,12 @@ export default function DailyTaskGrid() {
                     {weekHeader(monday)}
                   </div>
                   <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <textarea
+                    <PlannerCodeMirrorField
+                      key={`weekly-${wk}`}
                       value={content}
-                      onChange={(e) => updateWeeklyReview(monday, e.target.value)}
-                      className="h-32 w-full resize-none rounded border border-border bg-surface-raised px-2 py-1.5 text-[11px] text-text-primary"
+                      onChange={(next) => updateWeeklyReview(monday, next)}
+                      minHeightPx={110}
+                      toolbarViewRef={plannerToolbarViewRef}
                     />
                   </div>
                 </div>
@@ -2309,38 +2583,43 @@ export default function DailyTaskGrid() {
                 !(useMonthlyTemplateForDate(monthDate) && monthlyLegacyAuto)
                   ? monthEntry.monthly_review.content
                   : monthlyDefault;
-              const monthLastFriday = lastFridayOfMonth(monthDate);
+              const achievementsValue = monthEntry.monthly_review.achievements ?? "";
               return (
-                <div key={monthDate.toISOString()} className="grid min-w-[760px] grid-cols-[220px_minmax(460px,1fr)] gap-1.5">
+                <div
+                  key={monthDate.toISOString()}
+                  className="grid min-w-[920px] grid-cols-[120px_minmax(260px,1fr)_minmax(220px,1fr)] gap-1.5"
+                >
                   <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
-                    {monthName(monthDate)} {useMonthlyTemplateForDate(monthDate)
-                      ? layoutTemplates.monthlyLeftHeader
-                      : DEFAULT_LAYOUT_TEMPLATES.monthlyLeftHeader}
+                    {monthName(monthDate)}
                   </div>
                   <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
                     {useMonthlyTemplateForDate(monthDate)
                       ? layoutTemplates.monthlyRightHeader
                       : DEFAULT_LAYOUT_TEMPLATES.monthlyRightHeader}
                   </div>
+                  <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+                    Monthly Achievements
+                  </div>
 
-                  <div className="rounded-md border border-border bg-surface-overlay/30 px-3 py-2 text-[11px] text-text-secondary">
-                    <p className="font-semibold text-text-primary">Last Friday of the month</p>
-                    <p className="mt-1">
-                      {monthLastFriday.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
-                    </p>
+                  <div className="rounded-md border border-border bg-surface-overlay/30 px-3 py-2 text-[11px] font-semibold text-text-primary">
+                    {monthName(monthDate)}
                   </div>
                   <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <div className="space-y-1 pb-2">
-                      {prompts.map((prompt) => (
-                        <p key={prompt} className="text-[11px] font-semibold text-[#7F00FF]">
-                          • {prompt}
-                        </p>
-                      ))}
-                    </div>
-                    <textarea
+                    <PlannerCodeMirrorField
+                      key={`monthly-r-${monthDate.toISOString()}`}
                       value={content}
-                      onChange={(e) => updateMonthlyReview(monthDate, e.target.value)}
-                      className="h-52 w-full resize-none rounded border border-border bg-surface-raised px-2 py-1.5 text-[11px] text-text-primary"
+                      onChange={(next) => updateMonthlyReview(monthDate, next)}
+                      minHeightPx={200}
+                      toolbarViewRef={plannerToolbarViewRef}
+                    />
+                  </div>
+                  <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
+                    <PlannerCodeMirrorField
+                      key={`monthly-a-${monthDate.toISOString()}`}
+                      value={achievementsValue}
+                      onChange={(next) => updateMonthlyAchievements(monthDate, next)}
+                      minHeightPx={130}
+                      toolbarViewRef={plannerToolbarViewRef}
                     />
                   </div>
                 </div>

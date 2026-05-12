@@ -11,6 +11,7 @@
  *   createVisualModePlugin — live-preview dimming + inline image rendering
  *   markdownAutoComplete   — smart auto-close for ```, [], (), *, _ etc.
  *   taskListClickExtension — click `[ ]` / `[x]` to toggle task completion
+ *   makeInlinePreviewExtension — inline images (+ reveal menu), GFM tables collapse to rendered preview when the caret is outside the table (click to edit), Cmd/Ctrl+click links
  */
 
 import {
@@ -27,7 +28,7 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { RangeSetBuilder, StateField, EditorState } from "@codemirror/state";
+import { RangeSetBuilder, StateField, EditorState, EditorSelection, type Text } from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import {
@@ -52,9 +53,9 @@ export const metisHighlightStyleDark = syntaxHighlighting(
     { tag: tags.strong, fontWeight: "700", color: "#f1f5f9" },
     { tag: tags.emphasis, fontStyle: "italic", color: "#e2e8f0" },
     { tag: tags.strikethrough, textDecoration: "line-through", color: "#64748b" },
-    // Links
-    { tag: tags.link, color: "#a78bfa", textDecoration: "underline" },
-    { tag: tags.url, color: "#7c3aed" },
+    // Links — consistent blue + underline (matches Visual preview styling)
+    { tag: tags.link, color: "#60a5fa", textDecoration: "underline" },
+    { tag: tags.url, color: "#3b82f6" },
     // Inline code
     {
       tag: tags.monospace,
@@ -100,8 +101,8 @@ export const metisHighlightStyleLight = syntaxHighlighting(
     { tag: tags.strong, fontWeight: "700", color: "#0f172a" },
     { tag: tags.emphasis, fontStyle: "italic", color: "#334155" },
     { tag: tags.strikethrough, textDecoration: "line-through", color: "#94a3b8" },
-    { tag: tags.link, color: "#6d28d9", textDecoration: "underline" },
-    { tag: tags.url, color: "#5b21b6" },
+    { tag: tags.link, color: "#2563eb", textDecoration: "underline" },
+    { tag: tags.url, color: "#1d4ed8" },
     {
       tag: tags.monospace,
       fontFamily: '"JetBrains Mono","Fira Code",monospace',
@@ -388,6 +389,95 @@ function normalizePosixPath(raw: string): string {
     else if (seg && seg !== ".") stack.push(seg);
   }
   return (isAbs ? "/" : "") + stack.join("/");
+}
+
+/** Absolute filesystem path for reveal-in-Finder; null if not a local vault file. */
+function resolveInlineImageRevealPath(
+  src: string,
+  vaultPath: string,
+  fileDir: string,
+): string | null {
+  if (!src || /^(https?:|data:|blob:)/i.test(src)) return null;
+
+  if (src.startsWith("assets/")) {
+    const normalized = normalizePosixPath(`${vaultPath}/${src}`);
+    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
+    return normalized;
+  }
+
+  if (src.startsWith("/")) {
+    const normalized = normalizePosixPath(src);
+    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
+    return normalized;
+  }
+
+  const normalized = normalizePosixPath(`${fileDir}/${src}`);
+  if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
+  return normalized;
+}
+
+const CM_IMAGE_CTX_MENU_ID = "cm-inline-image-context-menu";
+
+function removeCmImageContextMenu() {
+  document.getElementById(CM_IMAGE_CTX_MENU_ID)?.remove();
+}
+
+/** Context menu for inline source images — reveal on disk (vault-local files only). */
+function openCmImageRevealMenu(clientX: number, clientY: number, absPath: string, vaultPath: string) {
+  removeCmImageContextMenu();
+  // SECURITY: reveal_in_finder enforces vault containment server-side; paths are pre-validated.
+  const revealLabel =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+      ? "Reveal in Finder"
+      : "Reveal in File Explorer";
+
+  const menu = document.createElement("div");
+  menu.id = CM_IMAGE_CTX_MENU_ID;
+  menu.style.cssText = [
+    "position:fixed",
+    "z-index:10050",
+    `left:${Math.min(clientX, window.innerWidth - 200)}px`,
+    `top:${Math.min(clientY, window.innerHeight - 48)}px`,
+    "min-width:180px",
+    "padding:4px 0",
+    "border-radius:8px",
+    "border:1px solid rgba(148,163,184,0.35)",
+    "background:#1e1f24",
+    "box-shadow:0 8px 24px rgba(0,0,0,0.45)",
+    "font-size:12px",
+  ].join(";");
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = revealLabel;
+  btn.style.cssText =
+    "display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;color:#e2e8f0;cursor:pointer;";
+  btn.onmouseenter = () => {
+    btn.style.background = "rgba(124,58,237,0.25)";
+  };
+  btn.onmouseleave = () => {
+    btn.style.background = "transparent";
+  };
+  btn.addEventListener("click", () => {
+    removeCmImageContextMenu();
+    invoke("reveal_in_finder", { path: absPath, vaultPath }).catch(console.error);
+  });
+
+  menu.appendChild(btn);
+  document.body.appendChild(menu);
+
+  const dismiss = () => {
+    removeCmImageContextMenu();
+    window.removeEventListener("mousedown", dismiss, true);
+    window.removeEventListener("keydown", onKey, true);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") dismiss();
+  };
+  setTimeout(() => {
+    window.addEventListener("mousedown", dismiss, true);
+    window.addEventListener("keydown", onKey, true);
+  }, 0);
 }
 
 // Resolve image sources: http(s) and data URIs pass through; relative paths are
@@ -861,7 +951,10 @@ function buildMarkdownLinkCollapseDecorations(view: EditorView): DecorationSet {
       ranges.push({
         from: displayFrom,
         to: displayTo,
-        deco: Decoration.mark({ class: "cm-markdown-link-collapsed" }),
+        deco: Decoration.mark({
+          class: "cm-markdown-link-collapsed",
+          attributes: { "data-md-link-href": m[2].trim() },
+        }),
       });
     }
   }
@@ -1223,13 +1316,22 @@ class InlineImageWidget extends WidgetType {
   constructor(
     readonly src: string,
     readonly alt: string,
+    readonly revealAbsPath: string | null,
+    readonly vaultPath: string,
   ) {
     super();
   }
   eq(other: InlineImageWidget) {
-    return other.src === this.src && other.alt === this.alt;
+    return (
+      other.src === this.src &&
+      other.alt === this.alt &&
+      other.revealAbsPath === this.revealAbsPath &&
+      other.vaultPath === this.vaultPath
+    );
   }
   toDOM(): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-inline-img-wrap";
     const img = document.createElement("img");
     img.src = this.src;
     img.alt = this.alt;
@@ -1240,11 +1342,18 @@ class InlineImageWidget extends WidgetType {
     img.onerror = () => {
       img.style.display = "none";
     };
-    return img;
+    if (this.revealAbsPath) {
+      wrap.oncontextmenu = (e) => {
+        e.preventDefault();
+        openCmImageRevealMenu(e.clientX, e.clientY, this.revealAbsPath!, this.vaultPath);
+      };
+    }
+    wrap.appendChild(img);
+    return wrap;
   }
-  // Let clicks pass through to the editor (cursor placement, etc.)
-  ignoreEvent() {
-    return true;
+  // Receive contextmenu on the wrapper; ordinary clicks still bubble for caret placement.
+  ignoreEvent(): boolean {
+    return false;
   }
 }
 
@@ -1303,11 +1412,12 @@ function buildInlineImageDecosFromState(
     const stdM = /!\[([^\]]*)\]\(([^)]+)\)/.exec(text);
     if (stdM) {
       const src = resolveInlineImageSrc(stdM[2].trim(), vaultPath, fileDir);
+      const revealAbsPath = resolveInlineImageRevealPath(stdM[2].trim(), vaultPath, fileDir);
       builder.add(
         line.to,
         line.to,
         Decoration.widget({
-          widget: new InlineImageWidget(src, stdM[1]),
+          widget: new InlineImageWidget(src, stdM[1], revealAbsPath, vaultPath),
           side: 1,
           block: true,
         }),
@@ -1331,7 +1441,7 @@ function buildInlineImageDecosFromState(
         line.to,
         line.to,
         Decoration.widget({
-          widget: new InlineImageWidget(src, wikiM[1]),
+          widget: new InlineImageWidget(src, wikiM[1], normalizedPath, vaultPath),
           side: 1,
           block: true,
         }),
@@ -1364,11 +1474,220 @@ function makeImageDecosField(vaultPath: string, filePath: string) {
   });
 }
 
+// ── GFM pipe tables: render preview while unfocused (caret outside table) ─────
+//
+// Mirrors link-collapse UX: raw markdown is editable whenever the primary
+// selection intersects the table; moving the caret away replaces the pipe
+// block with a read-only HTML preview widget. Clicking the preview jumps the
+// caret back to the table start.
+
+function escapeHtmlCell(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function splitPipeTableCells(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  return s.split("|").map((c) => c.trim());
+}
+
+function isPipeTableRow(line: string): boolean {
+  const t = line.trim();
+  return t.includes("|") && t.length >= 3;
+}
+
+function isPipeTableSeparator(line: string): boolean {
+  const cells = splitPipeTableCells(line);
+  return cells.length >= 2 && cells.every((c) => /^:?-{3,}:?$/.test(c));
+}
+
+interface MdTableSpan {
+  startLine: number;
+  endLine: number;
+}
+
+function findCompleteMarkdownTables(doc: Text): MdTableSpan[] {
+  const out: MdTableSpan[] = [];
+  let lineNo = 1;
+  while (lineNo <= doc.lines) {
+    const rowText = doc.line(lineNo).text;
+    if (!isPipeTableRow(rowText)) {
+      lineNo++;
+      continue;
+    }
+    const startLine = lineNo;
+    const rows: string[] = [];
+    while (lineNo <= doc.lines && isPipeTableRow(doc.line(lineNo).text)) {
+      rows.push(doc.line(lineNo).text);
+      lineNo++;
+    }
+    if (rows.length < 3 || !isPipeTableSeparator(rows[1])) continue;
+
+    const headerCols = splitPipeTableCells(rows[0]);
+    const sepCols = splitPipeTableCells(rows[1]);
+    if (headerCols.length !== sepCols.length || headerCols.length < 2) continue;
+
+    let consistent = true;
+    for (let i = 2; i < rows.length; i++) {
+      if (splitPipeTableCells(rows[i]).length !== headerCols.length) {
+        consistent = false;
+        break;
+      }
+    }
+    if (consistent) {
+      out.push({ startLine, endLine: startLine + rows.length - 1 });
+    }
+  }
+  return out;
+}
+
+function buildTablePreviewHtml(rows: string[]): string {
+  const headerCells = splitPipeTableCells(rows[0]);
+  const bodyRows = rows.slice(2);
+  let html = '<table class="cm-md-table-preview-table"><thead><tr>';
+  for (const h of headerCells) {
+    html += `<th>${escapeHtmlCell(h)}</th>`;
+  }
+  html += "</tr></thead><tbody>";
+  for (const row of bodyRows) {
+    html += "<tr>";
+    for (const c of splitPipeTableCells(row)) {
+      html += `<td>${escapeHtmlCell(c)}</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  return html;
+}
+
+class CollapsedMarkdownTableWidget extends WidgetType {
+  constructor(
+    readonly html: string,
+    readonly tableFrom: number,
+    readonly tableTo: number,
+  ) {
+    super();
+  }
+  eq(other: CollapsedMarkdownTableWidget) {
+    return (
+      other.html === this.html &&
+      other.tableFrom === this.tableFrom &&
+      other.tableTo === this.tableTo
+    );
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-md-table-preview cm-md-table-preview--collapsed";
+    wrap.title = "Click to edit table";
+    wrap.innerHTML = this.html;
+    wrap.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      view.focus();
+      view.dispatch({
+        selection: EditorSelection.cursor(this.tableFrom),
+        scrollIntoView: true,
+      });
+    });
+    return wrap;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function selectionIntersectsRange(
+  sel: EditorState["selection"],
+  from: number,
+  to: number,
+): boolean {
+  const { main } = sel;
+  return main.from <= to && main.to >= from;
+}
+
+function buildMarkdownTableCollapseDecorations(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = state.doc;
+
+  for (const span of findCompleteMarkdownTables(doc)) {
+    const startLine = doc.line(span.startLine);
+    const endLine = doc.line(span.endLine);
+    const from = startLine.from;
+    const to = endLine.to;
+
+    if (selectionIntersectsRange(state.selection, from, to)) {
+      continue;
+    }
+
+    const rows: string[] = [];
+    for (let ln = span.startLine; ln <= span.endLine; ln++) {
+      rows.push(doc.line(ln).text);
+    }
+    const html = buildTablePreviewHtml(rows);
+
+    builder.add(
+      from,
+      to,
+      Decoration.replace({
+        widget: new CollapsedMarkdownTableWidget(html, from, to),
+        block: true,
+      }),
+    );
+  }
+
+  return builder.finish();
+}
+
+function makeMarkdownTableCollapseField() {
+  return StateField.define<DecorationSet>({
+    create(state) {
+      return buildMarkdownTableCollapseDecorations(state);
+    },
+    update(_decos, tr) {
+      // Selection affects collapse vs raw markdown — rebuild each transaction (cheap vs doc size).
+      return buildMarkdownTableCollapseDecorations(tr.state);
+    },
+    provide(f) {
+      return EditorView.decorations.from(f);
+    },
+  });
+}
+
 /** Cmd/Ctrl+Click on a markdown link in source mode opens the URL or note. */
 function makeLinkClickHandler() {
   return EditorView.domEventHandlers({
     mousedown(event, view) {
       if (!event.metaKey && !event.ctrlKey) return false;
+
+      const fromCollapsed = (event.target as HTMLElement | null)?.closest(
+        "[data-md-link-href]",
+      ) as HTMLElement | null;
+      const collapsedHref = fromCollapsed?.dataset.mdLinkHref?.trim();
+      if (collapsedHref) {
+        event.preventDefault();
+
+        if (/^https?:\/\//i.test(collapsedHref)) {
+          invoke("open_url", { url: collapsedHref }).catch(console.error);
+        } else {
+          const noteName = collapsedHref.replace(/\.md$/i, "");
+          const { noteIndex, setActiveFile } = useStore.getState();
+          const note = noteIndex.find(
+            (n) =>
+              n.name.replace(/\.md$/i, "").toLowerCase() === noteName.toLowerCase(),
+          );
+          if (note) {
+            invoke<string>("get_file_content", { path: note.path })
+              .then((c) => setActiveFile(note.path, c))
+              .catch(console.error);
+          }
+        }
+        return true;
+      }
 
       const coords = { x: event.clientX, y: event.clientY };
       const pos = view.posAtCoords(coords);
@@ -1444,7 +1763,11 @@ export function makeInlinePreviewExtension(
   vaultPath: string,
   filePath: string,
 ) {
-  return [makeImageDecosField(vaultPath, filePath), makeLinkClickHandler()];
+  return [
+    makeImageDecosField(vaultPath, filePath),
+    makeMarkdownTableCollapseField(),
+    makeLinkClickHandler(),
+  ];
 }
 
 // ── 10. Smart paste ──────────────────────────────────────────────────────────
