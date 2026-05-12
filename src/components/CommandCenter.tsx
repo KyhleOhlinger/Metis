@@ -57,6 +57,16 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   const [tab, setTab] = useState<"info" | "ai" | "settings">("info");
   const [showNewPersonaModal, setShowNewPersonaModal] = useState(false);
 
+  useEffect(() => {
+    const id = requestAnimationFrame(() => {
+      const el = document.querySelector("[data-cc-scroll-region]");
+      if (el instanceof HTMLElement) {
+        el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [tab]);
+
   // Load personas + settings from disk on first mount
   useEffect(() => {
     personaStore.loadFromDisk();
@@ -196,7 +206,7 @@ function InfoTab({
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3" data-cc-scroll-region>
         <Section title="Vault">
           <KV label="Path" value={vaultPath ?? "—"} mono />
         </Section>
@@ -1491,6 +1501,7 @@ function AITab({
           area can actually shrink and scroll rather than overflow the panel */}
       <div
         ref={responseRef}
+        data-cc-scroll-region
         className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-xs text-text-secondary font-mono whitespace-pre-wrap leading-relaxed"
       >
         {/* Idle placeholder */}
@@ -1821,7 +1832,7 @@ function SettingsTab({
     "rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-surface-overlay hover:text-text-primary transition-colors";
 
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-1">
+    <div className="flex-1 overflow-y-auto p-3 space-y-1" data-cc-scroll-region>
 
       {/* ── Personas ─────────────────────────────────────────────────────── */}
       <CollapsibleSection

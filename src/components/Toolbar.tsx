@@ -30,6 +30,7 @@ import {
   Bug,
   BookOpen,
   ChevronDown,
+  Table,
   type LucideIcon,
 } from "lucide-react";
 import { ChangeSet, EditorSelection, type ChangeSpec } from "@codemirror/state";
@@ -317,6 +318,20 @@ function insertHRule(view: EditorView) {
   view.focus();
 }
 
+/** Insert a minimal GitHub-Flavored Markdown table with header, separator, and one body row. */
+function insertTable(view: EditorView) {
+  const { from } = sel(view);
+  const line = view.state.doc.lineAt(from);
+  const insertPos = line.to;
+  const insert =
+    "\n\n| Header | Header |\n| --- | --- |\n| Cell | Cell |\n";
+  view.dispatch({
+    changes: { from: insertPos, insert },
+    selection: { anchor: insertPos + insert.indexOf("Cell") },
+  });
+  view.focus();
+}
+
 // ── Callout insertion ─────────────────────────────────────────────────────────
 
 /**
@@ -494,6 +509,7 @@ const ITEMS: ToolbarItem[] = [
   { label: "Bullet list",    Icon: List,        action: toggleBulletList,  group: "block" },
   { label: "Numbered list",  Icon: ListOrdered, action: toggleOrderedList, group: "block" },
   { label: "Task list",      Icon: ListChecks,  action: toggleTaskList,    group: "block" },
+  { label: "Insert table",   Icon: Table,       action: insertTable,       group: "block" },
   { label: "Horizontal rule", Icon: Minus,      action: insertHRule,       group: "misc"  },
 ];
 

@@ -5,18 +5,6 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import { resolveWikilinkAssetSrc } from "../utils/resolveWikilinkAsset";
 
-// ── Cursor-to-scroll helpers ──────────────────────────────────────────────────
-
-/**
- * Convert a character offset into a 0-based line index.
- * Slicing up to the offset and counting '\n' chars is O(offset) but fast
- * enough for typical note lengths.
- */
-function offsetToLine(content: string, offset: number): number {
-  const safeOffset = Math.min(Math.max(0, offset), content.length);
-  return content.slice(0, safeOffset).split("\n").length - 1;
-}
-
 interface Props {
   content: string;
   filePath: string;
@@ -27,7 +15,7 @@ interface Props {
 
 export default function MarkdownPreview({ content, filePath, vaultPath, bgColor, textColor }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { noteIndex, assetIndex, setActiveFile, cursorOffset } = useStore();
+  const { noteIndex, assetIndex, setActiveFile } = useStore();
 
   const fileDir = useMemo(
     () => filePath.substring(0, filePath.lastIndexOf("/")),
@@ -143,31 +131,17 @@ export default function MarkdownPreview({ content, filePath, vaultPath, bgColor,
     });
   }, [html]);
 
-  // ── Scroll to cursor position when preview first renders ─────────────────
-  //
-  // MarkdownPreview is only mounted while in Visual mode.  Each time the user
-  // switches Source → Visual the component mounts fresh, so this effect fires
-  // once per mode-switch and scrolls the preview to the paragraph that the
-  // cursor was on in the editor.
-  //
-  // We defer via rAF to ensure the browser has performed layout (scrollHeight
-  // reflects actual content height, not 0).
+  // ── Scroll to bottom when Visual preview mounts / updates ─────────────────
+  // Page transitions prefer anchoring at the end of the document viewport.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
     const raf = requestAnimationFrame(() => {
-      const totalLines = Math.max(1, content.split("\n").length);
-      const cursorLine = offsetToLine(content, cursorOffset);
-      const fraction = cursorLine / totalLines;
-      const targetScrollTop = fraction * Math.max(0, el.scrollHeight - el.clientHeight);
-      el.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
     });
 
     return () => cancelAnimationFrame(raf);
-  // html as dependency: fires after each re-render of the preview content,
-  // which includes the initial mount.  Intentionally NOT including cursorOffset
-  // so the preview doesn't jump while the user is reading in Visual mode.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [html]);
 
