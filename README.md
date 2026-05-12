@@ -242,7 +242,7 @@ Metis/
 │   ├── src/main.rs             # All Rust commands + FS watcher + menu
 │   ├── resources/dictionaries/ # Bundled Hunspell .aff/.dic files (en_US, en_GB)
 │   └── tauri.conf.json         # App config, CSP, asset protocol
-└── wiki/                       # Project wiki (Git Wiki style)
+└── …                           # Developer wiki: separate repo **Metis.wiki** (GitHub Wiki), not under this tree
 ```
 
 ---
