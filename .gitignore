@@ -16,6 +16,10 @@ dist-ssr/
 target/
 src-tauri/target/
 src-tauri/gen/
+
+# Wiki source of truth is the sibling Metis.wiki repo — do not maintain wiki/ here
+/wiki/
+
 specs/
 
 # Logs and caches
