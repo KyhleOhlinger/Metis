@@ -16,7 +16,7 @@ interface Props {
 }
 
 export default function PersonaCreator({ editing, onClose }: Props) {
-  const { upsertPersona } = usePersonaStore();
+  const upsertPersona = usePersonaStore((s) => s.upsertPersona);
 
   const [name, setName] = useState(editing?.name ?? "");
   const [icon, setIcon] = useState(editing?.icon ?? "✍️");

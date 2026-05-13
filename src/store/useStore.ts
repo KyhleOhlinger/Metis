@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+/**
+ * UI components should subscribe with **selectors** or `useShallow` from `zustand/react/shallow`
+ * when reading multiple fields — avoid `useStore()` with no arguments (re-renders on *any* slice change).
+ * Use `useStore.getState()` inside callbacks/effects when a subscription is not needed.
+ */
 
 export interface FileNode {
   name: string;
@@ -338,18 +342,26 @@ export const useStore = create<MetisState>((set, get) => ({
     const { noteIndex, vaultPath } = get();
     if (!noteIndex.length || !vaultPath) return;
     const runVaultPath = vaultPath;
-    // Read in parallel batches to avoid overwhelming the Tauri async runtime.
-    const BATCH = 20;
+    /** One `get_file_contents_batch` IPC per slice (max 100 paths); falls back to per-file reads if the command fails. */
+    const BATCH = 100;
     const updatedByPath = new Map(noteIndex.map((n) => [n.path, n]));
     for (let i = 0; i < noteIndex.length; i += BATCH) {
       // Abort stale enrichment runs after a vault switch.
       if (get().vaultPath !== runVaultPath) return;
       const slice = noteIndex.slice(i, i + BATCH);
-      const contents = await Promise.all(
-        slice.map((n) =>
-          invoke<string>("get_file_content", { path: n.path }).catch(() => ""),
-        ),
-      );
+      const paths = slice.map((n) => n.path);
+
+      let contents: string[];
+      try {
+        const batch = await invoke<string[]>("get_file_contents_batch", { paths });
+        contents =
+          Array.isArray(batch) && batch.length === paths.length
+            ? batch
+            : await Promise.all(paths.map((path) => invoke<string>("get_file_content", { path }).catch(() => "")));
+      } catch {
+        contents = await Promise.all(paths.map((path) => invoke<string>("get_file_content", { path }).catch(() => "")));
+      }
+
       contents.forEach((content, j) => {
         const path = slice[j].path;
         const existing = updatedByPath.get(path);

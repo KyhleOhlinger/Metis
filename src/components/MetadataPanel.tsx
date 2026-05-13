@@ -18,6 +18,7 @@
  */
 
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import { STATUS_COLORS } from "../constants";
@@ -168,7 +169,9 @@ interface Props {
 
 export default function MetadataPanel({ content, filePath, onContentChange, onLinkClick }: Props) {
   const [open, setOpen] = useState(false);
-  const { refreshVault, vaultPath } = useStore();
+  const { refreshVault, vaultPath } = useStore(
+    useShallow((s) => ({ refreshVault: s.refreshVault, vaultPath: s.vaultPath })),
+  );
 
   // Auto-derive parent folder from the file path (read-only — not written to frontmatter).
   // Returns null when the note lives directly at the vault root.

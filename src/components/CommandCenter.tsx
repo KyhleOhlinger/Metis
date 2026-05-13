@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import { usePersonaStore, selectActivePersona, selectProviderKey } from "../store/usePersonaStore";
@@ -50,9 +51,30 @@ function CollapsedStrip({ onToggle }: { onToggle: () => void }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function CommandCenter({ isOpen, onToggle }: Props) {
-  const { activeFilePath, activeFileContent, isDirty, vaultPath, files } = useStore();
-  const personaStore = usePersonaStore();
+  const { activeFilePath, activeFileContent, isDirty, vaultPath, files } = useStore(
+    useShallow((s) => ({
+      activeFilePath: s.activeFilePath,
+      activeFileContent: s.activeFileContent,
+      isDirty: s.isDirty,
+      vaultPath: s.vaultPath,
+      files: s.files,
+    })),
+  );
+  const loadFromDisk = usePersonaStore((s) => s.loadFromDisk);
   const activePersona = usePersonaStore(selectActivePersona);
+  const personaSlice = usePersonaStore(
+    useShallow((s) => ({
+      personas: s.personas,
+      activePersonaId: s.activePersonaId,
+      settings: s.settings,
+      history: s.history,
+      setActivePersona: s.setActivePersona,
+      addHistory: s.addHistory,
+      clearHistory: s.clearHistory,
+      updateProviderConfig: s.updateProviderConfig,
+      updateSettings: s.updateSettings,
+    })),
+  );
 
   const [tab, setTab] = useState<"info" | "ai" | "settings">("info");
   const [showNewPersonaModal, setShowNewPersonaModal] = useState(false);
@@ -69,9 +91,8 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
 
   // Load personas + settings from disk on first mount
   useEffect(() => {
-    personaStore.loadFromDisk();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    loadFromDisk();
+  }, [loadFromDisk]);
 
   // Consume a scope request dispatched from the Sidebar context menu
   const pendingScope = usePersonaStore((s) => s.pendingScope);
@@ -156,27 +177,27 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
           {tab === "ai" && (
             <AITab
               activePersona={activePersona}
-              personas={personaStore.personas}
-              activePersonaId={personaStore.activePersonaId}
-              settings={personaStore.settings}
-              history={personaStore.history}
+              personas={personaSlice.personas}
+              activePersonaId={personaSlice.activePersonaId}
+              settings={personaSlice.settings}
+              history={personaSlice.history}
               activeFileContent={activeFileContent}
               activeFilePath={activeFilePath}
               vaultPath={vaultPath}
               files={files}
               initialScope={pendingScope ?? undefined}
-              onSelectPersona={personaStore.setActivePersona}
-              onAddHistory={personaStore.addHistory}
-              onClearHistory={personaStore.clearHistory}
+              onSelectPersona={personaSlice.setActivePersona}
+              onAddHistory={personaSlice.addHistory}
+              onClearHistory={personaSlice.clearHistory}
               onNewPersona={() => setShowNewPersonaModal(true)}
               onOpenSettings={() => setTab("settings")}
             />
           )}
           {tab === "settings" && (
             <SettingsTab
-              settings={personaStore.settings}
-              onUpdateProvider={personaStore.updateProviderConfig}
-              onUpdateSettings={personaStore.updateSettings}
+              settings={personaSlice.settings}
+              onUpdateProvider={personaSlice.updateProviderConfig}
+              onUpdateSettings={personaSlice.updateSettings}
             />
           )}
         </div>
@@ -2084,7 +2105,13 @@ function PersonasSection({
   hideHeader?: boolean;
   newPersonaTrigger?: number;
 }) {
-  const { personas, upsertPersona, deletePersona } = usePersonaStore();
+  const { personas, upsertPersona, deletePersona } = usePersonaStore(
+    useShallow((s) => ({
+      personas: s.personas,
+      upsertPersona: s.upsertPersona,
+      deletePersona: s.deletePersona,
+    })),
+  );
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showNewForm, setShowNewForm] = useState(false);
 

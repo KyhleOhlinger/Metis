@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState, type CSSProperties } from "react";
+import { useShallow } from "zustand/react/shallow";
 import MetadataPanel from "./MetadataPanel";
 import SelectionToolbar from "./SelectionToolbar";
 import {
@@ -251,7 +252,18 @@ export default function Editor() {
     noteIndex,
     editorTab: editorMode,
     setEditorTab: setEditorMode,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      activeFilePath: s.activeFilePath,
+      activeFileContent: s.activeFileContent,
+      setActiveFileContent: s.setActiveFileContent,
+      markSaved: s.markSaved,
+      vaultPath: s.vaultPath,
+      noteIndex: s.noteIndex,
+      editorTab: s.editorTab,
+      setEditorTab: s.setEditorTab,
+    })),
+  );
 
   const scheduleSave = useDebouncedSave(markSaved);
 

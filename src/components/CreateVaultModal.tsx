@@ -12,7 +12,7 @@ export default function CreateVaultModal({ onClose }: CreateVaultModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { setVault } = useStore();
+  const setVault = useStore((s) => s.setVault);
 
   useEffect(() => {
     inputRef.current?.focus();

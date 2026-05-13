@@ -8,13 +8,23 @@
 
 import { useStore } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
+import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_QUICK_ACTIONS } from "../types/persona";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function SelectionToolbar() {
-  const { selectedText, selectionCoords, selectionEndOffset, clearSelection } = useStore();
-  const { settings, setSelectionQuery } = usePersonaStore();
+  const { selectedText, selectionCoords, selectionEndOffset, clearSelection } = useStore(
+    useShallow((s) => ({
+      selectedText: s.selectedText,
+      selectionCoords: s.selectionCoords,
+      selectionEndOffset: s.selectionEndOffset,
+      clearSelection: s.clearSelection,
+    })),
+  );
+  const { settings, setSelectionQuery } = usePersonaStore(
+    useShallow((s) => ({ settings: s.settings, setSelectionQuery: s.setSelectionQuery })),
+  );
 
   // Fall back to hardcoded defaults until settings have been loaded from disk
   const quickActions = settings.quickActions?.length

@@ -2,10 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import Toolbar from "./Toolbar";
 import PlannerCodeMirrorField from "./PlannerCodeMirrorField";
+import ReviewsPlannerGrid from "./planner/ReviewsPlannerGrid";
 
 type DayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 type TaskStatus = "work" | "holiday" | "sick" | "pto" | "personal" | "offsite";
-type PlannerTab = "daily" | "weekly" | "monthly" | "templates" | "tracker" | "goals";
+type PlannerTab = "daily" | "weekly" | "monthly" | "templates" | "tracker" | "goals" | "reviews";
 type TemplateCadence = "daily" | "weekly" | "monthly" | "interval";
 type TrackerStatus = "Complete" | "Coming Up" | "Pending";
 
@@ -107,11 +108,34 @@ const STORAGE_KEY = "metis_daily_task_view_v1";
 const TEMPLATE_STORAGE_KEY = "metis_daily_task_templates_v1";
 const LAYOUT_TEMPLATE_STORAGE_KEY = "metis_planner_layout_templates_v1";
 const GOALS_STORAGE_KEY = "metis_planner_goals_v1";
+const REVIEWS_STORAGE_KEY = "metis_planner_reviews_v1";
 
 export type GoalSection = {
   id: string;
   title: string;
   content: string;
+};
+
+const DEFAULT_REVIEW_HEADERS = [
+  "Review Cycle",
+  "Manager Review - Strengths",
+  "Manager Review - Areas of Opportunity",
+  "Personal Review - Strengths",
+  "Personal Review - Areas of Opportunity",
+] as const;
+
+export type ReviewTableRow = {
+  id: string;
+  cycleLabel: string;
+  managerStrengths: string;
+  managerOpportunity: string;
+  personalStrengths: string;
+  personalOpportunity: string;
+};
+
+type ReviewsTableState = {
+  headers: [string, string, string, string, string];
+  rows: ReviewTableRow[];
 };
 const TEMPLATE_FUTURE_HORIZON_DAYS = 365;
 const DAY_NAMES: DayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -627,6 +651,62 @@ function saveGoals(sections: GoalSection[]) {
   localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(sections, null, 2));
 }
 
+function normalizeReviewHeaders(raw: unknown): [string, string, string, string, string] {
+  const d = [...DEFAULT_REVIEW_HEADERS] as [string, string, string, string, string];
+  if (!Array.isArray(raw)) return d;
+  return [
+    typeof raw[0] === "string" ? raw[0] : d[0],
+    typeof raw[1] === "string" ? raw[1] : d[1],
+    typeof raw[2] === "string" ? raw[2] : d[2],
+    typeof raw[3] === "string" ? raw[3] : d[3],
+    typeof raw[4] === "string" ? raw[4] : d[4],
+  ];
+}
+
+function normalizeReviewRow(o: unknown, newId: () => string): ReviewTableRow | null {
+  if (!o || typeof o !== "object") return null;
+  const r = o as Record<string, unknown>;
+  const id = typeof r.id === "string" && r.id ? r.id : newId();
+  return {
+    id,
+    cycleLabel: typeof r.cycleLabel === "string" ? r.cycleLabel : "",
+    managerStrengths: typeof r.managerStrengths === "string" ? r.managerStrengths : "",
+    managerOpportunity: typeof r.managerOpportunity === "string" ? r.managerOpportunity : "",
+    personalStrengths: typeof r.personalStrengths === "string" ? r.personalStrengths : "",
+    personalOpportunity: typeof r.personalOpportunity === "string" ? r.personalOpportunity : "",
+  };
+}
+
+function defaultReviewsState(): ReviewsTableState {
+  return {
+    headers: [...DEFAULT_REVIEW_HEADERS] as [string, string, string, string, string],
+    rows: [],
+  };
+}
+
+function loadReviews(): ReviewsTableState {
+  try {
+    const raw = localStorage.getItem(REVIEWS_STORAGE_KEY);
+    if (!raw) return defaultReviewsState();
+    const parsed = JSON.parse(raw) as { headers?: unknown; rows?: unknown };
+    const headers = normalizeReviewHeaders(parsed.headers);
+    const rows: ReviewTableRow[] = [];
+    if (Array.isArray(parsed.rows)) {
+      for (const item of parsed.rows) {
+        const row = normalizeReviewRow(item, makeRowId);
+        if (row) rows.push(row);
+      }
+    }
+    return { headers, rows };
+  } catch {
+    return defaultReviewsState();
+  }
+}
+
+function saveReviews(state: ReviewsTableState) {
+  localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(state, null, 2));
+}
+
 function isTrackerActive(status: TrackerStatus): boolean {
   return status === "Complete" || status === "Coming Up";
 }
@@ -1073,6 +1153,7 @@ export default function DailyTaskGrid() {
     cutoffDate: string;
   } | null>(null);
   const [goalSections, setGoalSections] = useState<GoalSection[]>(() => loadGoals());
+  const [reviewsState, setReviewsState] = useState<ReviewsTableState>(() => loadReviews());
   const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
   const dailyGridShellRef = useRef<HTMLDivElement>(null);
   const visibleWeeks = useMemo(
@@ -1133,6 +1214,10 @@ export default function DailyTaskGrid() {
   useEffect(() => {
     saveGoals(goalSections);
   }, [goalSections]);
+
+  useEffect(() => {
+    saveReviews(reviewsState);
+  }, [reviewsState]);
 
   useEffect(() => {
     if (importRegion === "ALL") return;
@@ -1232,6 +1317,43 @@ export default function DailyTaskGrid() {
   };
   const removeGoalSection = (id: string) => {
     setGoalSections((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const updateReviewHeader = (index: number, value: string) => {
+    setReviewsState((prev) => {
+      if (index < 0 || index > 4) return prev;
+      const headers = [...prev.headers] as [string, string, string, string, string];
+      headers[index] = value;
+      return { ...prev, headers };
+    });
+  };
+
+  const updateReviewRow = (id: string, patch: Partial<Omit<ReviewTableRow, "id">>) => {
+    setReviewsState((prev) => ({
+      ...prev,
+      rows: prev.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+  };
+
+  const addReviewRow = () => {
+    setReviewsState((prev) => ({
+      ...prev,
+      rows: [
+        ...prev.rows,
+        {
+          id: makeRowId(),
+          cycleLabel: "Review period",
+          managerStrengths: "",
+          managerOpportunity: "",
+          personalStrengths: "",
+          personalOpportunity: "",
+        },
+      ],
+    }));
+  };
+
+  const removeReviewRow = (id: string) => {
+    setReviewsState((prev) => ({ ...prev, rows: prev.rows.filter((r) => r.id !== id) }));
   };
 
   const updateTracker = (updater: (current: TrackerData) => TrackerData) => {
@@ -1545,6 +1667,7 @@ export default function DailyTaskGrid() {
             ["daily", "Daily Log"],
             ["weekly", "Weekly Review"],
             ["monthly", "Monthly Review"],
+            ["reviews", "Reviews"],
             ["goals", "Goals"],
             ["templates", "Templates"],
             ["tracker", "PTO & Events"],
@@ -1618,7 +1741,12 @@ export default function DailyTaskGrid() {
           tab === "daily" && dailyExpandedCellKey ? "flex flex-col overflow-x-auto overflow-y-hidden" : "overflow-auto",
         ].join(" ")}
       >
-        {(tab === "weekly" || tab === "monthly" || tab === "templates" || tab === "goals") && (
+        {(tab === "weekly" ||
+          tab === "monthly" ||
+          tab === "templates" ||
+          tab === "goals" ||
+          tab === "reviews" ||
+          tab === "daily") && (
           <Toolbar
             viewRef={plannerToolbarViewRef}
             spellcheck={false}
@@ -1671,10 +1799,8 @@ export default function DailyTaskGrid() {
                   const workLabelWrapClass = dailyExpanded
                     ? "flex min-h-0 flex-1 flex-col text-[10px] font-semibold text-text-secondary"
                     : "block text-[10px] font-semibold text-text-secondary";
-                  const workTextareaClass = [
-                    "mt-1 w-full resize-none rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-primary",
-                    dailyExpanded ? "min-h-0 flex-1" : "h-16",
-                  ].join(" ");
+                  const dailyCmFillHeight = dailyGridWeighted;
+                  const dailyCmMinH = 64;
                   const useTemplateLabels = isOnOrAfterToday(cellDate);
                   const plannedLabel = useTemplateLabels
                     ? layoutTemplates.dailyPrimaryLabel
@@ -1780,38 +1906,50 @@ export default function DailyTaskGrid() {
                         <div className={[workBlocksWrapClass, dailyGridWeighted ? "min-h-0 flex-1" : ""].filter(Boolean).join(" ")}>
                           <label className={workLabelWrapClass}>
                             {plannedLabel}:
-                            <textarea
-                              value={cell.planned ?? ""}
-                              onChange={(e) =>
-                                updateEntry(monday, day, {
-                                  ...cell,
-                                  planned: e.target.value,
-                                  status: "work",
-                                  label: undefined,
-                                  plannedAutoGenerated: false,
-                                  plannedTemplateIds: undefined,
-                                })
-                              }
-                              onFocus={() => setDailyExpandedCellKey(cellFocusKey)}
-                              className={workTextareaClass}
-                            />
+                            <div className="mt-1 min-h-0">
+                              <PlannerCodeMirrorField
+                                key={`${cellFocusKey}-planned`}
+                                value={cell.planned ?? ""}
+                                onChange={(next) =>
+                                  updateEntry(monday, day, {
+                                    ...cell,
+                                    planned: next,
+                                    status: "work",
+                                    label: undefined,
+                                    plannedAutoGenerated: false,
+                                    plannedTemplateIds: undefined,
+                                  })
+                                }
+                                minHeightPx={dailyCmMinH}
+                                fontSizePx={10}
+                                fillHeight={dailyCmFillHeight}
+                                toolbarViewRef={plannerToolbarViewRef}
+                                onEditorFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                              />
+                            </div>
                           </label>
                           {didEnabled && (
                             <label className={workLabelWrapClass}>
                               {didLabel}:
-                              <textarea
-                                value={cell.did ?? ""}
-                                onChange={(e) =>
-                                  updateEntry(monday, day, {
-                                    ...cell,
-                                    did: e.target.value,
-                                    status: "work",
-                                    label: undefined,
-                                  })
-                                }
-                                onFocus={() => setDailyExpandedCellKey(cellFocusKey)}
-                                className={workTextareaClass}
-                              />
+                              <div className="mt-1 min-h-0">
+                                <PlannerCodeMirrorField
+                                  key={`${cellFocusKey}-did`}
+                                  value={cell.did ?? ""}
+                                  onChange={(next) =>
+                                    updateEntry(monday, day, {
+                                      ...cell,
+                                      did: next,
+                                      status: "work",
+                                      label: undefined,
+                                    })
+                                  }
+                                  minHeightPx={dailyCmMinH}
+                                  fontSizePx={10}
+                                  fillHeight={dailyCmFillHeight}
+                                  toolbarViewRef={plannerToolbarViewRef}
+                                  onEditorFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                                />
+                              </div>
                             </label>
                           )}
                         </div>
@@ -2143,6 +2281,36 @@ export default function DailyTaskGrid() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {tab === "reviews" && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="text-[11px] font-semibold text-text-primary">Reviews</p>
+                <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
+                  Same grid pattern as Daily Log: <code className="text-[9px]">gap-1.5</code> gutters, purple rounded column and
+                  row headers, and card-style markdown cells (
+                  <code className="text-[9px]">metis_planner_reviews_v1</code>).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={addReviewRow}
+                className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
+              >
+                Add row
+              </button>
+            </div>
+            <ReviewsPlannerGrid
+              headers={reviewsState.headers}
+              rows={reviewsState.rows}
+              onHeaderChange={updateReviewHeader}
+              onRowPatch={updateReviewRow}
+              onRemoveRow={removeReviewRow}
+              toolbarViewRef={plannerToolbarViewRef}
+            />
           </div>
         )}
 

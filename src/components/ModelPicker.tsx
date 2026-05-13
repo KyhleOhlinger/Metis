@@ -14,6 +14,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { usePersonaStore } from "../store/usePersonaStore";
 import {
   DEFAULT_MODELS,
@@ -62,7 +63,14 @@ export default function ModelPicker({
     modelCache,
     modelFetchStatus,
     fetchModelsForProvider,
-  } = usePersonaStore();
+  } = usePersonaStore(
+    useShallow((s) => ({
+      settings: s.settings,
+      modelCache: s.modelCache,
+      modelFetchStatus: s.modelFetchStatus,
+      fetchModelsForProvider: s.fetchModelsForProvider,
+    })),
+  );
 
   const [open, setOpen]             = useState(false);
   const [inputValue, setInputValue] = useState(value);

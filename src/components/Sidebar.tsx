@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { FoldVertical, UnfoldVertical, Search } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, FileNode, VaultData } from "../store/useStore";
@@ -205,7 +206,18 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
   const {
     activeFilePath, setActiveFile, isDirty, markSaved,
     refreshVault, activeFolderPath, setActiveFolderPath, noteIndex,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      activeFilePath: s.activeFilePath,
+      setActiveFile: s.setActiveFile,
+      isDirty: s.isDirty,
+      markSaved: s.markSaved,
+      refreshVault: s.refreshVault,
+      activeFolderPath: s.activeFolderPath,
+      setActiveFolderPath: s.setActiveFolderPath,
+      noteIndex: s.noteIndex,
+    })),
+  );
 
   const activePersona = usePersonaStore(selectActivePersona);
   const setPendingScope = usePersonaStore((s) => s.setPendingScope);
@@ -555,7 +567,24 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
     pendingMenuAction, setPendingMenuAction,
     sidebarView, setSidebarView,
     editorTab, setEditorTab,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({
+      vaultPath: s.vaultPath,
+      files: s.files,
+      setVault: s.setVault,
+      activeFilePath: s.activeFilePath,
+      isDirty: s.isDirty,
+      refreshVault: s.refreshVault,
+      setActiveFolderPath: s.setActiveFolderPath,
+      setActiveFile: s.setActiveFile,
+      pendingMenuAction: s.pendingMenuAction,
+      setPendingMenuAction: s.setPendingMenuAction,
+      sidebarView: s.sidebarView,
+      setSidebarView: s.setSidebarView,
+      editorTab: s.editorTab,
+      setEditorTab: s.setEditorTab,
+    })),
+  );
 
   const [loading, setLoading] = useState(false);
   const [showCreateVault, setShowCreateVault] = useState(false);
