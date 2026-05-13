@@ -1,7 +1,8 @@
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
 import { resolveWikilinkAssetSrc } from "../utils/resolveWikilinkAsset";
 
@@ -15,7 +16,16 @@ interface Props {
 
 export default function MarkdownPreview({ content, filePath, vaultPath, bgColor, textColor }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { noteIndex, assetIndex, setActiveFile } = useStore();
+  const { noteIndex, assetIndex, setActiveFile } = useStore(
+    useShallow((s) => ({
+      noteIndex: s.noteIndex,
+      assetIndex: s.assetIndex,
+      setActiveFile: s.setActiveFile,
+    })),
+  );
+
+  /** Defer heavy marked + DOMPurify so typing stays responsive (React 18 concurrent). */
+  const deferredContent = useDeferredValue(content);
 
   const fileDir = useMemo(
     () => filePath.substring(0, filePath.lastIndexOf("/")),
@@ -82,7 +92,7 @@ export default function MarkdownPreview({ content, filePath, vaultPath, bgColor,
     // ── Pre-process ![[wiki-image.ext]] ───────────────────────────────────
     // Use vault-wide asset resolution so Obsidian vaults work out-of-the-box:
     // ![[photo.jpg]] finds the file anywhere in the vault, not just the root.
-    let md = content.replace(
+    let md = deferredContent.replace(
       /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,
       (_, filename) =>
         `![${filename}](${resolveWikilinkAssetSrc(filename, assetIndex, vaultPath)})`,
@@ -113,7 +123,7 @@ export default function MarkdownPreview({ content, filePath, vaultPath, bgColor,
       ADD_TAGS: ["input"],
       ADD_ATTR: ["type", "checked", "disabled", "data-src"],
     });
-  }, [content, filePath, vaultPath, fileDir, assetIndex]);
+  }, [deferredContent, filePath, vaultPath, fileDir, assetIndex]);
 
   // ── Restore image sources after each render ────────────────────────────────
   // DOMPurify preserved data-src; now we move it to src so the browser loads

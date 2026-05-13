@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { DEFAULT_QUICK_ACTIONS, type QuickAction } from "../types/persona";
 
@@ -190,7 +191,15 @@ export default function QuickActionsSettings({
   const {
     settings, personas,
     upsertQuickAction, deleteQuickAction, reorderQuickActions,
-  } = usePersonaStore();
+  } = usePersonaStore(
+    useShallow((s) => ({
+      settings: s.settings,
+      personas: s.personas,
+      upsertQuickAction: s.upsertQuickAction,
+      deleteQuickAction: s.deleteQuickAction,
+      reorderQuickActions: s.reorderQuickActions,
+    })),
+  );
 
   const quickActions = settings.quickActions?.length
     ? settings.quickActions

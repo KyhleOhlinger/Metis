@@ -478,6 +478,61 @@ fn get_file_content(
     fs::read_to_string(&resolved).map_err(|e| format!("Failed to read file: {e}"))
 }
 
+/// Read many `.md` files in **one** IPC round-trip for vault index enrichment.
+///
+/// Returns `Vec<String>` parallel to `paths`: each entry is the file body or
+/// **empty string** if the path is not `.md`, outside the vault, missing, or
+/// unreadable — matching `get_file_content(...).catch(() => "")` on the JS side.
+///
+/// SECURITY: Same boundary checks as `get_file_content`. At most 100 paths per call.
+#[tauri::command]
+fn get_file_contents_batch(
+    paths: Vec<String>,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Vec<String>, String> {
+    if paths.len() > 100 {
+        return Err("get_file_contents_batch: at most 100 paths per call.".into());
+    }
+
+    let lock = vault_state.0.lock().unwrap();
+    let vault_str = lock
+        .get(window.label())
+        .ok_or("get_file_contents_batch: no vault registered for this window.")?
+        .clone();
+    drop(lock);
+    let vault = PathBuf::from(&vault_str);
+    let canon_v = canon_vault(&vault).map_err(|e| format!("get_file_contents_batch: {e}"))?;
+
+    let mut out = Vec::with_capacity(paths.len());
+    for path in paths {
+        let target = PathBuf::from(&path);
+        if target.extension().and_then(|e| e.to_str()) != Some("md") {
+            out.push(String::new());
+            continue;
+        }
+
+        let resolved = match safe_resolve(&target) {
+            Ok(r) => r,
+            Err(_) => {
+                out.push(String::new());
+                continue;
+            }
+        };
+        if !resolved.starts_with(&canon_v) {
+            out.push(String::new());
+            continue;
+        }
+        if !resolved.exists() || resolved.is_dir() {
+            out.push(String::new());
+            continue;
+        }
+
+        out.push(fs::read_to_string(&resolved).unwrap_or_default());
+    }
+    Ok(out)
+}
+
 // ── Name sanitisation ─────────────────────────────────────────────────────────
 
 /// Validate that `name` is safe to use as a file or folder name.
@@ -2382,6 +2437,7 @@ fn main() {
             get_folder_md_contents,
             save_note,
             get_file_content,
+            get_file_contents_batch,
             create_vault,
             create_note,
             create_folder,

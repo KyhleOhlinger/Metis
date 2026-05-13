@@ -19,6 +19,8 @@ export default defineConfig({
   // Prevent Vite from obscuring Rust compile errors
   clearScreen: false,
   build: {
+    /** Tauri’s WebView2 / WKWebView targets modern ECMAScript; avoids excessive downlevel transforms. */
+    target: "es2022",
     // CodeMirror + Lezer grammars are inherently large; 500 kB default is too
     // strict for a desktop shell that loads from disk, not over HTTP.
     chunkSizeWarningLimit: 1100,
