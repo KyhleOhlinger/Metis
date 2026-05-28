@@ -69,15 +69,24 @@ struct VaultData {
     /// Possible values: "obsidian" | "markdown" | null
     #[serde(skip_serializing_if = "Option::is_none")]
     vault_hint: Option<String>,
+    /// Vault-relative folder for pasted/saved images (default `assets`).
+    #[serde(default = "default_image_dir_str")]
+    default_image_dir: String,
 }
 
 /// Persisted in `.metis/vault.json` to identify a Metis vault.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct VaultMeta {
     version: String,
     name: String,
     created_at_unix: u64,
     metis_version: String,
+    #[serde(default = "default_image_dir_str")]
+    default_image_dir: String,
+}
+
+fn default_image_dir_str() -> String {
+    "assets".into()
 }
 
 /// Emitted as the `convert-vault-progress` Tauri event during vault conversion.
@@ -114,6 +123,7 @@ fn write_vault_meta(vault: &Path) -> Result<(), String> {
         name,
         created_at_unix: ts,
         metis_version: env!("CARGO_PKG_VERSION").into(),
+        default_image_dir: default_image_dir_str(),
     };
 
     let json = serde_json::to_string_pretty(&meta)
@@ -121,6 +131,50 @@ fn write_vault_meta(vault: &Path) -> Result<(), String> {
 
     fs::write(metis_dir.join("vault.json"), json.as_bytes())
         .map_err(|e| format!("Failed to write vault meta: {e}"))
+}
+
+/// Read `.metis/vault.json`, or return sensible defaults when the marker is absent.
+fn read_vault_meta(vault: &Path) -> Result<VaultMeta, String> {
+    let meta_path = vault.join(".metis").join("vault.json");
+    if !meta_path.exists() {
+        let name = vault
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Vault")
+            .to_string();
+        return Ok(VaultMeta {
+            version: "1".into(),
+            name,
+            created_at_unix: 0,
+            metis_version: env!("CARGO_PKG_VERSION").into(),
+            default_image_dir: default_image_dir_str(),
+        });
+    }
+    let raw = fs::read_to_string(&meta_path)
+        .map_err(|e| format!("Failed to read vault meta: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Invalid vault meta JSON: {e}"))
+}
+
+fn write_vault_meta_full(vault: &Path, meta: &VaultMeta) -> Result<(), String> {
+    let metis_dir = vault.join(".metis");
+    fs::create_dir_all(&metis_dir)
+        .map_err(|e| format!("Cannot create .metis directory: {e}"))?;
+    let json = serde_json::to_string_pretty(meta)
+        .map_err(|e| format!("Failed to serialise vault meta: {e}"))?;
+    fs::write(metis_dir.join("vault.json"), json.as_bytes())
+        .map_err(|e| format!("Failed to write vault meta: {e}"))
+}
+
+/// Validate a vault-relative directory path (no `..`, no absolute segments).
+fn validate_relative_vault_dir(dir: &str) -> Result<String, String> {
+    let trimmed = dir.trim().trim_matches('/');
+    if trimmed.is_empty() {
+        return Err("Image folder path cannot be empty.".into());
+    }
+    if trimmed.contains("..") || trimmed.starts_with('/') || trimmed.contains('\\') {
+        return Err("Invalid image folder path.".into());
+    }
+    Ok(trimmed.to_string())
 }
 
 /// Identify the likely originating tool for a non-Metis vault.
@@ -395,7 +449,16 @@ fn open_vault(
     vault_state.0.lock().unwrap().insert(window.label().to_string(), path.clone());
 
     let files = build_file_tree(&root)?;
-    Ok(VaultData { path, files, is_metis_vault, vault_hint })
+    let default_image_dir = read_vault_meta(&root)
+        .map(|m| m.default_image_dir)
+        .unwrap_or_else(|_| default_image_dir_str());
+    Ok(VaultData {
+        path,
+        files,
+        is_metis_vault,
+        vault_hint,
+        default_image_dir,
+    })
 }
 
 /// Write `content` to `path`.
@@ -622,6 +685,7 @@ fn create_vault(
         files,
         is_metis_vault: true,
         vault_hint: None,
+        default_image_dir: default_image_dir_str(),
     })
 }
 
@@ -1093,10 +1157,134 @@ fn open_vault_window(
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     let lower = url.to_ascii_lowercase();
-    if !lower.starts_with("https://") {
-        return Err("Only https URLs may be opened externally.".into());
+    if !lower.starts_with("https://") && !lower.starts_with("http://") {
+        return Err("Only http(s) URLs may be opened externally.".into());
     }
     open::that(&url).map_err(|e| format!("Failed to open URL: {e}"))
+}
+
+/// Persist the vault-relative default folder for pasted/saved images.
+#[tauri::command]
+fn set_vault_default_image_dir(
+    vault_path: String,
+    relative_dir: String,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<String, String> {
+    let rel = validate_relative_vault_dir(&relative_dir)?;
+
+    let lock = vault_state.0.lock().unwrap();
+    let trusted = lock
+        .get(window.label())
+        .ok_or("set_vault_default_image_dir: no vault registered for this window.")?
+        .clone();
+    drop(lock);
+
+    if PathBuf::from(&vault_path) != PathBuf::from(&trusted) {
+        return Err("set_vault_default_image_dir: vault path mismatch.".into());
+    }
+
+    let vault = PathBuf::from(&trusted);
+    let canon_v = canon_vault(&vault).map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
+    let dir_path = safe_resolve(&canon_v.join(&rel))
+        .map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
+    if !dir_path.starts_with(&canon_v) {
+        return Err("set_vault_default_image_dir: folder escapes vault boundary.".into());
+    }
+    if !dir_path.is_dir() {
+        return Err(format!("Folder does not exist: {rel}"));
+    }
+
+    let mut meta = if vault.join(".metis").join("vault.json").exists() {
+        read_vault_meta(&vault)?
+    } else {
+        write_vault_meta(&vault)?;
+        read_vault_meta(&vault)?
+    };
+    meta.default_image_dir = rel.clone();
+    write_vault_meta_full(&vault, &meta)?;
+    Ok(rel)
+}
+
+/// Copy vault-local files to a user-chosen destination directory (may be outside the vault).
+#[tauri::command]
+fn copy_files_to_folder(
+    source_paths: Vec<String>,
+    dest_dir: String,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<usize, String> {
+    let lock = vault_state.0.lock().unwrap();
+    let vault_str = lock
+        .get(window.label())
+        .ok_or("copy_files_to_folder: no vault registered for this window.")?
+        .clone();
+    drop(lock);
+
+    let vault = PathBuf::from(&vault_str);
+    let canon_v = canon_vault(&vault).map_err(|e| format!("copy_files_to_folder: {e}"))?;
+
+    let dest = PathBuf::from(&dest_dir);
+    let dest_resolved = if dest.exists() {
+        safe_resolve(&dest).map_err(|e| format!("copy_files_to_folder: {e}"))?
+    } else {
+        fs::create_dir_all(&dest)
+            .map_err(|e| format!("Failed to create destination folder: {e}"))?;
+        safe_resolve(&dest).map_err(|e| format!("copy_files_to_folder: {e}"))?
+    };
+    if !dest_resolved.is_dir() {
+        return Err("Destination is not a directory.".into());
+    }
+
+    let mut copied = 0usize;
+    for src_str in source_paths {
+        let src = PathBuf::from(&src_str);
+        let resolved = safe_resolve(&src).map_err(|e| format!("copy_files_to_folder: {e}"))?;
+        if !resolved.starts_with(&canon_v) {
+            return Err(format!(
+                "Source file escapes vault boundary: {}",
+                resolved.display()
+            ));
+        }
+        if !resolved.is_file() {
+            continue;
+        }
+        let file_name = resolved
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid source file name.")?;
+        let mut target = dest_resolved.join(file_name);
+        if target.exists() {
+            let stem = resolved
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("image");
+            let ext = resolved
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("");
+            let mut n = 1u32;
+            loop {
+                let candidate = if ext.is_empty() {
+                    dest_resolved.join(format!("{stem}-{n}"))
+                } else {
+                    dest_resolved.join(format!("{stem}-{n}.{ext}"))
+                };
+                if !candidate.exists() {
+                    target = candidate;
+                    break;
+                }
+                n += 1;
+                if n > 9999 {
+                    return Err(format!("Too many name collisions for {file_name}"));
+                }
+            }
+        }
+        fs::copy(&resolved, &target)
+            .map_err(|e| format!("Failed to copy {}: {e}", resolved.display()))?;
+        copied += 1;
+    }
+    Ok(copied)
 }
 
 // ── Persona & settings persistence ───────────────────────────────────────────
@@ -1745,6 +1933,7 @@ fn save_asset(
     vault_path: String,
     filename: String,
     data_base64: String,
+    image_subdir: Option<String>,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
@@ -1799,21 +1988,28 @@ fn save_asset(
         return Err("Image data is empty.".into());
     }
 
-    let assets_dir = canon_v.join("assets");
-    if !assets_dir.exists() {
-        fs::create_dir(&assets_dir)
-            .map_err(|e| format!("Failed to create assets folder: {e}"))?;
+    let subdir = match image_subdir {
+        Some(s) => validate_relative_vault_dir(&s)?,
+        None => read_vault_meta(&vault)
+            .map(|m| m.default_image_dir)
+            .unwrap_or_else(|_| default_image_dir_str()),
+    };
+
+    let target_dir = canon_v.join(&subdir);
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir)
+            .map_err(|e| format!("Failed to create image folder '{subdir}': {e}"))?;
     }
-    let assets_dir = safe_resolve(&assets_dir).map_err(|e| format!("save_asset: {e}"))?;
-    if !assets_dir.starts_with(&canon_v) {
-        return Err("save_asset: assets directory escapes vault boundary.".into());
+    let resolved_dir = safe_resolve(&target_dir).map_err(|e| format!("save_asset: {e}"))?;
+    if !resolved_dir.starts_with(&canon_v) {
+        return Err("save_asset: image directory escapes vault boundary.".into());
     }
 
-    let target = assets_dir.join(&name);
+    let target = resolved_dir.join(&name);
     fs::write(&target, &data)
         .map_err(|e| format!("Failed to save asset: {e}"))?;
 
-    Ok(format!("assets/{name}"))
+    Ok(format!("{subdir}/{name}"))
 }
 
 // ── Spellcheck (Hunspell via spellbook) ───────────────────────────────────────
@@ -2186,6 +2382,9 @@ fn convert_vault_to_metis(
         files,
         is_metis_vault: true,
         vault_hint: None,
+        default_image_dir: read_vault_meta(&root)
+            .map(|m| m.default_image_dir)
+            .unwrap_or_else(|_| default_image_dir_str()),
     })
 }
 
@@ -2445,6 +2644,8 @@ fn main() {
             rename_path,
             move_path,
             save_asset,
+            set_vault_default_image_dir,
+            copy_files_to_folder,
             agent_write_note,
             set_vault_watch,
             search_vault,

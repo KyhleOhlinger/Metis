@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import Toolbar from "./Toolbar";
-import PlannerCodeMirrorField from "./PlannerCodeMirrorField";
+import PlannerMarkdownCell from "./planner/PlannerMarkdownCell";
 import ReviewsPlannerGrid from "./planner/ReviewsPlannerGrid";
 
 type DayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
@@ -222,6 +222,25 @@ const SPECIAL_LABELS: Record<Exclude<TaskStatus, "work">, string> = {
   offsite: "Off-site / Conference",
 };
 
+const PLANNER_PURPLE_HEADER =
+  "flex min-h-[2.5rem] items-center justify-center rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white";
+
+function debounceLocalStorage(key: string, value: unknown, delayMs = 350) {
+  const store = debounceLocalStorage as typeof debounceLocalStorage & {
+    _timers?: Map<string, ReturnType<typeof setTimeout>>;
+  };
+  if (!store._timers) store._timers = new Map();
+  const prev = store._timers.get(key);
+  if (prev) clearTimeout(prev);
+  store._timers.set(
+    key,
+    setTimeout(() => {
+      localStorage.setItem(key, JSON.stringify(value));
+      store._timers?.delete(key);
+    }, delayMs),
+  );
+}
+
 function makeMonthlyTemplateContent(prompts: string[] = MONTHLY_PROMPTS): string {
   return prompts.map((prompt) => `- ${prompt}\n`).join("\n");
 }
@@ -354,7 +373,7 @@ function loadManifest(): TaskManifest {
 }
 
 function saveManifest(manifest: TaskManifest) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(manifest, null, 2));
+  debounceLocalStorage(STORAGE_KEY, manifest);
 }
 
 function isDayName(value: unknown): value is DayName {
@@ -648,7 +667,7 @@ function loadGoals(): GoalSection[] {
 }
 
 function saveGoals(sections: GoalSection[]) {
-  localStorage.setItem(GOALS_STORAGE_KEY, JSON.stringify(sections, null, 2));
+  debounceLocalStorage(GOALS_STORAGE_KEY, sections);
 }
 
 function normalizeReviewHeaders(raw: unknown): [string, string, string, string, string] {
@@ -704,7 +723,7 @@ function loadReviews(): ReviewsTableState {
 }
 
 function saveReviews(state: ReviewsTableState) {
-  localStorage.setItem(REVIEWS_STORAGE_KEY, JSON.stringify(state, null, 2));
+  debounceLocalStorage(REVIEWS_STORAGE_KEY, state);
 }
 
 function isTrackerActive(status: TrackerStatus): boolean {
@@ -1155,6 +1174,7 @@ export default function DailyTaskGrid() {
   const [goalSections, setGoalSections] = useState<GoalSection[]>(() => loadGoals());
   const [reviewsState, setReviewsState] = useState<ReviewsTableState>(() => loadReviews());
   const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
+  const [activePlannerFieldKey, setActivePlannerFieldKey] = useState<string | null>(null);
   const dailyGridShellRef = useRef<HTMLDivElement>(null);
   const visibleWeeks = useMemo(
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
@@ -1235,6 +1255,7 @@ export default function DailyTaskGrid() {
 
   useEffect(() => {
     if (tab !== "daily") setDailyExpandedCellKey(null);
+    setActivePlannerFieldKey(null);
   }, [tab]);
 
   useEffect(() => {
@@ -1732,27 +1753,29 @@ export default function DailyTaskGrid() {
             </button>
           </div>
         )}
-      </div>
-
-      <div
-        ref={plannerScrollRef}
-        className={[
-          "min-h-0 flex-1 p-3",
-          tab === "daily" && dailyExpandedCellKey ? "flex flex-col overflow-x-auto overflow-y-hidden" : "overflow-auto",
-        ].join(" ")}
-      >
         {(tab === "weekly" ||
           tab === "monthly" ||
           tab === "templates" ||
           tab === "goals" ||
           tab === "reviews" ||
           tab === "daily") && (
-          <Toolbar
-            viewRef={plannerToolbarViewRef}
-            spellcheck={false}
-            onToggleSpellcheck={() => {}}
-          />
+          <div className="mt-2 border-t border-border pt-2" data-metis-planner-toolbar>
+            <Toolbar
+              viewRef={plannerToolbarViewRef}
+              spellcheck={false}
+              onToggleSpellcheck={() => {}}
+            />
+          </div>
         )}
+      </div>
+
+      <div
+        ref={plannerScrollRef}
+        className={[
+          "min-h-0 flex-1 overflow-auto p-3",
+          tab === "daily" && dailyExpandedCellKey ? "flex flex-col" : "",
+        ].join(" ")}
+      >
         {tab === "daily" && (
           <div
             ref={dailyGridShellRef}
@@ -1765,12 +1788,12 @@ export default function DailyTaskGrid() {
               ...(dailyGridTemplateRows ? { gridTemplateRows: dailyGridTemplateRows } : {}),
             }}
           >
-            <div style={{ gridColumn: 1, gridRow: 1 }} />
+            <div style={{ gridColumn: 1, gridRow: 1 }} aria-hidden />
             {visibleWeeks.map((monday, wi) => (
               <div
                 key={`hdr-${monday.toISOString()}`}
                 style={{ gridColumn: wi + 2, gridRow: 1 }}
-                className="rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white"
+                className={PLANNER_PURPLE_HEADER}
               >
                 {weekHeader(monday)}
               </div>
@@ -1780,7 +1803,7 @@ export default function DailyTaskGrid() {
               <Fragment key={day}>
                 <div
                   style={{ gridColumn: 1, gridRow: di + 2 }}
-                  className="rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white"
+                  className={PLANNER_PURPLE_HEADER}
                 >
                   {day}
                 </div>
@@ -1827,17 +1850,13 @@ export default function DailyTaskGrid() {
                       ]
                         .filter(Boolean)
                         .join(" ")}
-                      onPointerDownCapture={(e) => {
-                        if (isSpecial) return;
-                        const t = e.target as HTMLElement;
-                        if (t.closest("button")) return;
-                        setDailyExpandedCellKey(cellFocusKey);
-                      }}
                       onBlur={(e) => {
                         if (isSpecial) return;
                         const rt = e.relatedTarget as Node | null;
                         if (rt && e.currentTarget.contains(rt)) return;
-                        setDailyExpandedCellKey((cur) => (cur === cellFocusKey ? null : cur));
+                        startTransition(() => {
+                          setDailyExpandedCellKey((cur) => (cur === cellFocusKey ? null : cur));
+                        });
                       }}
                     >
                       {cell.officeTripBanner && (
@@ -1907,8 +1926,7 @@ export default function DailyTaskGrid() {
                           <label className={workLabelWrapClass}>
                             {plannedLabel}:
                             <div className="mt-1 min-h-0">
-                              <PlannerCodeMirrorField
-                                key={`${cellFocusKey}-planned`}
+                              <PlannerMarkdownCell
                                 value={cell.planned ?? ""}
                                 onChange={(next) =>
                                   updateEntry(monday, day, {
@@ -1920,11 +1938,17 @@ export default function DailyTaskGrid() {
                                     plannedTemplateIds: undefined,
                                   })
                                 }
+                                editing={dailyExpanded}
+                                onRequestEdit={() =>
+                                  startTransition(() => setDailyExpandedCellKey(cellFocusKey))
+                                }
                                 minHeightPx={dailyCmMinH}
                                 fontSizePx={10}
                                 fillHeight={dailyCmFillHeight}
                                 toolbarViewRef={plannerToolbarViewRef}
-                                onEditorFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                                onEditorFocus={() =>
+                                  startTransition(() => setDailyExpandedCellKey(cellFocusKey))
+                                }
                               />
                             </div>
                           </label>
@@ -1932,8 +1956,7 @@ export default function DailyTaskGrid() {
                             <label className={workLabelWrapClass}>
                               {didLabel}:
                               <div className="mt-1 min-h-0">
-                                <PlannerCodeMirrorField
-                                  key={`${cellFocusKey}-did`}
+                                <PlannerMarkdownCell
                                   value={cell.did ?? ""}
                                   onChange={(next) =>
                                     updateEntry(monday, day, {
@@ -1943,11 +1966,17 @@ export default function DailyTaskGrid() {
                                       label: undefined,
                                     })
                                   }
+                                  editing={dailyExpanded}
+                                  onRequestEdit={() =>
+                                    startTransition(() => setDailyExpandedCellKey(cellFocusKey))
+                                  }
                                   minHeightPx={dailyCmMinH}
                                   fontSizePx={10}
                                   fillHeight={dailyCmFillHeight}
                                   toolbarViewRef={plannerToolbarViewRef}
-                                  onEditorFocus={() => setDailyExpandedCellKey(cellFocusKey)}
+                                  onEditorFocus={() =>
+                                    startTransition(() => setDailyExpandedCellKey(cellFocusKey))
+                                  }
                                 />
                               </div>
                             </label>
@@ -2014,8 +2043,10 @@ export default function DailyTaskGrid() {
             </div>
             <div className="mt-2 flex items-start gap-2">
               <div className="min-h-[64px] flex-1">
-                <PlannerCodeMirrorField
-                  key="template-new"
+                <PlannerMarkdownCell
+                  fieldKey="template-new"
+                  activeFieldKey={activePlannerFieldKey}
+                  onActivateField={setActivePlannerFieldKey}
                   value={templateContent}
                   onChange={setTemplateContent}
                   minHeightPx={64}
@@ -2144,8 +2175,10 @@ export default function DailyTaskGrid() {
                   </select>
                 </div>
                 <div className="mt-2 min-h-[64px] w-full">
-                  <PlannerCodeMirrorField
-                    key={`template-edit-${editingTemplateId}`}
+                  <PlannerMarkdownCell
+                    fieldKey={`template-edit-${editingTemplateId}`}
+                    activeFieldKey={activePlannerFieldKey}
+                    onActivateField={setActivePlannerFieldKey}
                     value={editTemplateContent}
                     onChange={setEditTemplateContent}
                     minHeightPx={64}
@@ -2230,8 +2263,10 @@ export default function DailyTaskGrid() {
                 <label className="mt-2 block text-[10px] text-text-secondary">
                   Default weekly review content
                   <div className="mt-1 min-h-[80px]">
-                    <PlannerCodeMirrorField
-                      key="weekly-default-layout"
+                    <PlannerMarkdownCell
+                      fieldKey="weekly-default-layout"
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={layoutTemplates.weeklyDefaultContent}
                       onChange={(v) => updateLayoutTemplates({ weeklyDefaultContent: v })}
                       minHeightPx={80}
@@ -2264,8 +2299,10 @@ export default function DailyTaskGrid() {
                 <label className="mt-2 block text-[10px] text-text-secondary">
                   Monthly prompts (one per line)
                   <div className="mt-1 min-h-[96px]">
-                    <PlannerCodeMirrorField
-                      key="monthly-prompts-draft"
+                    <PlannerMarkdownCell
+                      fieldKey="monthly-prompts-draft"
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={monthlyPromptDraft}
                       onChange={setMonthlyPromptDraft}
                       minHeightPx={96}
@@ -2310,6 +2347,8 @@ export default function DailyTaskGrid() {
               onRowPatch={updateReviewRow}
               onRemoveRow={removeReviewRow}
               toolbarViewRef={plannerToolbarViewRef}
+              activeFieldKey={activePlannerFieldKey}
+              onActivateField={setActivePlannerFieldKey}
             />
           </div>
         )}
@@ -2352,8 +2391,10 @@ export default function DailyTaskGrid() {
                     </button>
                   </div>
                   <div className="mt-2">
-                    <PlannerCodeMirrorField
-                      key={`goal-${section.id}`}
+                    <PlannerMarkdownCell
+                      fieldKey={`goal-${section.id}`}
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={section.content}
                       onChange={(next) => updateGoalSection(section.id, { content: next })}
                       minHeightPx={140}
@@ -2692,12 +2733,12 @@ export default function DailyTaskGrid() {
         {tab === "weekly" && (
           <div className="space-y-2">
             <div className="grid grid-cols-[220px_minmax(420px,1fr)] gap-1.5">
-              <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+              <div className={PLANNER_PURPLE_HEADER}>
                 {useWeeklyTemplateForDate(anchorWeek)
                   ? layoutTemplates.weeklyLeftHeader
                   : DEFAULT_LAYOUT_TEMPLATES.weeklyLeftHeader}
               </div>
-              <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+              <div className={PLANNER_PURPLE_HEADER}>
                 {useWeeklyTemplateForDate(anchorWeek)
                   ? layoutTemplates.weeklyRightHeader
                   : DEFAULT_LAYOUT_TEMPLATES.weeklyRightHeader}
@@ -2719,8 +2760,10 @@ export default function DailyTaskGrid() {
                     {weekHeader(monday)}
                   </div>
                   <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerCodeMirrorField
-                      key={`weekly-${wk}`}
+                    <PlannerMarkdownCell
+                      fieldKey={`weekly-${wk}`}
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={content}
                       onChange={(next) => updateWeeklyReview(monday, next)}
                       minHeightPx={110}
@@ -2757,15 +2800,15 @@ export default function DailyTaskGrid() {
                   key={monthDate.toISOString()}
                   className="grid min-w-[920px] grid-cols-[120px_minmax(260px,1fr)_minmax(220px,1fr)] gap-1.5"
                 >
-                  <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+                  <div className={PLANNER_PURPLE_HEADER}>
                     {monthName(monthDate)}
                   </div>
-                  <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+                  <div className={PLANNER_PURPLE_HEADER}>
                     {useMonthlyTemplateForDate(monthDate)
                       ? layoutTemplates.monthlyRightHeader
                       : DEFAULT_LAYOUT_TEMPLATES.monthlyRightHeader}
                   </div>
-                  <div className="rounded-md bg-[#7F00FF] px-3 py-2 text-[11px] font-semibold text-white">
+                  <div className={PLANNER_PURPLE_HEADER}>
                     Monthly Achievements
                   </div>
 
@@ -2773,8 +2816,10 @@ export default function DailyTaskGrid() {
                     {monthName(monthDate)}
                   </div>
                   <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerCodeMirrorField
-                      key={`monthly-r-${monthDate.toISOString()}`}
+                    <PlannerMarkdownCell
+                      fieldKey={`monthly-r-${monthDate.toISOString()}`}
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={content}
                       onChange={(next) => updateMonthlyReview(monthDate, next)}
                       minHeightPx={200}
@@ -2782,8 +2827,10 @@ export default function DailyTaskGrid() {
                     />
                   </div>
                   <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerCodeMirrorField
-                      key={`monthly-a-${monthDate.toISOString()}`}
+                    <PlannerMarkdownCell
+                      fieldKey={`monthly-a-${monthDate.toISOString()}`}
+                      activeFieldKey={activePlannerFieldKey}
+                      onActivateField={setActivePlannerFieldKey}
                       value={achievementsValue}
                       onChange={(next) => updateMonthlyAchievements(monthDate, next)}
                       minHeightPx={130}

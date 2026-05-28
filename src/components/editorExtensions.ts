@@ -38,6 +38,7 @@ import {
 } from "@codemirror/autocomplete";
 import { useStore } from "../store/useStore";
 import { resolveWikilinkAssetPath } from "../utils/resolveWikilinkAsset";
+import { openDomContextMenu } from "../utils/domContextMenu";
 
 // ── 1. Highlight styles (dark vs light editor backgrounds) ──────────────────
 
@@ -136,6 +137,53 @@ export const metisHighlightStyleLight = syntaxHighlighting(
 
 /** Alias for `metisHighlightStyleDark` (existing imports). */
 export const metisHighlightStyle = metisHighlightStyleDark;
+
+/**
+ * Planner cells inherit `--planner-text-*` from `.planner-theme`. Prose tokens use
+ * those CSS variables so bold/headings stay readable on light and dark presets.
+ */
+export const plannerAdaptiveHighlightStyle = syntaxHighlighting(
+  HighlightStyle.define([
+    { tag: tags.heading1, fontSize: "1.35em", fontWeight: "700", color: "var(--planner-text-primary)" },
+    { tag: tags.heading2, fontSize: "1.2em", fontWeight: "700", color: "var(--planner-text-primary)" },
+    { tag: tags.heading3, fontSize: "1.1em", fontWeight: "600", color: "var(--planner-text-primary)" },
+    { tag: tags.heading4, fontSize: "1.05em", fontWeight: "600", color: "var(--planner-text-secondary)" },
+    { tag: tags.heading, fontWeight: "600", color: "var(--planner-text-secondary)" },
+    { tag: tags.strong, fontWeight: "700", color: "var(--planner-text-primary)" },
+    { tag: tags.emphasis, fontStyle: "italic", color: "var(--planner-text-secondary)" },
+    { tag: tags.strikethrough, textDecoration: "line-through", color: "var(--planner-text-muted)" },
+    { tag: tags.link, color: "#60a5fa", textDecoration: "underline" },
+    { tag: tags.url, color: "#3b82f6" },
+    {
+      tag: tags.monospace,
+      fontFamily: '"JetBrains Mono","Fira Code",monospace',
+      color: "#a78bfa",
+      fontSize: "0.88em",
+    },
+    { tag: tags.processingInstruction, color: "var(--planner-text-muted)" },
+    { tag: tags.punctuation, color: "var(--planner-text-muted)" },
+    { tag: tags.keyword, color: "#c084fc" },
+    { tag: tags.controlKeyword, color: "#f472b6" },
+    { tag: tags.definitionKeyword, color: "#f472b6" },
+    { tag: tags.string, color: "#86efac" },
+    { tag: tags.special(tags.string), color: "#6ee7b7" },
+    { tag: tags.number, color: "#fb923c" },
+    { tag: tags.bool, color: "#f87171" },
+    { tag: tags.null, color: "#f87171" },
+    { tag: tags.operator, color: "#94a3b8" },
+    { tag: tags.function(tags.variableName), color: "#60a5fa" },
+    { tag: tags.function(tags.propertyName), color: "#93c5fd" },
+    { tag: tags.typeName, color: "#34d399" },
+    { tag: tags.className, color: "#34d399" },
+    { tag: tags.propertyName, color: "#93c5fd" },
+    { tag: tags.attributeName, color: "#fbbf24" },
+    { tag: tags.attributeValue, color: "#86efac" },
+    { tag: tags.lineComment, color: "var(--planner-text-muted)", fontStyle: "italic" },
+    { tag: tags.blockComment, color: "var(--planner-text-muted)", fontStyle: "italic" },
+    { tag: tags.meta, color: "var(--planner-text-muted)" },
+    { tag: tags.invalid, color: "#ef4444", textDecoration: "underline" },
+  ]),
+);
 
 // ── 2. Code block background + language badge + copy button ──────────────────
 
@@ -399,85 +447,112 @@ function resolveInlineImageRevealPath(
 ): string | null {
   if (!src || /^(https?:|data:|blob:)/i.test(src)) return null;
 
-  if (src.startsWith("assets/")) {
-    const normalized = normalizePosixPath(`${vaultPath}/${src}`);
+  const trimmed = src.trim();
+
+  if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(trimmed) && !trimmed.includes("/")) {
+    const { assetIndex } = useStore.getState();
+    const resolved = resolveWikilinkAssetPath(trimmed, assetIndex, vaultPath);
+    const normalized = normalizePosixPath(resolved);
     if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
     return normalized;
   }
 
-  if (src.startsWith("/")) {
-    const normalized = normalizePosixPath(src);
+  if (trimmed.startsWith("assets/") || (trimmed.includes("/") && !/^https?:/i.test(trimmed))) {
+    const normalized = normalizePosixPath(`${vaultPath}/${trimmed.replace(/^\.\//, "")}`);
     if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
     return normalized;
   }
 
-  const normalized = normalizePosixPath(`${fileDir}/${src}`);
+  if (trimmed.startsWith("/")) {
+    const normalized = normalizePosixPath(trimmed);
+    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
+    return normalized;
+  }
+
+  const normalized = normalizePosixPath(`${fileDir}/${trimmed}`);
   if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
   return normalized;
 }
 
-const CM_IMAGE_CTX_MENU_ID = "cm-inline-image-context-menu";
-
-function removeCmImageContextMenu() {
-  document.getElementById(CM_IMAGE_CTX_MENU_ID)?.remove();
+function revealPlatformLabel(): string {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+    ? "Reveal in Finder"
+    : "Reveal in File Explorer";
 }
 
-/** Context menu for inline source images — reveal on disk (vault-local files only). */
-function openCmImageRevealMenu(clientX: number, clientY: number, absPath: string, vaultPath: string) {
-  removeCmImageContextMenu();
-  // SECURITY: reveal_in_finder enforces vault containment server-side; paths are pre-validated.
-  const revealLabel =
-    typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-      ? "Reveal in Finder"
-      : "Reveal in File Explorer";
+function openNoteByName(name: string): void {
+  const trimmed = name.trim();
+  const noteName = trimmed.replace(/\.md$/i, "");
+  const { noteIndex, setActiveFile } = useStore.getState();
+  const note = noteIndex.find(
+    (n) =>
+      n.name.replace(/\.md$/i, "").toLowerCase() === noteName.toLowerCase() ||
+      n.name.toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (!note) return;
+  invoke<string>("get_file_content", { path: note.path })
+    .then((c) => setActiveFile(note.path, c))
+    .catch(console.error);
+}
 
-  const menu = document.createElement("div");
-  menu.id = CM_IMAGE_CTX_MENU_ID;
-  menu.style.cssText = [
-    "position:fixed",
-    "z-index:10050",
-    `left:${Math.min(clientX, window.innerWidth - 200)}px`,
-    `top:${Math.min(clientY, window.innerHeight - 48)}px`,
-    "min-width:180px",
-    "padding:4px 0",
-    "border-radius:8px",
-    "border:1px solid rgba(148,163,184,0.35)",
-    "background:#1e1f24",
-    "box-shadow:0 8px 24px rgba(0,0,0,0.45)",
-    "font-size:12px",
-  ].join(";");
+function followMarkdownHref(href: string, fileDir: string, vaultPath: string): void {
+  const url = href.trim();
+  if (/^https?:\/\//i.test(url)) {
+    invoke("open_url", { url }).catch(console.error);
+    return;
+  }
+  if (!url || url === "#" || url.startsWith("#")) return;
 
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = revealLabel;
-  btn.style.cssText =
-    "display:block;width:100%;text-align:left;padding:8px 12px;background:transparent;border:none;color:#e2e8f0;cursor:pointer;";
-  btn.onmouseenter = () => {
-    btn.style.background = "rgba(124,58,237,0.25)";
-  };
-  btn.onmouseleave = () => {
-    btn.style.background = "transparent";
-  };
-  btn.addEventListener("click", () => {
-    removeCmImageContextMenu();
-    invoke("reveal_in_finder", { path: absPath, vaultPath }).catch(console.error);
-  });
+  let abs: string;
+  if (url.startsWith("/")) {
+    abs = normalizePosixPath(url.split("#")[0]);
+  } else {
+    abs = normalizePosixPath(`${fileDir}/${url.split("#")[0]}`);
+  }
 
-  menu.appendChild(btn);
-  document.body.appendChild(menu);
+  if (abs.startsWith(`${vaultPath}/`)) {
+    invoke<string>("get_file_content", { path: abs })
+      .then((c) => useStore.getState().setActiveFile(abs, c))
+      .catch(console.error);
+    return;
+  }
 
-  const dismiss = () => {
-    removeCmImageContextMenu();
-    window.removeEventListener("mousedown", dismiss, true);
-    window.removeEventListener("keydown", onKey, true);
-  };
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape") dismiss();
-  };
-  setTimeout(() => {
-    window.addEventListener("mousedown", dismiss, true);
-    window.addEventListener("keydown", onKey, true);
-  }, 0);
+  openNoteByName(url.split("#")[0]);
+}
+
+function sourceLinkMenuItems(href: string, fileDir: string, vaultPath: string) {
+  const trimmed = href.trim();
+  if (/^https?:\/\//i.test(trimmed)) {
+    return [
+      {
+        label: "Open Link",
+        onClick: () => followMarkdownHref(trimmed, fileDir, vaultPath),
+      },
+    ];
+  }
+  return [
+    {
+      label: "Open Note",
+      onClick: () => followMarkdownHref(trimmed, fileDir, vaultPath),
+    },
+  ];
+}
+
+function sourceImageRevealMenuItems(
+  src: string,
+  fileDir: string,
+  vaultPath: string,
+): Array<{ label: string; onClick: () => void }> | null {
+  const absPath = resolveInlineImageRevealPath(src, vaultPath, fileDir);
+  if (!absPath) return null;
+  return [
+    {
+      label: revealPlatformLabel(),
+      onClick: () => {
+        invoke("reveal_in_finder", { path: absPath, vaultPath }).catch(console.error);
+      },
+    },
+  ];
 }
 
 // Resolve image sources: http(s) and data URIs pass through; relative paths are
@@ -1217,6 +1292,14 @@ export const taskListClickExtension = [taskCheckboxDecoPlugin, taskCheckboxClick
 /** Collapses [text](url) links to display-name tokens in source mode. */
 export const markdownLinkCollapseExtension = [markdownLinkCollapsePlugin];
 
+/** Live-preview extensions for planner markdown cells (dim markers, callouts, links, tasks). */
+export const plannerMarkdownVisualExtensions = [
+  createVisualModePlugin("", ""),
+  calloutPlugin,
+  ...markdownLinkCollapseExtension,
+  ...taskListClickExtension,
+];
+
 // ── 8. List continuation on Enter ────────────────────────────────────────────
 
 /**
@@ -1332,6 +1415,9 @@ class InlineImageWidget extends WidgetType {
   toDOM(): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "cm-inline-img-wrap";
+    if (this.revealAbsPath) {
+      wrap.dataset.revealPath = this.revealAbsPath;
+    }
     const img = document.createElement("img");
     img.src = this.src;
     img.alt = this.alt;
@@ -1345,15 +1431,24 @@ class InlineImageWidget extends WidgetType {
     if (this.revealAbsPath) {
       wrap.oncontextmenu = (e) => {
         e.preventDefault();
-        openCmImageRevealMenu(e.clientX, e.clientY, this.revealAbsPath!, this.vaultPath);
+        e.stopPropagation();
+        openDomContextMenu(e.clientX, e.clientY, [
+          {
+            label: revealPlatformLabel(),
+            onClick: () => {
+              invoke("reveal_in_finder", { path: this.revealAbsPath!, vaultPath: this.vaultPath }).catch(
+                console.error,
+              );
+            },
+          },
+        ]);
       };
     }
     wrap.appendChild(img);
     return wrap;
   }
-  // Receive contextmenu on the wrapper; ordinary clicks still bubble for caret placement.
-  ignoreEvent(): boolean {
-    return false;
+  ignoreEvent(event: Event): boolean {
+    return event.type === "contextmenu";
   }
 }
 
@@ -1659,7 +1754,9 @@ function makeMarkdownTableCollapseField() {
 }
 
 /** Cmd/Ctrl+Click on a markdown link in source mode opens the URL or note. */
-function makeLinkClickHandler() {
+function makeLinkClickHandler(vaultPath: string, filePath: string) {
+  const fileDir = filePath.substring(0, filePath.lastIndexOf("/"));
+
   return EditorView.domEventHandlers({
     mousedown(event, view) {
       if (!event.metaKey && !event.ctrlKey) return false;
@@ -1752,6 +1849,121 @@ function makeLinkClickHandler() {
 
       return false;
     },
+    contextmenu(event, view) {
+      const imgWrap = (event.target as HTMLElement | null)?.closest(
+        ".cm-inline-img-wrap[data-reveal-path]",
+      ) as HTMLElement | null;
+      const revealPath = imgWrap?.dataset.revealPath?.trim();
+      if (revealPath) {
+        event.preventDefault();
+        openDomContextMenu(event.clientX, event.clientY, [
+          {
+            label: revealPlatformLabel(),
+            onClick: () => {
+              invoke("reveal_in_finder", { path: revealPath, vaultPath }).catch(console.error);
+            },
+          },
+        ]);
+        return true;
+      }
+
+      const fromCollapsed = (event.target as HTMLElement | null)?.closest(
+        "[data-md-link-href]",
+      ) as HTMLElement | null;
+      const collapsedHref = fromCollapsed?.dataset.mdLinkHref?.trim();
+      if (collapsedHref) {
+        event.preventDefault();
+        openDomContextMenu(
+          event.clientX,
+          event.clientY,
+          sourceLinkMenuItems(collapsedHref, fileDir, vaultPath),
+        );
+        return true;
+      }
+
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos === null) return false;
+
+      const line = view.state.doc.lineAt(pos);
+      const text = line.text;
+      const col = pos - line.from;
+
+      // Standard image markdown: ![alt](src)
+      const mdImageRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let m: RegExpExecArray | null;
+      while ((m = mdImageRe.exec(text)) !== null) {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (col < start || col > end) continue;
+        const src = m[2].trim();
+        const items = sourceImageRevealMenuItems(src, fileDir, vaultPath);
+        if (items) {
+          event.preventDefault();
+          openDomContextMenu(event.clientX, event.clientY, items);
+          return true;
+        }
+        break;
+      }
+
+      // Wikilink image: ![[filename.ext]]
+      const wikiImageRe = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
+      while ((m = wikiImageRe.exec(text)) !== null) {
+        const start = m.index;
+        const end = start + m[0].length;
+        if (col < start || col > end) continue;
+        const filename = m[1].trim();
+        const { assetIndex } = useStore.getState();
+        const resolvedPath = normalizePosixPath(
+          resolveWikilinkAssetPath(filename, assetIndex, vaultPath),
+        );
+        if (!resolvedPath.startsWith(`${vaultPath}/`)) break;
+        event.preventDefault();
+        openDomContextMenu(event.clientX, event.clientY, [
+          {
+            label: revealPlatformLabel(),
+            onClick: () => {
+              invoke("reveal_in_finder", { path: resolvedPath, vaultPath }).catch(console.error);
+            },
+          },
+        ]);
+        return true;
+      }
+
+      const mdLinkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+      while ((m = mdLinkRe.exec(text)) !== null) {
+        if (m.index > 0 && text[m.index - 1] === "!") continue;
+        const start = m.index;
+        const end = start + m[0].length;
+        if (col < start || col > end) continue;
+        const url = m[2].trim();
+        event.preventDefault();
+        openDomContextMenu(
+          event.clientX,
+          event.clientY,
+          sourceLinkMenuItems(url, fileDir, vaultPath),
+        );
+        return true;
+      }
+
+      const wikiRe = /\[\[([^\]]+)\]\]/g;
+      while ((m = wikiRe.exec(text)) !== null) {
+        if (m.index > 0 && text[m.index - 1] === "!") continue;
+        const start = m.index;
+        const end = start + m[0].length;
+        if (col < start || col > end) continue;
+        const name = m[1].trim();
+        event.preventDefault();
+        openDomContextMenu(event.clientX, event.clientY, [
+          {
+            label: "Open Note",
+            onClick: () => openNoteByName(name),
+          },
+        ]);
+        return true;
+      }
+
+      return false;
+    },
   });
 }
 
@@ -1766,7 +1978,7 @@ export function makeInlinePreviewExtension(
   return [
     makeImageDecosField(vaultPath, filePath),
     makeMarkdownTableCollapseField(),
-    makeLinkClickHandler(),
+    makeLinkClickHandler(vaultPath, filePath),
   ];
 }
 
@@ -1809,18 +2021,19 @@ export const smartPasteExtension = EditorView.domEventHandlers({
           const ext = rawExt === "jpeg" ? "jpg" : rawExt;
           const filename = `image-${Date.now()}.${ext}`;
 
-          const { vaultPath } = useStore.getState();
-          if (!vaultPath) {
-            console.warn("No vault open — cannot save pasted image.");
-            return;
-          }
+            const { vaultPath, defaultImageFolder } = useStore.getState();
+            if (!vaultPath) {
+              console.warn("No vault open — cannot save pasted image.");
+              return;
+            }
 
-          try {
-            const relPath = await invoke<string>("save_asset", {
-              vaultPath,
-              filename,
-              dataBase64: base64,
-            });
+            try {
+              const relPath = await invoke<string>("save_asset", {
+                vaultPath,
+                filename,
+                dataBase64: base64,
+                imageSubdir: defaultImageFolder,
+              });
             view.dispatch({
               changes: { from, to, insert: `![${filename}](${relPath})` },
               selection: { anchor: from + filename.length + relPath.length + 5 },

@@ -301,6 +301,81 @@ body,
   color: var(--planner-text-muted) !important;
 }
 
+/* Compact rendered markdown inside planner cells (preview + theme-aware prose). */
+.planner-markdown-preview {
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--planner-text-primary);
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.planner-markdown-preview > :first-child {
+  margin-top: 0;
+}
+
+.planner-markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+
+.planner-markdown-preview p,
+.planner-markdown-preview ul,
+.planner-markdown-preview ol {
+  margin: 0.35em 0;
+}
+
+.planner-markdown-preview ul,
+.planner-markdown-preview ol {
+  padding-left: 1.25em;
+  margin: 0.35em 0;
+}
+
+.planner-markdown-preview ul {
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.planner-markdown-preview ol {
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.planner-markdown-preview li {
+  display: list-item;
+  margin: 0.15em 0;
+}
+
+.planner-markdown-preview li > ul,
+.planner-markdown-preview li > ol {
+  margin: 0.2em 0;
+}
+
+.planner-markdown-preview li input[type="checkbox"] {
+  margin-right: 0.45em;
+  accent-color: #7c3aed;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.planner-markdown-preview strong {
+  font-weight: 700;
+  color: var(--planner-text-primary);
+}
+
+.planner-markdown-preview em {
+  font-style: italic;
+  color: var(--planner-text-secondary);
+}
+
+.planner-markdown-preview a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+[data-color-scheme="light"] .planner-markdown-preview a {
+  color: #2563eb;
+}
+
 /* ── Callout blocks  > [!TYPE] ───────────────────────────────── */
 .cm-callout {
   border-left: 3px solid #64748b;

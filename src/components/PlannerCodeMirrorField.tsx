@@ -1,11 +1,14 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, highlightActiveLine } from "@codemirror/view";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { indentUnit } from "@codemirror/language";
 import { history, historyKeymap, defaultKeymap } from "@codemirror/commands";
-import { metisHighlightStyleDark } from "./editorExtensions";
+import {
+  plannerAdaptiveHighlightStyle,
+  plannerMarkdownVisualExtensions,
+} from "./editorExtensions";
 
 const plannerCmBaseTheme = EditorView.theme(
   {
@@ -19,6 +22,7 @@ const plannerCmBaseTheme = EditorView.theme(
       fontFamily: '"Inter","SF Pro Text",system-ui,sans-serif',
       lineHeight: "1.45",
       backgroundColor: "var(--planner-surface-raised) !important",
+      overflow: "auto",
     },
     ".cm-content": {
       padding: "6px 8px",
@@ -36,6 +40,41 @@ const plannerCmBaseTheme = EditorView.theme(
   { dark: true },
 );
 
+function makeSizeTheme(minHeightPx: number, fillHeight: boolean) {
+  if (fillHeight) {
+    return EditorView.theme({
+      "&": {
+        flex: "1 1 0%",
+        minHeight: `${Math.max(48, minHeightPx)}px`,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+      },
+      ".cm-editor": {
+        flex: "1 1 0%",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+      },
+      ".cm-scroller": {
+        flex: "1 1 0%",
+        minHeight: 0,
+        overflow: "auto",
+      },
+    });
+  }
+
+  return EditorView.theme({
+    "&": { minHeight: `${minHeightPx}px`, maxHeight: `${minHeightPx}px` },
+    ".cm-editor": { minHeight: `${minHeightPx}px`, maxHeight: `${minHeightPx}px` },
+    ".cm-scroller": {
+      minHeight: `${minHeightPx}px`,
+      maxHeight: `${minHeightPx}px`,
+      overflow: "auto",
+    },
+  });
+}
+
 interface Props {
   value: string;
   onChange: (next: string) => void;
@@ -47,6 +86,8 @@ interface Props {
   fillHeight?: boolean;
   /** Called when this editor receives focus (in addition to wiring the shared toolbar ref). */
   onEditorFocus?: () => void;
+  /** Called when this editor loses focus. */
+  onEditorBlur?: () => void;
 }
 
 /**
@@ -61,6 +102,7 @@ export default function PlannerCodeMirrorField({
   fontSizePx = 11,
   fillHeight = false,
   onEditorFocus,
+  onEditorBlur,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -70,42 +112,25 @@ export default function PlannerCodeMirrorField({
   onChangeRef.current = onChange;
   const onEditorFocusRef = useRef(onEditorFocus);
   onEditorFocusRef.current = onEditorFocus;
+  const onEditorBlurRef = useRef(onEditorBlur);
+  onEditorBlurRef.current = onEditorBlur;
+  const sizeCompartmentRef = useRef(new Compartment());
+  const fontCompartmentRef = useRef(new Compartment());
+  const fillHeightRef = useRef(fillHeight);
+  fillHeightRef.current = fillHeight;
+  const minHeightRef = useRef(minHeightPx);
+  minHeightRef.current = minHeightPx;
+  const fontSizeRef = useRef(fontSizePx);
+  fontSizeRef.current = fontSizePx;
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
 
-    const sizeTheme = fillHeight
-      ? EditorView.theme({
-          "&": {
-            flex: "1 1 0%",
-            minHeight: `${Math.max(48, minHeightPx)}px`,
-            minWidth: 0,
-            display: "flex",
-            flexDirection: "column",
-          },
-          ".cm-editor": {
-            flex: "1 1 0%",
-            minHeight: 0,
-            display: "flex",
-            flexDirection: "column",
-          },
-          ".cm-scroller": {
-            flex: "1 1 0%",
-            minHeight: 0,
-            overflow: "auto",
-          },
-        })
-      : EditorView.theme({
-          "&": { minHeight: `${minHeightPx}px` },
-          ".cm-editor": { minHeight: `${minHeightPx}px` },
-          ".cm-scroller": { minHeight: `${minHeightPx}px` },
-        });
-
     const fontTheme = EditorView.theme({
       ".cm-scroller": {
-        fontSize: `${fontSizePx}px`,
-        lineHeight: fontSizePx <= 10 ? "1.42" : "1.45",
+        fontSize: `${fontSizeRef.current}px`,
+        lineHeight: fontSizeRef.current <= 10 ? "1.42" : "1.45",
         fontWeight: "400",
       },
     });
@@ -117,13 +142,16 @@ export default function PlannerCodeMirrorField({
         EditorState.tabSize.of(4),
         indentUnit.of("    "),
         plannerCmBaseTheme,
-        fontTheme,
-        metisHighlightStyleDark,
+        fontCompartmentRef.current.of(fontTheme),
+        plannerAdaptiveHighlightStyle,
+        ...plannerMarkdownVisualExtensions,
         highlightActiveLine(),
         history(),
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
-        sizeTheme,
+        sizeCompartmentRef.current.of(
+          makeSizeTheme(minHeightRef.current, fillHeightRef.current),
+        ),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           const text = update.state.doc.toString();
@@ -134,6 +162,14 @@ export default function PlannerCodeMirrorField({
           focus() {
             toolbarViewRef.current = viewRef.current;
             onEditorFocusRef.current?.();
+          },
+          blur(_event, view) {
+            requestAnimationFrame(() => {
+              if (view.hasFocus) return;
+              const active = document.activeElement;
+              if (active?.closest("[data-metis-planner-toolbar]")) return;
+              onEditorBlurRef.current?.();
+            });
           },
         }),
       ],
@@ -148,7 +184,28 @@ export default function PlannerCodeMirrorField({
       viewRef.current = null;
     };
     // toolbarViewRef is a stable ref object from the parent
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- stable ref; remount when editor geometry/font changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once; geometry/font via compartments
+  }, []);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: [
+        sizeCompartmentRef.current.reconfigure(
+          makeSizeTheme(minHeightPx, fillHeight),
+        ),
+        fontCompartmentRef.current.reconfigure(
+          EditorView.theme({
+            ".cm-scroller": {
+              fontSize: `${fontSizePx}px`,
+              lineHeight: fontSizePx <= 10 ? "1.42" : "1.45",
+              fontWeight: "400",
+            },
+          }),
+        ),
+      ],
+    });
   }, [minHeightPx, fillHeight, fontSizePx]);
 
   useEffect(() => {

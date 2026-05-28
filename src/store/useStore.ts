@@ -20,6 +20,8 @@ export interface VaultData {
   files: FileNode[];
   is_metis_vault: boolean;
   vault_hint?: string; // "obsidian" | "markdown" — only present for non-Metis vaults
+  /** Vault-relative folder for pasted/saved images (default `assets`). */
+  default_image_dir?: string;
 }
 
 /**
@@ -224,6 +226,9 @@ interface MetisState {
    */
   assetIndex: AssetMetadata[];
 
+  /** Vault-relative default folder for pasted/saved images. */
+  defaultImageFolder: string;
+
   // UI state shared between menu events and components
   /** Which editor tab is active.  Lifted here so the native menu can switch it. */
   editorTab: "source" | "visual" | "planner";
@@ -260,6 +265,8 @@ interface MetisState {
   setActiveFolderPath: (path: string | null) => void;
   markSaved: () => void;
   clearVault: () => void;
+  /** Persist vault-relative default image folder (e.g. `assets`). */
+  setDefaultImageFolder: (relativeDir: string) => Promise<void>;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -278,6 +285,7 @@ export const useStore = create<MetisState>((set, get) => ({
   activeFolderPath: null,
   noteIndex: [],
   assetIndex: [],
+  defaultImageFolder: "assets",
   editorTab: "source",
   pendingMenuAction: null,
   sidebarView: "files",
@@ -297,6 +305,7 @@ export const useStore = create<MetisState>((set, get) => ({
       vaultPath: data.path,
       isMetisVault: data.is_metis_vault,
       files: data.files,
+      defaultImageFolder: data.default_image_dir ?? "assets",
       noteIndex,
       assetIndex,
       activeFilePath: null,
@@ -330,6 +339,7 @@ export const useStore = create<MetisState>((set, get) => ({
       set({
         files: data.files,
         isMetisVault: data.is_metis_vault,
+        defaultImageFolder: data.default_image_dir ?? "assets",
         noteIndex: merged,
         assetIndex: flattenAssets(data.files),
       });
@@ -416,11 +426,22 @@ export const useStore = create<MetisState>((set, get) => ({
 
   markSaved: () => set({ isDirty: false }),
 
+  setDefaultImageFolder: async (relativeDir) => {
+    const { vaultPath } = get();
+    if (!vaultPath) return;
+    const saved = await invoke<string>("set_vault_default_image_dir", {
+      vaultPath,
+      relativeDir,
+    });
+    set({ defaultImageFolder: saved });
+  },
+
   clearVault: () =>
     set({
       vaultPath: null,
       isMetisVault: false,
       files: [],
+      defaultImageFolder: "assets",
       activeFilePath: null,
       activeFileContent: "",
       isDirty: false,
