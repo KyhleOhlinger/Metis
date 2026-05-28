@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { FoldVertical, UnfoldVertical, Search } from "lucide-react";
+import { FoldVertical, UnfoldVertical, Search, Image, Copy } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, FileNode, VaultData } from "../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../store/usePersonaStore";
@@ -8,6 +8,7 @@ import { moveNodeInTree } from "../utils/treeUtils";
 import ContextMenu, { ContextMenuEntry } from "./ContextMenu";
 import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
+import { collectImagePathsFromMarkdown } from "../utils/noteImages";
 
 // ── Daily Note helper ─────────────────────────────────────────────────────────
 
@@ -206,6 +207,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
   const {
     activeFilePath, setActiveFile, isDirty, markSaved,
     refreshVault, activeFolderPath, setActiveFolderPath, noteIndex,
+    assetIndex, defaultImageFolder, setDefaultImageFolder,
   } = useStore(
     useShallow((s) => ({
       activeFilePath: s.activeFilePath,
@@ -216,6 +218,9 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       activeFolderPath: s.activeFolderPath,
       setActiveFolderPath: s.setActiveFolderPath,
       noteIndex: s.noteIndex,
+      assetIndex: s.assetIndex,
+      defaultImageFolder: s.defaultImageFolder,
+      setDefaultImageFolder: s.setDefaultImageFolder,
     })),
   );
 
@@ -283,6 +288,9 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
 
   const isNote = !node.is_dir && node.name.endsWith(".md");
 
+  const vaultRelativePath =
+    node.path.startsWith(`${vaultPath}/`) ? node.path.slice(vaultPath.length + 1) : node.name;
+
   const buildMenu = (): ContextMenuEntry[] => {
     const items: ContextMenuEntry[] = [];
 
@@ -297,6 +305,21 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
         label: "New Folder Here",
         icon: <IconFolder open={false} />,
         onClick: () => { setExpanded(true); setCreatingInside("folder"); },
+      });
+      items.push({
+        label:
+          defaultImageFolder === vaultRelativePath
+            ? "Default Image Folder ✓"
+            : "Set as Default Image Folder",
+        icon: <Image className="h-3.5 w-3.5" />,
+        disabled: defaultImageFolder === vaultRelativePath,
+        onClick: async () => {
+          try {
+            await setDefaultImageFolder(vaultRelativePath);
+          } catch (err) {
+            alert(String(err));
+          }
+        },
       });
       items.push({ separator: true });
     }
@@ -316,13 +339,45 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       },
     });
 
-    // ── Copy absolute path to clipboard ──────────────────────────────────────
+    // ── Copy Path ──────────────────────────────────────────────────────────
     items.push({
       label: "Copy Path",
       onClick: () => {
         navigator.clipboard.writeText(node.path).catch(console.error);
       },
     });
+
+    if (isNote) {
+      items.push({
+        label: "Copy Images to Folder…",
+        icon: <Copy className="h-3.5 w-3.5" />,
+        onClick: async () => {
+          try {
+            const content = await invoke<string>("get_file_content", { path: node.path });
+            const imagePaths = collectImagePathsFromMarkdown(
+              content,
+              node.path,
+              vaultPath,
+              assetIndex,
+            );
+            if (!imagePaths.length) {
+              alert("No local images found in this note.");
+              return;
+            }
+            const destDir = await invoke<string | null>("pick_folder");
+            if (!destDir) return;
+            const copied = await invoke<number>("copy_files_to_folder", {
+              sourcePaths: imagePaths,
+              destDir,
+            });
+            alert(`Copied ${copied} image${copied === 1 ? "" : "s"}.`);
+            await refreshVault();
+          } catch (err) {
+            alert(String(err));
+          }
+        },
+      });
+    }
 
     // ── AI: Run with active persona ───────────────────────────────────────────
     if (activePersona) {

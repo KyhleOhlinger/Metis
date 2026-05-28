@@ -1,6 +1,6 @@
 import { type MutableRefObject } from "react";
 import type { EditorView } from "@codemirror/view";
-import PlannerCodeMirrorField from "../PlannerCodeMirrorField";
+import PlannerMarkdownCell from "./PlannerMarkdownCell";
 
 /** One review row — mirrors `ReviewTableRow` in DailyTaskGrid (kept separate to avoid circular imports). */
 export type ReviewsPlannerRow = {
@@ -17,9 +17,10 @@ const GRID_GAP_CLASS = "gap-1.5";
 const GRID_TEMPLATE = "110px repeat(4, minmax(210px, 1fr)) minmax(3.25rem, 4rem)";
 
 const PURPLE_HEADER =
-  "rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white";
+  "flex min-h-[2.5rem] items-center justify-center rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white";
 
-const WORK_CELL_SHELL = "min-h-0 rounded-md border border-border bg-surface-overlay/30 p-2";
+const WORK_CELL_SHELL =
+  "flex min-h-0 items-stretch rounded-md border border-border bg-surface-overlay/30 p-2";
 
 type Props = {
   headers: [string, string, string, string, string];
@@ -28,6 +29,8 @@ type Props = {
   onRowPatch: (id: string, patch: Partial<Omit<ReviewsPlannerRow, "id">>) => void;
   onRemoveRow: (id: string) => void;
   toolbarViewRef: MutableRefObject<EditorView | null>;
+  activeFieldKey: string | null;
+  onActivateField: (key: string | null) => void;
 };
 
 /**
@@ -44,13 +47,14 @@ export default function ReviewsPlannerGrid({
   onRowPatch,
   onRemoveRow,
   toolbarViewRef,
+  activeFieldKey,
+  onActivateField,
 }: Props) {
   const gridStyle = { gridTemplateColumns: GRID_TEMPLATE };
 
   return (
     <div className="overflow-auto">
       <div className={["grid min-w-[980px]", GRID_GAP_CLASS].join(" ")} style={gridStyle}>
-        {/* Title row: five purple headers + narrow actions slot (Daily Log uses an implicit header band; we keep one purple stub for rhythm). */}
         {headers.map((h, i) => (
           <div key={`review-h-${i}`} className={PURPLE_HEADER}>
             <label className="sr-only" htmlFor={`review-col-header-${i}`}>
@@ -65,10 +69,10 @@ export default function ReviewsPlannerGrid({
             />
           </div>
         ))}
-        <div className={`${PURPLE_HEADER} min-h-[2.5rem]`} aria-hidden />
+        <div className={`${PURPLE_HEADER}`} aria-hidden />
 
         {rows.length === 0 ? (
-          <div className="col-span-6 rounded-md border border-border bg-surface-overlay/30 px-3 py-6 text-center text-[10px] text-text-muted">
+          <div className="col-span-6 flex min-h-[2.5rem] items-center justify-center rounded-md border border-border bg-surface-overlay/30 px-3 py-6 text-center text-[10px] text-text-muted">
             No rows yet. Use Add row to capture a review cycle.
           </div>
         ) : (
@@ -80,6 +84,8 @@ export default function ReviewsPlannerGrid({
               onRowPatch={onRowPatch}
               onRemoveRow={onRemoveRow}
               toolbarViewRef={toolbarViewRef}
+              activeFieldKey={activeFieldKey}
+              onActivateField={onActivateField}
             />
           ))
         )}
@@ -94,17 +100,20 @@ function ReviewsPlannerDataRow({
   onRowPatch,
   onRemoveRow,
   toolbarViewRef,
+  activeFieldKey,
+  onActivateField,
 }: {
   row: ReviewsPlannerRow;
   headers: [string, string, string, string, string];
   onRowPatch: (id: string, patch: Partial<Omit<ReviewsPlannerRow, "id">>) => void;
   onRemoveRow: (id: string) => void;
   toolbarViewRef: MutableRefObject<EditorView | null>;
+  activeFieldKey: string | null;
+  onActivateField: (key: string | null) => void;
 }) {
   return (
     <>
-      {/* Column 1 — same role as weekday strip in Daily Log: purple row label, white text */}
-      <div className={`flex min-h-[158px] flex-col justify-center ${PURPLE_HEADER}`}>
+      <div className={`${PURPLE_HEADER} min-h-[96px]`}>
         <label className="sr-only" htmlFor={`review-cycle-${row.id}`}>
           {headers[0] || "Review cycle"}
         </label>
@@ -112,15 +121,17 @@ function ReviewsPlannerDataRow({
           id={`review-cycle-${row.id}`}
           value={row.cycleLabel}
           onChange={(e) => onRowPatch(row.id, { cycleLabel: e.target.value })}
-          rows={4}
+          rows={3}
           placeholder="Review cycle"
-          className="min-h-[5rem] w-full flex-1 resize-none border-0 bg-transparent text-center text-[11px] font-semibold text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-white/40"
+          className="max-h-[5.5rem] min-h-[2.5rem] w-full resize-none overflow-auto border-0 bg-transparent text-center text-[11px] font-semibold leading-snug text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-white/40"
         />
       </div>
 
-      <div className={WORK_CELL_SHELL}>
-        <PlannerCodeMirrorField
-          key={`${row.id}-mgr-s`}
+      <div className={`${WORK_CELL_SHELL} min-h-[96px]`}>
+        <PlannerMarkdownCell
+          fieldKey={`${row.id}-mgr-s`}
+          activeFieldKey={activeFieldKey}
+          onActivateField={onActivateField}
           value={row.managerStrengths}
           onChange={(next) => onRowPatch(row.id, { managerStrengths: next })}
           minHeightPx={96}
@@ -128,9 +139,11 @@ function ReviewsPlannerDataRow({
           toolbarViewRef={toolbarViewRef}
         />
       </div>
-      <div className={WORK_CELL_SHELL}>
-        <PlannerCodeMirrorField
-          key={`${row.id}-mgr-o`}
+      <div className={`${WORK_CELL_SHELL} min-h-[96px]`}>
+        <PlannerMarkdownCell
+          fieldKey={`${row.id}-mgr-o`}
+          activeFieldKey={activeFieldKey}
+          onActivateField={onActivateField}
           value={row.managerOpportunity}
           onChange={(next) => onRowPatch(row.id, { managerOpportunity: next })}
           minHeightPx={96}
@@ -138,9 +151,11 @@ function ReviewsPlannerDataRow({
           toolbarViewRef={toolbarViewRef}
         />
       </div>
-      <div className={WORK_CELL_SHELL}>
-        <PlannerCodeMirrorField
-          key={`${row.id}-self-s`}
+      <div className={`${WORK_CELL_SHELL} min-h-[96px]`}>
+        <PlannerMarkdownCell
+          fieldKey={`${row.id}-self-s`}
+          activeFieldKey={activeFieldKey}
+          onActivateField={onActivateField}
           value={row.personalStrengths}
           onChange={(next) => onRowPatch(row.id, { personalStrengths: next })}
           minHeightPx={96}
@@ -148,9 +163,11 @@ function ReviewsPlannerDataRow({
           toolbarViewRef={toolbarViewRef}
         />
       </div>
-      <div className={WORK_CELL_SHELL}>
-        <PlannerCodeMirrorField
-          key={`${row.id}-self-o`}
+      <div className={`${WORK_CELL_SHELL} min-h-[96px]`}>
+        <PlannerMarkdownCell
+          fieldKey={`${row.id}-self-o`}
+          activeFieldKey={activeFieldKey}
+          onActivateField={onActivateField}
           value={row.personalOpportunity}
           onChange={(next) => onRowPatch(row.id, { personalOpportunity: next })}
           minHeightPx={96}
@@ -159,7 +176,7 @@ function ReviewsPlannerDataRow({
         />
       </div>
 
-      <div className="flex min-h-[120px] items-center justify-center">
+      <div className="flex min-h-[96px] items-center justify-center">
         <button
           type="button"
           onClick={() => onRemoveRow(row.id)}

@@ -787,8 +787,7 @@ export default function Editor() {
           ref={editorHostRef}
           className="absolute inset-0"
           style={{
-            opacity: editorMode === "source" ? 1 : 0,
-            pointerEvents: editorMode === "source" ? "auto" : "none",
+            display: editorMode === "source" ? "block" : "none",
           }}
         />
 

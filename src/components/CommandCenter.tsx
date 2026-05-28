@@ -26,6 +26,9 @@ import {
   TASK_PERSONA_ID,
 } from "../types/persona";
 import type { ContextStrategy } from "../services/contextBuilder";
+import { listVaultFolderOptions } from "../utils/noteImages";
+
+const metisIconUrl = new URL("../../metis_icon.png", import.meta.url).href;
 
 interface Props {
   isOpen: boolean;
@@ -167,6 +170,7 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
           {tab === "info" && (
             <InfoTab
               vaultPath={vaultPath}
+              files={files}
               activeFilePath={activeFilePath}
               isDirty={isDirty}
               wordCount={wordCount}
@@ -215,21 +219,70 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
 // ── Info tab ──────────────────────────────────────────────────────────────────
 
 function InfoTab({
-  vaultPath, activeFilePath, isDirty, wordCount, lineCount, charCount,
+  vaultPath,
+  files,
+  activeFilePath,
+  isDirty,
+  wordCount,
+  lineCount,
+  charCount,
 }: {
   vaultPath: string | null;
+  files: import("../store/useStore").FileNode[];
   activeFilePath: string | null;
   isDirty: boolean;
   wordCount: number;
   lineCount: number;
   charCount: number;
 }) {
+  const { defaultImageFolder, setDefaultImageFolder } = useStore(
+    useShallow((s) => ({
+      defaultImageFolder: s.defaultImageFolder,
+      setDefaultImageFolder: s.setDefaultImageFolder,
+    })),
+  );
+
+  const imageFolderOptions = useMemo(() => {
+    if (!vaultPath) return [];
+    const base = listVaultFolderOptions(files, vaultPath);
+    if (defaultImageFolder && !base.some((o) => o.relativePath === defaultImageFolder)) {
+      return [{ relativePath: defaultImageFolder, label: defaultImageFolder }, ...base];
+    }
+    return base;
+  }, [files, vaultPath, defaultImageFolder]);
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3" data-cc-scroll-region>
+      {/* Scrollable metadata — content-sized; remaining height centers the icon below */}
+      <div className="min-h-0 shrink overflow-y-auto p-3 space-y-3" data-cc-scroll-region>
         <Section title="Vault">
           <KV label="Path" value={vaultPath ?? "—"} mono />
+          {vaultPath && (
+            <div className="mt-2">
+              <label className="block text-[10px] text-text-muted">Default image folder</label>
+              <select
+                value={defaultImageFolder}
+                onChange={async (e) => {
+                  try {
+                    await setDefaultImageFolder(e.target.value);
+                  } catch (err) {
+                    alert(String(err));
+                  }
+                }}
+                className="mt-1 w-full rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
+              >
+                {imageFolderOptions.map((opt) => (
+                  <option key={opt.relativePath} value={opt.relativePath}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[9px] text-text-muted">
+                Pasted images save here. Default is <code className="text-[9px]">assets</code> until
+                you choose a folder (sidebar right-click or this dropdown).
+              </p>
+            </div>
+          )}
         </Section>
         <Section title="Active Note">
           <KV label="File" value={activeFilePath ? (activeFilePath.split("/").pop() ?? "—") : "—"} mono />
@@ -249,14 +302,25 @@ function InfoTab({
 
         {/* About */}
         <div className="border-t border-border pt-3 mt-2">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-1">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-2">
             About
           </p>
-          <p className="text-[11px] font-semibold text-text-primary">Metis</p>
-          <p className="text-[10px] text-text-muted mt-0.5">
-            A local-first, AI-augmented personal knowledge ecosystem.
-          </p>
+          <div>
+            <p className="text-[11px] font-semibold text-text-primary">Metis</p>
+            <p className="text-[10px] text-text-muted mt-0.5">
+              A local-first, AI-augmented personal knowledge ecosystem.
+            </p>
+          </div>
         </div>
+      </div>
+
+      {/* Icon floats centered in the remaining panel space */}
+      <div className="flex flex-1 min-h-[96px] items-center justify-center px-3 py-4">
+        <img
+          src={metisIconUrl}
+          alt=""
+          className="aspect-square w-4/5 max-w-[168px] rounded-2xl border border-border object-cover shadow-md shadow-black/20"
+        />
       </div>
 
       {/* Copyright — pinned to bottom-right, outside the scroll area */}
