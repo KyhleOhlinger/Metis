@@ -9,6 +9,7 @@ import ContextMenu, { ContextMenuEntry } from "./ContextMenu";
 import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
 import { collectImagePathsFromMarkdown } from "../utils/noteImages";
+import { isVaultImageFile } from "../utils/vaultImages";
 
 // ── Daily Note helper ─────────────────────────────────────────────────────────
 
@@ -230,6 +231,9 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
   const isActiveFile   = activeFilePath === node.path;
   const isActiveFolder = activeFolderPath === node.path && node.is_dir;
 
+  const isImage = !node.is_dir && isVaultImageFile(node.name);
+  const isOpenable = !node.is_dir && (node.name.endsWith(".md") || isImage);
+
   // ── Open file / select folder ───────────────────────────────────────────────
   const handleClick = useCallback(async (_e: React.MouseEvent) => {
     // Don't open file if we were just dragging
@@ -241,8 +245,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       return;
     }
 
-    // Only open files the editor can handle
-    if (!node.name.endsWith(".md")) return;
+    if (!isOpenable) return;
 
     const parent = node.path.substring(0, node.path.lastIndexOf("/"));
     setActiveFolderPath(parent || vaultPath);
@@ -251,13 +254,19 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       if (!window.confirm("You have unsaved changes. Discard and switch?")) return;
       markSaved();
     }
+
+    if (isImage) {
+      setActiveFile(node.path, "");
+      return;
+    }
+
     try {
       const content = await invoke<string>("get_file_content", { path: node.path });
       setActiveFile(node.path, content);
     } catch (err) {
       console.error("Failed to read file:", err);
     }
-  }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath]);
+  }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage]);
 
   // ── Pointer-down: begin potential drag ─────────────────────────────────────
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -478,7 +487,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           onClick={handleClick}
           onContextMenu={handleContextMenu}
           className={[
-            `group flex items-center gap-1.5 pr-1 py-[3px] rounded-sm select-none transition-colors ${node.is_dir || node.name.endsWith(".md") ? "cursor-pointer" : "cursor-default"}`,
+            `group flex items-center gap-1.5 pr-1 py-[3px] rounded-sm select-none transition-colors ${node.is_dir || isOpenable ? "cursor-pointer" : "cursor-default"}`,
             isActiveFile
               ? "bg-accent-muted text-text-primary"
               : isActiveFolder
@@ -520,7 +529,13 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
             const iconColor = status ? (STATUS_ICON_COLORS[status] ?? "text-text-muted") : "text-text-muted";
             return (
               <span className={`shrink-0 ${iconColor}`}>
-                {node.is_dir ? <IconFolder open={expanded} size={11} /> : <IconFile size={11} />}
+                {node.is_dir ? (
+                  <IconFolder open={expanded} size={11} />
+                ) : isImage ? (
+                  <Image size={11} />
+                ) : (
+                  <IconFile size={11} />
+                )}
               </span>
             );
           })()}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
-import { useStore } from "../store/useStore";
+import { useStore, syncUiAfterDiskWrites, type DiskWrite } from "../store/useStore";
 import { usePersonaStore, selectActivePersona, selectProviderKey } from "../store/usePersonaStore";
 import {
   streamResponse,
@@ -241,6 +241,13 @@ function InfoTab({
       setDefaultImageFolder: s.setDefaultImageFolder,
     })),
   );
+  const [plannerStorageDir, setPlannerStorageDir] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<string>("get_planner_storage_dir")
+      .then(setPlannerStorageDir)
+      .catch(() => setPlannerStorageDir(null));
+  }, []);
 
   const imageFolderOptions = useMemo(() => {
     if (!vaultPath) return [];
@@ -283,6 +290,9 @@ function InfoTab({
               </p>
             </div>
           )}
+        </Section>
+        <Section title="Planner">
+          <KV label="Path" value={plannerStorageDir ?? "—"} mono />
         </Section>
         <Section title="Active Note">
           <KV label="File" value={activeFilePath ? (activeFilePath.split("/").pop() ?? "—") : "—"} mono />
@@ -1127,7 +1137,8 @@ function AITab({
           if (vaultPath && text.trim()) {
             try {
               const relPath = `${vaultPath}/summaries/todo.md`;
-              await invoke("agent_write_note", { relPath, content: text });
+              const absPath = await invoke<string>("agent_write_note", { relPath, content: text });
+              await syncUiAfterDiskWrites([{ path: absPath, content: text }]);
               setStatusMsg("✓ todo.md written to summaries/");
             } catch (e) {
               setStatusMsg(`Could not write todo.md: ${String(e)}`);
@@ -1183,19 +1194,23 @@ function AITab({
       }
 
       let updatedNotes = 0;
+      const diskWrites: DiskWrite[] = [];
       for (const [path, updates] of updatesByPath) {
         const content = await invoke<string>("get_file_content", { path }).catch(() => "");
         if (!content) continue;
         const applied = applyTaskStatusUpdates(content, updates);
         if (!applied.changed) continue;
         await invoke("save_note", { path, content: applied.content });
+        diskWrites.push({ path, content: applied.content });
         updatedNotes += 1;
       }
 
       // 2) Rebuild todo.md from current source task state (both open + completed).
       const tasksByNote = await collectVaultTasksForTodo(noteIndex, setStatusMsg);
       const syncedTodo = buildTodoSyncContent(tasksByNote);
-      await invoke("agent_write_note", { relPath: todoPath, content: syncedTodo });
+      const todoAbsPath = await invoke<string>("agent_write_note", { relPath: todoPath, content: syncedTodo });
+      diskWrites.push({ path: todoAbsPath, content: syncedTodo });
+      await syncUiAfterDiskWrites(diskWrites);
 
       setResponse(
         `Task sync complete.\n\n` +
@@ -1654,12 +1669,14 @@ function AITab({
                   setPendingWrites((prev) =>
                     prev.map((w) => w.id === id ? { ...w, status: "done" } : w),
                   );
-                  // Refresh vault tree so new / updated files appear in the sidebar
-                  useStore.getState().refreshVault();
-                  // Sync the editor with the final content for all tools that
-                  // write to a file (modify current or create new note).
                   if (absPath) {
-                    useStore.getState().setActiveFile(absPath, finalContent);
+                    const write = pendingWrites.find((w) => w.id === id);
+                    void syncUiAfterDiskWrites(
+                      [{ path: absPath, content: finalContent }],
+                      write?.tool === "create_new_note" ? { openPath: absPath } : undefined,
+                    );
+                  } else {
+                    void useStore.getState().refreshVault();
                   }
                 }}
                 onError={(id, msg) => {

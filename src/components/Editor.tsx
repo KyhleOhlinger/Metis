@@ -8,7 +8,7 @@ import {
   highlightActiveLine,
   highlightActiveLineGutter,
 } from "@codemirror/view";
-import { EditorState, Compartment } from "@codemirror/state";
+import { EditorState, Compartment, EditorSelection } from "@codemirror/state";
 import {
   defaultKeymap,
   history,
@@ -41,9 +41,11 @@ import {
 import { lintGutter } from "@codemirror/lint";
 import Toolbar, { toggleInline } from "./Toolbar";
 import MarkdownPreview from "./MarkdownPreview";
+import VaultImageViewer from "./VaultImageViewer";
 import EditorFindBar from "./EditorFindBar";
 import { spellcheckLinter } from "./spellcheck";
 import DailyTaskGrid from "./DailyTaskGrid";
+import { isVaultImageFile } from "../utils/vaultImages";
 
 // ── Background colour presets ─────────────────────────────────────────────────
 const BG_PRESETS = [
@@ -226,6 +228,27 @@ function useDebouncedSave(
   );
 }
 
+function applyEditorNavigation(
+  view: EditorView,
+  offset: number,
+  matchEnd?: number,
+): void {
+  const docLen = view.state.doc.length;
+  const from = Math.max(0, Math.min(offset, docLen));
+  const to =
+    matchEnd !== undefined
+      ? Math.max(from, Math.min(matchEnd, docLen))
+      : from;
+  const selection =
+    to > from ? EditorSelection.range(from, to) : EditorSelection.cursor(from);
+  view.dispatch({
+    selection,
+    effects: EditorView.scrollIntoView(from, { y: "center" }),
+  });
+  useStore.getState().setCursorOffset(from);
+  view.focus();
+}
+
 // ── Editor component ──────────────────────────────────────────────────────────
 
 export default function Editor() {
@@ -252,6 +275,7 @@ export default function Editor() {
     noteIndex,
     editorTab: editorMode,
     setEditorTab: setEditorMode,
+    editorNavigateTo,
   } = useStore(
     useShallow((s) => ({
       activeFilePath: s.activeFilePath,
@@ -262,16 +286,69 @@ export default function Editor() {
       noteIndex: s.noteIndex,
       editorTab: s.editorTab,
       setEditorTab: s.setEditorTab,
+      editorNavigateTo: s.editorNavigateTo,
     })),
   );
 
+  /** Source cursor offset captured when switching to Visual — drives preview scroll. */
+  const [visualScrollAnchor, setVisualScrollAnchor] = useState<number | null>(null);
+  const prevEditorModeRef = useRef(editorMode);
+
   const scheduleSave = useDebouncedSave(markSaved);
+
+  const activeFileName = activeFilePath?.split("/").pop() ?? "";
+  const isImageFile = Boolean(activeFilePath && isVaultImageFile(activeFileName));
+
+  const handlePreviewImageActivate = useCallback(
+    (sourceOffset: number) => {
+      setEditorMode("source");
+      requestAnimationFrame(() => {
+        const view = viewRef.current;
+        if (!view) return;
+        applyEditorNavigation(view, sourceOffset);
+      });
+    },
+    [setEditorMode],
+  );
+
+  // ── Apply pending navigation from search results, etc. ─────────────────────
+  useEffect(() => {
+    if (!editorNavigateTo || editorNavigateTo.path !== activeFilePath || isImageFile) {
+      return;
+    }
+
+    let cancelled = false;
+    let attempts = 0;
+
+    const tryApply = () => {
+      if (cancelled) return;
+      const view = viewRef.current;
+      if (!view) {
+        if (attempts++ < 24) requestAnimationFrame(tryApply);
+        return;
+      }
+      applyEditorNavigation(
+        view,
+        editorNavigateTo.offset,
+        editorNavigateTo.matchEnd,
+      );
+      useStore.getState().clearEditorNavigateTo();
+    };
+
+    tryApply();
+    return () => {
+      cancelled = true;
+    };
+  }, [editorNavigateTo, activeFilePath, isImageFile]);
 
   // ── Create / recreate editor when the active file changes ────────────────────
   useEffect(() => {
     if (!editorHostRef.current) return;
 
     viewRef.current?.destroy();
+    viewRef.current = null;
+
+    if (isVaultImageFile(activeFileName)) return;
 
     const updateListener = EditorView.updateListener.of((update) => {
       if (update.docChanged) {
@@ -576,13 +653,13 @@ export default function Editor() {
   // runs again but sees `current === activeFileContent` and exits immediately.
   useEffect(() => {
     const view = viewRef.current;
-    if (!view) return;
+    if (!view || isImageFile) return;
     const current = view.state.doc.toString();
     if (current === activeFileContent) return;
     view.dispatch({
       changes: { from: 0, to: current.length, insert: activeFileContent },
     });
-  }, [activeFileContent]);
+  }, [activeFileContent, isImageFile]);
 
   // ── Hot-swap background colour without rebuilding the editor ─────────────
   useEffect(() => {
@@ -623,15 +700,30 @@ export default function Editor() {
     setShowBgPicker(false);
   }, [editorMode, activeFilePath]);
 
-  // ── Anchor editor viewport at bottom when switching Source / Visual / Planner ──
+  // Capture cursor position when entering Visual; restore editor scroll when returning to Source.
   useEffect(() => {
-    const id = requestAnimationFrame(() => {
-      if (editorMode === "source" && viewRef.current) {
-        const dom = viewRef.current.scrollDOM;
-        dom.scrollTop = Math.max(0, dom.scrollHeight - dom.clientHeight);
+    const prev = prevEditorModeRef.current;
+    prevEditorModeRef.current = editorMode;
+
+    if (editorMode === "visual") {
+      if (prev !== "visual") {
+        setVisualScrollAnchor(useStore.getState().cursorOffset);
       }
-    });
-    return () => cancelAnimationFrame(id);
+      return;
+    }
+
+    setVisualScrollAnchor(null);
+
+    if (prev === "visual" && editorMode === "source") {
+      const id = requestAnimationFrame(() => {
+        const view = viewRef.current;
+        if (!view) return;
+        view.dispatch({
+          effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: "center" }),
+        });
+      });
+      return () => cancelAnimationFrame(id);
+    }
   }, [editorMode]);
 
   // ── Empty state ───────────────────────────────────────────────────────────────
@@ -710,7 +802,8 @@ export default function Editor() {
             )}
           </div>
 
-          {/* ── Source / Visual mode toggle ───────────────────────────── */}
+          {/* ── Source / Visual mode toggle — notes only ───────────────── */}
+          {!isImageFile && (
           <div className="flex items-center gap-0.5 rounded-md border border-border bg-surface-raised p-0.5">
             {(["source", "visual"] as const).map((mode) => (
               <button
@@ -726,6 +819,7 @@ export default function Editor() {
               </button>
             ))}
           </div>
+          )}
         </div>
       </div>
 
@@ -741,7 +835,7 @@ export default function Editor() {
       )}
 
       {/* ── Formatting toolbar + metadata panel — hidden outside Source mode ── */}
-      {editorMode === "source" && (
+      {editorMode === "source" && !isImageFile && (
         <Toolbar
           viewRef={viewRef}
           spellcheck={spellcheck}
@@ -751,7 +845,7 @@ export default function Editor() {
 
       {/* MetadataPanel is only needed in source mode; hiding it in Visual
           mode gives the preview the full vertical space of the editor pane. */}
-      {editorMode === "source" && (
+      {editorMode === "source" && !isImageFile && (
         <MetadataPanel
           content={activeFileContent}
           filePath={activeFilePath}
@@ -787,18 +881,28 @@ export default function Editor() {
           ref={editorHostRef}
           className="absolute inset-0"
           style={{
-            display: editorMode === "source" ? "block" : "none",
+            display: editorMode === "source" && !isImageFile ? "block" : "none",
           }}
         />
 
+        {isImageFile && activeFilePath && vaultPath && (
+          <VaultImageViewer
+            filePath={activeFilePath}
+            vaultPath={vaultPath}
+            bgColor={bgPreset.bg}
+          />
+        )}
+
         {/* Full rendered markdown preview — shown in visual mode only */}
-        {editorMode === "visual" && activeFilePath && vaultPath && (
+        {editorMode === "visual" && activeFilePath && vaultPath && !isImageFile && (
           <MarkdownPreview
             content={activeFileContent}
             filePath={activeFilePath}
             vaultPath={vaultPath}
             bgColor={bgPreset.bg}
             textColor={bgPreset.fg}
+            scrollAnchorOffset={visualScrollAnchor}
+            onImageActivate={handlePreviewImageActivate}
           />
         )}
 

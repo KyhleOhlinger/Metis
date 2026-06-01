@@ -14,7 +14,6 @@
         { "url": "https://generativelanguage.googleapis.com/**" },
         { "url": "https://api.groq.com/**" },
         { "url": "https://api.perplexity.ai/**" },
-        { "url": "https://llm-gateway.prod.plat.unauth.wayfair.io/**" },
         { "url": "https://date.nager.at/**" }
       ]
     },
