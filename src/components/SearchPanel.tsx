@@ -205,34 +205,34 @@ export default function SearchPanel() {
     }
   }, [query, replacement, caseSensitive, regexMode, replacing, doSearch]);
 
-  const openMatch = useCallback(
-    async (m: SearchMatch) => {
-      try {
-        const content = await invoke<string>("get_file_content", {
-          path: m.file_path,
-        });
-        useStore.getState().setActiveFile(m.file_path, content);
+  const openMatch = useCallback(async (m: SearchMatch) => {
+    try {
+      const content = await invoke<string>("get_file_content", {
+        path: m.file_path,
+      });
 
-        // Filename matches (line_number === 0) just open the file.
-        if (m.line_number === 0) return;
+      const { setActiveFile, navigateEditorTo, setEditorTab } = useStore.getState();
 
-        // Scroll to the matching line after the editor mounts.
-        // The editor re-creates on activeFilePath change, so we wait a tick.
-        setTimeout(() => {
-          const lines = content.split("\n");
-          let offset = 0;
-          for (let i = 0; i < m.line_number - 1 && i < lines.length; i++) {
-            offset += lines[i].length + 1;
-          }
-          offset += m.match_start;
-          useStore.getState().setCursorOffset(offset);
-        }, 100);
-      } catch (err) {
-        console.error("Failed to open match:", err);
+      if (m.line_number === 0) {
+        setEditorTab("source");
+        setActiveFile(m.file_path, content);
+        return;
       }
-    },
-    [],
-  );
+
+      const lines = content.split("\n");
+      let offset = 0;
+      for (let i = 0; i < m.line_number - 1 && i < lines.length; i++) {
+        offset += lines[i].length + 1;
+      }
+      offset += m.match_start;
+      const matchEnd = offset + (m.match_end - m.match_start);
+
+      navigateEditorTo({ path: m.file_path, offset, matchEnd });
+      setActiveFile(m.file_path, content);
+    } catch (err) {
+      console.error("Failed to open match:", err);
+    }
+  }, []);
 
   const toggleCollapse = useCallback((filePath: string) => {
     setCollapsedFiles((prev) => {

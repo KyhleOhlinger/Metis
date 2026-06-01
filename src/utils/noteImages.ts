@@ -1,40 +1,24 @@
 import type { AssetMetadata } from "../store/useStore";
+import { resolveMarkdownImageAbsPath, VAULT_IMAGE_EXT } from "./vaultImages";
+import { normalizePosixPath } from "./paths";
 import { resolveWikilinkAssetPath } from "./resolveWikilinkAsset";
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_IMAGE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
 const MD_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
+const WIKI_IMAGE_LINE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i;
+const MD_IMAGE_LINE_RE = /!\[([^\]]*)\]\(([^)]+)\)/;
 
-function normalizePosixPath(raw: string): string {
-  const isAbs = raw.startsWith("/");
-  const stack: string[] = [];
-  for (const seg of raw.split("/")) {
-    if (seg === "..") stack.pop();
-    else if (seg && seg !== ".") stack.push(seg);
+/** Character offsets of image markdown lines in document order (for Visual → Source navigation). */
+export function findImageSourceOffsets(content: string): number[] {
+  const offsets: number[] = [];
+  let pos = 0;
+  for (const line of content.split("\n")) {
+    if (MD_IMAGE_LINE_RE.test(line) || WIKI_IMAGE_LINE_RE.test(line)) {
+      offsets.push(pos);
+    }
+    pos += line.length + 1;
   }
-  return (isAbs ? "/" : "") + stack.join("/");
-}
-
-function resolveMarkdownImagePath(
-  src: string,
-  notePath: string,
-  vaultPath: string,
-): string | null {
-  const trimmed = src.trim();
-  if (!trimmed || /^(https?:|data:|blob:)/i.test(trimmed)) return null;
-
-  let abs: string;
-  if (trimmed.startsWith("assets/") || trimmed.startsWith("attachments/")) {
-    abs = normalizePosixPath(`${vaultPath}/${trimmed}`);
-  } else if (trimmed.startsWith("/")) {
-    abs = normalizePosixPath(trimmed);
-  } else {
-    const fileDir = notePath.substring(0, notePath.lastIndexOf("/"));
-    abs = normalizePosixPath(`${fileDir}/${trimmed}`);
-  }
-
-  if (!abs.startsWith(`${vaultPath}/`) && abs !== vaultPath) return null;
-  return abs;
+  return offsets;
 }
 
 /** Collect absolute vault-local image paths referenced in note markdown. */
@@ -44,6 +28,7 @@ export function collectImagePathsFromMarkdown(
   vaultPath: string,
   assetIndex: AssetMetadata[],
 ): string[] {
+  const fileDir = notePath.substring(0, notePath.lastIndexOf("/"));
   const found = new Set<string>();
 
   WIKI_IMAGE_RE.lastIndex = 0;
@@ -51,7 +36,7 @@ export function collectImagePathsFromMarkdown(
   while ((wikiMatch = WIKI_IMAGE_RE.exec(content)) !== null) {
     const abs = resolveWikilinkAssetPath(wikiMatch[1], assetIndex, vaultPath);
     const normalized = normalizePosixPath(abs);
-    if (normalized.startsWith(`${vaultPath}/`) && IMAGE_EXT.test(normalized)) {
+    if (normalized.startsWith(`${vaultPath}/`) && VAULT_IMAGE_EXT.test(normalized)) {
       found.add(normalized);
     }
   }
@@ -59,8 +44,8 @@ export function collectImagePathsFromMarkdown(
   MD_IMAGE_RE.lastIndex = 0;
   let mdMatch: RegExpExecArray | null;
   while ((mdMatch = MD_IMAGE_RE.exec(content)) !== null) {
-    const abs = resolveMarkdownImagePath(mdMatch[2], notePath, vaultPath);
-    if (abs && IMAGE_EXT.test(abs)) found.add(abs);
+    const abs = resolveMarkdownImageAbsPath(mdMatch[2], vaultPath, fileDir, assetIndex);
+    if (abs && VAULT_IMAGE_EXT.test(abs)) found.add(abs);
   }
 
   return [...found];

@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { pathsEqual } from "../utils/paths";
 
 /**
  * UI components should subscribe with **selectors** or `useShallow` from `zustand/react/shallow`
@@ -174,6 +175,48 @@ function flattenAssets(nodes: FileNode[]): AssetMetadata[] {
   return result;
 }
 
+/** One file written on disk by AI tasks or batch sync operations. */
+export type DiskWrite = { path: string; content?: string };
+
+/** Pending scroll/selection target for search results and similar deep links. */
+export type EditorNavigateTarget = {
+  path: string;
+  offset: number;
+  matchEnd?: number;
+};
+
+/**
+ * Refresh the vault tree and push new content into the open editor / visual
+ * preview when a written file is currently active. Optionally open a different
+ * path (e.g. agent-created note) without requiring a manual sidebar click.
+ */
+export async function syncUiAfterDiskWrites(
+  writes: DiskWrite[],
+  options?: { openPath?: string },
+): Promise<void> {
+  const { activeFilePath, setActiveFile, refreshVault } = useStore.getState();
+  await refreshVault();
+
+  const openPath = options?.openPath;
+  if (openPath) {
+    const match = writes.find((w) => pathsEqual(w.path, openPath));
+    const content =
+      match?.content ??
+      (await invoke<string>("get_file_content", { path: openPath }));
+    setActiveFile(openPath, content);
+    return;
+  }
+
+  if (!activeFilePath) return;
+  const activeWrite = writes.find((w) => pathsEqual(w.path, activeFilePath));
+  if (!activeWrite) return;
+
+  const content =
+    activeWrite.content ??
+    (await invoke<string>("get_file_content", { path: activeFilePath }));
+  setActiveFile(activeFilePath, content);
+}
+
 // ── State interface ───────────────────────────────────────────────────────────
 
 interface MetisState {
@@ -242,6 +285,9 @@ interface MetisState {
   /** Which sidebar view is active: file tree or vault-wide search. */
   sidebarView: "files" | "search";
 
+  /** Consumed by Editor to scroll/select after opening a file from search, etc. */
+  editorNavigateTo: EditorNavigateTarget | null;
+
   // Actions
   setEditorTab: (tab: "source" | "visual" | "planner") => void;
   setPendingMenuAction: (action: string | null) => void;
@@ -267,6 +313,8 @@ interface MetisState {
   clearVault: () => void;
   /** Persist vault-relative default image folder (e.g. `assets`). */
   setDefaultImageFolder: (relativeDir: string) => Promise<void>;
+  navigateEditorTo: (target: EditorNavigateTarget) => void;
+  clearEditorNavigateTo: () => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -289,6 +337,7 @@ export const useStore = create<MetisState>((set, get) => ({
   editorTab: "source",
   pendingMenuAction: null,
   sidebarView: "files",
+  editorNavigateTo: null,
 
   setEditorTab: (tab) => set({ editorTab: tab }),
 
@@ -316,6 +365,7 @@ export const useStore = create<MetisState>((set, get) => ({
       selectionCoords: null,
       selectionEndOffset: 0,
       activeFolderPath: null,
+      editorNavigateTo: null,
     });
     // Enrich metadata in the background so the store is never blocked.
     setTimeout(() => get().enrichNoteIndex(), 0);
@@ -436,6 +486,11 @@ export const useStore = create<MetisState>((set, get) => ({
     set({ defaultImageFolder: saved });
   },
 
+  navigateEditorTo: (target) =>
+    set({ editorNavigateTo: target, editorTab: "source" }),
+
+  clearEditorNavigateTo: () => set({ editorNavigateTo: null }),
+
   clearVault: () =>
     set({
       vaultPath: null,
@@ -454,5 +509,6 @@ export const useStore = create<MetisState>((set, get) => ({
       assetIndex: [],
       pendingMenuAction: null,
       sidebarView: "files",
+      editorNavigateTo: null,
     }),
 }));

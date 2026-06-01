@@ -38,6 +38,17 @@ import {
 } from "@codemirror/autocomplete";
 import { useStore } from "../store/useStore";
 import { resolveWikilinkAssetPath } from "../utils/resolveWikilinkAsset";
+import { normalizePosixPath, isPathWithinVault } from "../utils/paths";
+import {
+  followVaultHref,
+  openNoteByWikilinkNameFromStore,
+  revealPlatformLabel,
+} from "../utils/vaultNavigation";
+import {
+  resolveMarkdownImageAbsPath,
+  resolveMarkdownImageSrc,
+} from "../utils/vaultImages";
+import { escapeHtml } from "../utils/markdownHtml";
 import { openDomContextMenu } from "../utils/domContextMenu";
 
 // ── 1. Highlight styles (dark vs light editor backgrounds) ──────────────────
@@ -427,113 +438,23 @@ class ImageWidget extends WidgetType {
   }
 }
 
-// Normalize a POSIX path by resolving '..' and '.' segments.
-// Used before vault-boundary checks to prevent path traversal.
-function normalizePosixPath(raw: string): string {
-  const isAbs = raw.startsWith("/");
-  const stack: string[] = [];
-  for (const seg of raw.split("/")) {
-    if (seg === "..") stack.pop();
-    else if (seg && seg !== ".") stack.push(seg);
-  }
-  return (isAbs ? "/" : "") + stack.join("/");
+function escapeHtmlCell(s: string): string {
+  return escapeHtml(s);
 }
 
-/** Absolute filesystem path for reveal-in-Finder; null if not a local vault file. */
-function resolveInlineImageRevealPath(
-  src: string,
-  vaultPath: string,
-  fileDir: string,
-): string | null {
-  if (!src || /^(https?:|data:|blob:)/i.test(src)) return null;
-
-  const trimmed = src.trim();
-
-  if (/\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(trimmed) && !trimmed.includes("/")) {
-    const { assetIndex } = useStore.getState();
-    const resolved = resolveWikilinkAssetPath(trimmed, assetIndex, vaultPath);
-    const normalized = normalizePosixPath(resolved);
-    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
-    return normalized;
-  }
-
-  if (trimmed.startsWith("assets/") || (trimmed.includes("/") && !/^https?:/i.test(trimmed))) {
-    const normalized = normalizePosixPath(`${vaultPath}/${trimmed.replace(/^\.\//, "")}`);
-    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
-    return normalized;
-  }
-
-  if (trimmed.startsWith("/")) {
-    const normalized = normalizePosixPath(trimmed);
-    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
-    return normalized;
-  }
-
-  const normalized = normalizePosixPath(`${fileDir}/${trimmed}`);
-  if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) return null;
-  return normalized;
-}
-
-function revealPlatformLabel(): string {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
-    ? "Reveal in Finder"
-    : "Reveal in File Explorer";
-}
-
-function openNoteByName(name: string): void {
-  const trimmed = name.trim();
-  const noteName = trimmed.replace(/\.md$/i, "");
-  const { noteIndex, setActiveFile } = useStore.getState();
-  const note = noteIndex.find(
-    (n) =>
-      n.name.replace(/\.md$/i, "").toLowerCase() === noteName.toLowerCase() ||
-      n.name.toLowerCase() === trimmed.toLowerCase(),
-  );
-  if (!note) return;
-  invoke<string>("get_file_content", { path: note.path })
-    .then((c) => setActiveFile(note.path, c))
-    .catch(console.error);
-}
-
-function followMarkdownHref(href: string, fileDir: string, vaultPath: string): void {
-  const url = href.trim();
-  if (/^https?:\/\//i.test(url)) {
-    invoke("open_url", { url }).catch(console.error);
-    return;
-  }
-  if (!url || url === "#" || url.startsWith("#")) return;
-
-  let abs: string;
-  if (url.startsWith("/")) {
-    abs = normalizePosixPath(url.split("#")[0]);
-  } else {
-    abs = normalizePosixPath(`${fileDir}/${url.split("#")[0]}`);
-  }
-
-  if (abs.startsWith(`${vaultPath}/`)) {
-    invoke<string>("get_file_content", { path: abs })
-      .then((c) => useStore.getState().setActiveFile(abs, c))
-      .catch(console.error);
-    return;
-  }
-
-  openNoteByName(url.split("#")[0]);
+function resolveImageSrc(rawSrc: string, activeFilePath: string, vaultPath: string): string {
+  if (/^https?:\/\/|^data:/i.test(rawSrc)) return rawSrc;
+  const dir = activeFilePath.substring(0, activeFilePath.lastIndexOf("/"));
+  return resolveMarkdownImageSrc(rawSrc, vaultPath, dir);
 }
 
 function sourceLinkMenuItems(href: string, fileDir: string, vaultPath: string) {
   const trimmed = href.trim();
-  if (/^https?:\/\//i.test(trimmed)) {
-    return [
-      {
-        label: "Open Link",
-        onClick: () => followMarkdownHref(trimmed, fileDir, vaultPath),
-      },
-    ];
-  }
+  const label = /^https?:\/\//i.test(trimmed) ? "Open Link" : "Open Note";
   return [
     {
-      label: "Open Note",
-      onClick: () => followMarkdownHref(trimmed, fileDir, vaultPath),
+      label,
+      onClick: () => followVaultHref(trimmed, { fileDir, vaultPath }),
     },
   ];
 }
@@ -543,7 +464,7 @@ function sourceImageRevealMenuItems(
   fileDir: string,
   vaultPath: string,
 ): Array<{ label: string; onClick: () => void }> | null {
-  const absPath = resolveInlineImageRevealPath(src, vaultPath, fileDir);
+  const absPath = resolveMarkdownImageAbsPath(src, vaultPath, fileDir);
   if (!absPath) return null;
   return [
     {
@@ -553,22 +474,6 @@ function sourceImageRevealMenuItems(
       },
     },
   ];
-}
-
-// Resolve image sources: http(s) and data URIs pass through; relative paths are
-// resolved against the active file's directory and converted to Tauri asset URLs.
-// SECURITY: normalize path and enforce vault containment before calling
-// convertFileSrc — prevents absolute paths like /etc/passwd from being served
-// via the Tauri asset:// protocol (scope ["**"] allows the full filesystem).
-function resolveImageSrc(rawSrc: string, activeFilePath: string, vaultPath: string): string {
-  if (/^https?:\/\/|^data:/i.test(rawSrc)) return rawSrc;
-  const dir = activeFilePath.substring(0, activeFilePath.lastIndexOf("/"));
-  const abs = rawSrc.startsWith("/") ? rawSrc : `${dir}/${rawSrc}`;
-  const normalized = normalizePosixPath(abs);
-  if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) {
-    return "";
-  }
-  return convertFileSrc(normalized);
 }
 
 // Use vault-wide asset resolution for wikilink images so that Obsidian vaults
@@ -1452,40 +1357,6 @@ class InlineImageWidget extends WidgetType {
   }
 }
 
-// SECURITY: normalize path and validate it stays within the vault before
-// converting to an asset:// URL.  Prevents `../` traversal from loading
-// files outside the vault via the Tauri asset protocol (scope: ["**"]).
-function resolveInlineImageSrc(
-  src: string,
-  vaultPath: string,
-  fileDir: string,
-): string {
-  if (!src || /^(https?:|data:|asset:|blob:)/i.test(src)) return src;
-
-  if (src.startsWith("assets/")) {
-    const normalized = normalizePosixPath(`${vaultPath}/${src}`);
-    if (!normalized.startsWith(`${vaultPath}/`)) return "";
-    return convertFileSrc(normalized);
-  }
-
-  if (src.startsWith("/")) {
-    // SECURITY: validate vault containment for absolute paths — same risk as
-    // relative `../` traversal; notes with ![](/etc/passwd) would otherwise
-    // load arbitrary files via the Tauri asset:// protocol.
-    const normalized = normalizePosixPath(src);
-    if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) {
-      return "";
-    }
-    return convertFileSrc(normalized);
-  }
-
-  const normalized = normalizePosixPath(`${fileDir}/${src}`);
-  // Reject relative paths that escape the vault
-  if (!normalized.startsWith(`${vaultPath}/`) && normalized !== vaultPath) {
-    return "";
-  }
-  return convertFileSrc(normalized);
-}
 
 // Block decorations MUST come from a StateField, not from a ViewPlugin's
 // `decorations` facet (CM6 throws "Block decorations may not be specified
@@ -1506,8 +1377,8 @@ function buildInlineImageDecosFromState(
     // Standard markdown image: ![alt](src)
     const stdM = /!\[([^\]]*)\]\(([^)]+)\)/.exec(text);
     if (stdM) {
-      const src = resolveInlineImageSrc(stdM[2].trim(), vaultPath, fileDir);
-      const revealAbsPath = resolveInlineImageRevealPath(stdM[2].trim(), vaultPath, fileDir);
+      const src = resolveMarkdownImageSrc(stdM[2].trim(), vaultPath, fileDir);
+      const revealAbsPath = resolveMarkdownImageAbsPath(stdM[2].trim(), vaultPath, fileDir);
       builder.add(
         line.to,
         line.to,
@@ -1530,7 +1401,7 @@ function buildInlineImageDecosFromState(
       // still starts with the vault root before converting to asset:// URL.
       const resolvedPath = resolveWikilinkAssetPath(wikiM[1], assetIndex, vaultPath);
       const normalizedPath = normalizePosixPath(resolvedPath);
-      if (!normalizedPath.startsWith(`${vaultPath}/`)) continue;
+      if (!isPathWithinVault(normalizedPath, vaultPath)) continue;
       const src = convertFileSrc(normalizedPath);
       builder.add(
         line.to,
@@ -1575,14 +1446,6 @@ function makeImageDecosField(vaultPath: string, filePath: string) {
 // selection intersects the table; moving the caret away replaces the pipe
 // block with a read-only HTML preview widget. Clicking the preview jumps the
 // caret back to the table start.
-
-function escapeHtmlCell(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 function splitPipeTableCells(line: string): string[] {
   let s = line.trim();
@@ -1639,6 +1502,22 @@ function findCompleteMarkdownTables(doc: Text): MdTableSpan[] {
     }
   }
   return out;
+}
+
+/** Lines that render a block image preview widget below the markdown syntax. */
+function findInlineImageLines(doc: Text): number[] {
+  const lines: number[] = [];
+  for (let n = 1; n <= doc.lines; n++) {
+    const text = doc.line(n).text;
+    if (/!\[([^\]]*)\]\(([^)]+)\)/.test(text)) {
+      lines.push(n);
+      continue;
+    }
+    if (/!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i.test(text)) {
+      lines.push(n);
+    }
+  }
+  return lines;
 }
 
 function buildTablePreviewHtml(rows: string[]): string {
@@ -1750,6 +1629,32 @@ function makeMarkdownTableCollapseField() {
     provide(f) {
       return EditorView.decorations.from(f);
     },
+  });
+}
+
+/** Collapsed tables + inline image previews are atomic for vertical cursor motion. */
+function makeInlinePreviewAtomicRanges() {
+  return EditorView.atomicRanges.of((view) => {
+    const { state } = view;
+    const builder = new RangeSetBuilder<Decoration>();
+    const mark = Decoration.mark({ class: "cm-inline-preview-atomic" });
+
+    for (const span of findCompleteMarkdownTables(state.doc)) {
+      const from = state.doc.line(span.startLine).from;
+      const to = state.doc.line(span.endLine).to;
+      if (!selectionIntersectsRange(state.selection, from, to)) {
+        builder.add(from, to, mark);
+      }
+    }
+
+    for (const lineNo of findInlineImageLines(state.doc)) {
+      const line = state.doc.line(lineNo);
+      if (!selectionIntersectsRange(state.selection, line.from, line.to)) {
+        builder.add(line.from, line.to, mark);
+      }
+    }
+
+    return builder.finish();
   });
 }
 
@@ -1956,7 +1861,7 @@ function makeLinkClickHandler(vaultPath: string, filePath: string) {
         openDomContextMenu(event.clientX, event.clientY, [
           {
             label: "Open Note",
-            onClick: () => openNoteByName(name),
+            onClick: () => openNoteByWikilinkNameFromStore(name),
           },
         ]);
         return true;
@@ -1978,6 +1883,7 @@ export function makeInlinePreviewExtension(
   return [
     makeImageDecosField(vaultPath, filePath),
     makeMarkdownTableCollapseField(),
+    makeInlinePreviewAtomicRanges(),
     makeLinkClickHandler(vaultPath, filePath),
   ];
 }

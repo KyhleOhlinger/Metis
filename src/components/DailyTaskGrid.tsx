@@ -518,6 +518,36 @@ function parseWeekStartFromKey(year: number, monthIndex: number, wk: string): Da
   return startOfWeekMonday(d);
 }
 
+/** Calendar month selected in Weekly Review navigation (the week containing the 1st). */
+function resolveWeeklyViewMonth(anchorWeek: Date): Date {
+  const weekStart = startOfDay(anchorWeek);
+  const weekEnd = addDays(weekStart, 6);
+  for (let y = weekStart.getFullYear() - 1; y <= weekStart.getFullYear() + 1; y++) {
+    for (let m = 0; m < 12; m++) {
+      const first = monthStart(y, m);
+      if (first.getTime() >= weekStart.getTime() && first.getTime() <= weekEnd.getTime()) {
+        return first;
+      }
+    }
+  }
+  return monthStart(anchorWeek.getFullYear(), anchorWeek.getMonth());
+}
+
+/** Every Monday that falls inside the given calendar month. */
+function mondaysInCalendarMonth(year: number, monthIndex: number): Date[] {
+  const result: Date[] = [];
+  const first = monthStart(year, monthIndex);
+  let monday = startOfWeekMonday(first);
+  if (monday.getTime() < first.getTime()) {
+    monday = addDays(monday, 7);
+  }
+  while (monday.getFullYear() === year && monday.getMonth() === monthIndex) {
+    result.push(new Date(monday));
+    monday = addDays(monday, 7);
+  }
+  return result;
+}
+
 function toIsoDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -1180,26 +1210,29 @@ export default function DailyTaskGrid() {
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
     [anchorWeek],
   );
-  const activeMonthEntry = useMemo(() => monthEntryFor(manifest, anchorWeek), [manifest, anchorWeek]);
+  const weeklyViewMonth = useMemo(() => resolveWeeklyViewMonth(anchorWeek), [anchorWeek]);
   const reviewWeeks = useMemo(() => {
+    const year = weeklyViewMonth.getFullYear();
+    const monthIndex = weeklyViewMonth.getMonth();
+    const monthLabel = monthName(weeklyViewMonth);
+    const monthEntry = getYearEntry(manifest, String(year))[monthLabel] ?? makeEmptyMonthEntry();
+
     const dedup = new Map<string, Date>();
-    const year = anchorWeek.getFullYear();
-    const monthIndex = anchorWeek.getMonth();
-    for (const wk of Object.keys(activeMonthEntry.daily_logs)) {
-      const parsed = parseWeekStartFromKey(year, monthIndex, wk);
-      if (parsed) dedup.set(wk, parsed);
-    }
-    for (const wk of Object.keys(activeMonthEntry.weekly_reviews)) {
-      const parsed = parseWeekStartFromKey(year, monthIndex, wk);
-      if (parsed) dedup.set(wk, parsed);
-    }
-    for (const monday of visibleWeeks) {
+    for (const monday of mondaysInCalendarMonth(year, monthIndex)) {
       dedup.set(weekKey(monday), monday);
+    }
+    // Preserve stored rows whose keys still belong to this calendar month.
+    for (const wk of Object.keys(monthEntry.weekly_reviews)) {
+      if (dedup.has(wk)) continue;
+      const parsed = parseWeekStartFromKey(year, monthIndex, wk);
+      if (parsed && parsed.getMonth() === monthIndex && parsed.getFullYear() === year) {
+        dedup.set(wk, parsed);
+      }
     }
     return [...dedup.entries()]
       .sort((a, b) => a[1].getTime() - b[1].getTime())
       .map(([wk, monday]) => ({ wk, monday }));
-  }, [activeMonthEntry, anchorWeek, visibleWeeks]);
+  }, [manifest, weeklyViewMonth]);
   const monthlyReviewYear = anchorWeek.getFullYear();
   const monthlyReviewMonths = useMemo(
     () => Array.from({ length: 12 }, (_, i) => monthStart(monthlyReviewYear, i)),
@@ -1249,9 +1282,19 @@ export default function DailyTaskGrid() {
     const el = plannerScrollRef.current;
     if (!el || (tab === "daily" && dailyExpandedCellKey)) return;
     requestAnimationFrame(() => {
+      if (tab === "monthly") {
+        const now = new Date();
+        const targetMonth =
+          monthlyReviewYear === now.getFullYear() ? now.getMonth() : 0;
+        const row = el.querySelector<HTMLElement>(`[data-monthly-row="${targetMonth}"]`);
+        if (row) {
+          row.scrollIntoView({ block: "start" });
+          return;
+        }
+      }
       el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
     });
-  }, [tab, dailyExpandedCellKey]);
+  }, [tab, dailyExpandedCellKey, monthlyReviewYear]);
 
   useEffect(() => {
     if (tab !== "daily") setDailyExpandedCellKey(null);
@@ -2734,18 +2777,18 @@ export default function DailyTaskGrid() {
           <div className="space-y-2">
             <div className="grid grid-cols-[220px_minmax(420px,1fr)] gap-1.5">
               <div className={PLANNER_PURPLE_HEADER}>
-                {useWeeklyTemplateForDate(anchorWeek)
+                {useMonthlyTemplateForDate(weeklyViewMonth)
                   ? layoutTemplates.weeklyLeftHeader
                   : DEFAULT_LAYOUT_TEMPLATES.weeklyLeftHeader}
               </div>
               <div className={PLANNER_PURPLE_HEADER}>
-                {useWeeklyTemplateForDate(anchorWeek)
+                {useMonthlyTemplateForDate(weeklyViewMonth)
                   ? layoutTemplates.weeklyRightHeader
                   : DEFAULT_LAYOUT_TEMPLATES.weeklyRightHeader}
               </div>
             </div>
             {reviewWeeks.map(({ wk, monday }) => {
-              const review = activeMonthEntry.weekly_reviews[wk];
+              const review = monthEntryFor(manifest, monday).weekly_reviews[wk];
               const weeklyDefault = useWeeklyTemplateForDate(monday)
                 ? layoutTemplates.weeklyDefaultContent
                 : WEEKLY_TEMPLATE;
@@ -2798,6 +2841,7 @@ export default function DailyTaskGrid() {
               return (
                 <div
                   key={monthDate.toISOString()}
+                  data-monthly-row={monthDate.getMonth()}
                   className="grid min-w-[920px] grid-cols-[120px_minmax(260px,1fr)_minmax(220px,1fr)] gap-1.5"
                 >
                   <div className={PLANNER_PURPLE_HEADER}>

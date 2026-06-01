@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AssetMetadata } from "../store/useStore";
+import { normalizePosixPath, isPathWithinVault } from "./paths";
 
 /**
  * Resolve an Obsidian-style wikilink asset reference to an absolute path.
@@ -23,8 +24,8 @@ export function resolveWikilinkAssetPath(
 ): string {
   // Rule 1 — explicit sub-path: treat as vault-root-relative
   if (wikilinkName.includes("/")) {
-    const resolved = normalizePath(`${vaultPath}/${wikilinkName}`);
-    if (!resolved.startsWith(vaultPath + "/") && resolved !== vaultPath) {
+    const resolved = normalizePosixPath(`${vaultPath}/${wikilinkName}`);
+    if (!isPathWithinVault(resolved, vaultPath)) {
       return `${vaultPath}/${wikilinkName.split("/").pop() ?? wikilinkName}`;
     }
     return resolved;
@@ -37,19 +38,6 @@ export function resolveWikilinkAssetPath(
 
   // Rule 3 — fallback: assume vault root (original Metis behaviour)
   return `${vaultPath}/${wikilinkName}`;
-}
-
-function normalizePath(path: string): string {
-  const parts = path.split("/");
-  const out: string[] = [];
-  for (const part of parts) {
-    if (part === "..") {
-      if (out.length > 1) out.pop();
-    } else if (part !== ".") {
-      out.push(part);
-    }
-  }
-  return out.join("/");
 }
 
 /**

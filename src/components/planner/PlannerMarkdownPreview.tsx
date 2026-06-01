@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+import { parseMarkdownToHtml } from "../../utils/markdownHtml";
 
 interface Props {
   content: string;
@@ -23,14 +22,15 @@ export default function PlannerMarkdownPreview({
   className = "",
   onClick,
 }: Props) {
-  const html = useMemo(() => {
-    if (!content.trim()) return "";
-    const raw = marked.parse(content, { gfm: true, breaks: true }) as string;
-    return DOMPurify.sanitize(raw, {
-      ADD_TAGS: ["input"],
-      ADD_ATTR: ["type", "checked", "disabled"],
-    });
-  }, [content]);
+  const html = useMemo(
+    () =>
+      parseMarkdownToHtml(content, {
+        gfm: true,
+        breaks: true,
+        sanitize: { taskLists: true },
+      }),
+    [content],
+  );
 
   const sizeStyle = fillHeight
     ? { flex: "1 1 0%", minHeight: `${Math.max(48, minHeightPx)}px` }

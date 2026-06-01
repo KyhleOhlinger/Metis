@@ -1306,21 +1306,31 @@ fn copy_files_to_folder(
 // This means you can configure test keys freely in dev without any risk of
 // them appearing when you run `tauri build`.
 
-fn app_data_file(app_handle: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
+fn app_data_dir_for_build(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let base = app_handle
         .path()
         .app_data_dir()
         .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
 
-    // Separate data directories for debug vs release so dev credentials are
-    // completely isolated from the production data store.
     #[cfg(debug_assertions)]
     let dir = base.join("dev");
     #[cfg(not(debug_assertions))]
     let dir = base;
 
     fs::create_dir_all(&dir).map_err(|e| format!("Cannot create app data dir: {e}"))?;
-    Ok(dir.join(name))
+    Ok(dir)
+}
+
+fn app_data_file(app_handle: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
+    Ok(app_data_dir_for_build(app_handle)?.join(name))
+}
+
+/// App profile directory where the webview persists planner data (`localStorage`).
+#[tauri::command]
+fn get_planner_storage_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+    Ok(app_data_dir_for_build(&app_handle)?
+        .to_string_lossy()
+        .into_owned())
 }
 
 #[tauri::command]
@@ -2631,6 +2641,7 @@ fn main() {
             save_personas,
             load_settings,
             save_settings,
+            get_planner_storage_dir,
             get_file_summaries,
             get_files_content,
             get_folder_md_contents,
