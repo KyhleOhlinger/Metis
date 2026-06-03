@@ -27,7 +27,7 @@
         "enable": true,
         "scope": ["**"]
       },
-      "csp": "default-src 'self' asset: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https:; font-src 'self' data:; connect-src 'self' https://api.openai.com https://generativelanguage.googleapis.com https://api.groq.com https://api.perplexity.ai https://date.nager.at"
+      "csp": "default-src 'self' asset: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob: https:; font-src 'self' data:; connect-src 'self' https: http://127.0.0.1:* http://localhost:* https://date.nager.at"
     }
   },
   "bundle": {

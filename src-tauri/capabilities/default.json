@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities granted to all Metis windows (primary + secondary vault windows)",
-  "windows": ["main", "vault_*", "metis-help"],
+  "windows": ["main", "vault_*"],
   "permissions": [
     "core:default",
     "dialog:allow-open",
@@ -10,10 +10,9 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "https://api.openai.com/**" },
-        { "url": "https://generativelanguage.googleapis.com/**" },
-        { "url": "https://api.groq.com/**" },
-        { "url": "https://api.perplexity.ai/**" },
+        { "url": "https://**" },
+        { "url": "http://127.0.0.1:**" },
+        { "url": "http://localhost:**" },
         { "url": "https://date.nager.at/**" }
       ]
     },

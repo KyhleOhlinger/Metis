@@ -11,7 +11,8 @@
 
 import type OpenAI from "openai";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import type { ProviderConfig } from "../types/persona";
+import type { AiProviderProfile } from "../types/persona";
+import { inferAdapter, isOfficialGeminiApiHost } from "../utils/providerProfiles";
 
 /** Same shape as ParsedToolCall in aiService — kept local to avoid a circular import. */
 export interface GeminiNativeToolCall {
@@ -32,11 +33,21 @@ function httpFetch(): typeof fetch {
   return isTauriWebview() ? (tauriFetch as unknown as typeof fetch) : fetch.bind(globalThis);
 }
 
-/** Official API host only — custom Gemini base URLs keep using the OpenAI-compat client in aiService. */
-export function usesGeminiNativeApi(config: ProviderConfig): boolean {
-  const u = (config.baseUrl ?? "").trim().toLowerCase();
-  if (!u) return true;
-  return u.includes("generativelanguage.googleapis.com");
+/** Use native Gemini REST when the profile adapter or URL targets Google. */
+export function profileUsesGeminiNative(profile: AiProviderProfile): boolean {
+  return inferAdapter(profile.baseUrl, profile.adapter) === "gemini-native";
+}
+
+/** @deprecated */
+export function usesGeminiNativeApi(config: { baseUrl?: string }): boolean {
+  const raw = (config.baseUrl ?? "").trim();
+  if (!raw) return true;
+  try {
+    const u = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return isOfficialGeminiApiHost(u.hostname);
+  } catch {
+    return false;
+  }
 }
 
 /** Browser-only Vite dev: proxy to avoid CORS (same pattern as aiService). */
@@ -51,14 +62,14 @@ export function geminiNativeDefaultOrigin(): string {
  * REST base origin: user may set baseUrl to the official host (or …/v1beta/openai).
  * Regional hosts stay on the same Google API family.
  */
-export function resolveGeminiRestOrigin(config: ProviderConfig): string {
+export function resolveGeminiRestOrigin(config: AiProviderProfile): string {
   const raw = (config.baseUrl ?? "").trim();
   if (raw) {
     try {
       let s = raw.replace(/\/+$/, "");
       if (s.endsWith("/openai")) s = s.slice(0, -"/openai".length);
       const u = new URL(s.includes("://") ? s : `https://${s}`);
-      if (u.hostname.includes("generativelanguage.googleapis.com")) {
+      if (isOfficialGeminiApiHost(u.hostname)) {
         return `${u.protocol}//${u.host}`;
       }
     } catch {
@@ -193,7 +204,7 @@ const GEMINI_KEY_HEADER = "x-goog-api-key";
  * Streaming chat — parses SSE lines from streamGenerateContent.
  */
 export async function streamGeminiNativeChat(
-  config: ProviderConfig,
+  config: AiProviderProfile,
   model: string,
   systemPrompt: string,
   userText: string,
@@ -315,7 +326,7 @@ export async function streamGeminiNativeChat(
 
 /** Single-shot generateContent (scout, probes). */
 export async function generateGeminiNativeContent(
-  config: ProviderConfig,
+  config: AiProviderProfile,
   model: string,
   systemPrompt: string,
   userText: string,
@@ -361,8 +372,62 @@ export async function generateGeminiNativeContent(
   return text;
 }
 
+/** Vision OCR — single generateContent with inline image bytes. */
+export async function geminiNativeTranscribeImage(
+  config: AiProviderProfile,
+  model: string,
+  systemPrompt: string,
+  userText: string,
+  imageBase64: string,
+  mimeType: string,
+): Promise<string> {
+  const id = normalizeModelId(model);
+  const base = resolveGeminiRestOrigin(config);
+  const url = `${base}/v1beta/models/${encodeURIComponent(id)}:generateContent`;
+  const f = httpFetch();
+
+  const res = await f(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [GEMINI_KEY_HEADER]: config.apiKey,
+    },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: userText },
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+          ],
+        },
+      ],
+      generationConfig: { maxOutputTokens: 8192 },
+    }),
+  });
+
+  if (!res.ok) {
+    let errBody: unknown;
+    try {
+      errBody = await res.json();
+    } catch {
+      errBody = await res.text();
+    }
+    const msg =
+      (typeof errBody === "object" && errBody && geminiErrorMessage(errBody)) ||
+      (typeof errBody === "string" ? errBody : "") ||
+      `HTTP ${res.status}`;
+    throw new GeminiNativeError(msg, res.status, errBody);
+  }
+
+  const data = (await res.json()) as unknown;
+  const { text } = extractStreamPart(data);
+  return text;
+}
+
 /** List models (GET v1beta/models) — short IDs without `models/` prefix. */
-export async function listGeminiNativeModels(config: ProviderConfig): Promise<string[]> {
+export async function listGeminiNativeModels(config: AiProviderProfile): Promise<string[]> {
   const base = resolveGeminiRestOrigin(config);
   const apiKey = config.apiKey;
   const url = `${base}/v1beta/models?pageSize=100`;

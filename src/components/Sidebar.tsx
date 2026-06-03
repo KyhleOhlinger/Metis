@@ -1058,7 +1058,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
                 )}
               </div>
             ) : (() => {
-              const PINNED_NAMES = ["daily", "meetings", "summaries", "assets"];
+              const PINNED_NAMES = ["daily", "meetings", "summaries", "handwritten", "assets"];
               const pinned = files.filter(n => n.is_dir && PINNED_NAMES.includes(n.name.toLowerCase()));
               const rest    = files.filter(n => !(n.is_dir && PINNED_NAMES.includes(n.name.toLowerCase())));
               return (

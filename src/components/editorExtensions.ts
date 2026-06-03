@@ -480,9 +480,11 @@ function sourceImageRevealMenuItems(
 // work without manual path adjustments.
 function resolveWikiSrc(filename: string, vaultPath: string): string {
   const { assetIndex } = useStore.getState();
-  return convertFileSrc(
+  const resolved = normalizePosixPath(
     resolveWikilinkAssetPath(filename, assetIndex, vaultPath),
   );
+  if (!isPathWithinVault(resolved, vaultPath)) return "";
+  return convertFileSrc(resolved);
 }
 
 // Node types whose text should be dimmed when the cursor is not on the same line

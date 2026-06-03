@@ -23,9 +23,9 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Persona, ExecutionScope, ProviderConfig } from "../types/persona";
+import type { AiProviderProfile, Persona, ExecutionScope } from "../types/persona";
 import { createAIClient, curatedSmallModelId } from "./aiService";
-import { generateGeminiNativeContent, usesGeminiNativeApi } from "./geminiNative";
+import { generateGeminiNativeContent, profileUsesGeminiNative } from "./geminiNative";
 
 // ── Model context limits ──────────────────────────────────────────────────────
 // Approximate token context windows for common models. Unknown ids use
@@ -123,7 +123,7 @@ interface FileSummary {
  * @param scope            What the user scoped the run to
  * @param userMessage      The user's question / instruction
  * @param persona          Active persona (supplies model identifier)
- * @param providerConfig   API key + optional base URL
+ * @param profile          Configured API provider profile (URL + key)
  * @param activeFileContent Content of the currently open file
  * @param vaultPath        Absolute path of the open vault
  * @param onStatus         Optional progress reporter (shown in the UI)
@@ -132,7 +132,7 @@ export async function buildSmartContext(
   scope: ExecutionScope,
   userMessage: string,
   persona: Persona,
-  providerConfig: ProviderConfig,
+  profile: AiProviderProfile,
   activeFileContent: string,
   vaultPath: string | null,
   onStatus?: (msg: string) => void,
@@ -227,7 +227,7 @@ export async function buildSmartContext(
   // Google AI Studio / Gemini free tiers frequently return HTTP 429 when Metis
   // sends scout + main chat back-to-back; a single curl only hits one call.
   // Use the same TF-IDF + budget pick as tier 2, over the full ranked list.
-  if (persona.provider === "gemini") {
+  if (profileUsesGeminiNative(profile)) {
     onStatus?.(`Large vault — selecting notes by relevance (Gemini skips scout to avoid rate limits)…`);
     const ranked = scoreByRelevance(summaries, userMessage);
     const selected = pickByBudget(ranked, budget);
@@ -252,7 +252,7 @@ export async function buildSmartContext(
   const candidates = scoreByRelevance(summaries, userMessage).slice(0, MAX_SCOUT_CANDIDATES);
   onStatus?.(`AI scout scanning ${candidates.length} candidate notes…`);
 
-  const selectedNames = await runScout(candidates, userMessage, persona, providerConfig);
+  const selectedNames = await runScout(candidates, userMessage, persona, profile);
   const selectedPaths = resolvePaths(candidates, selectedNames);
 
   if (selectedPaths.length === 0) {
@@ -390,10 +390,10 @@ const SCOUT_SYSTEM_PROMPT =
 async function runScout(
   candidates: FileSummary[],
   userMessage: string,
-  persona: Persona,
-  providerConfig: ProviderConfig,
+  _persona: Persona,
+  profile: AiProviderProfile,
 ): Promise<string[]> {
-  const scoutModel = curatedSmallModelId(persona.provider);
+  const scoutModel = curatedSmallModelId(profile);
 
   // Build a compact directory listing for the scout prompt
   const listing = candidates
@@ -404,10 +404,10 @@ async function runScout(
     `Task: ${userMessage}\n\nAvailable notes:\n\n${listing}\n\n` +
     "Return a JSON array of the filenames most relevant to this task.";
 
-  if (persona.provider === "gemini" && usesGeminiNativeApi(providerConfig)) {
+  if (profileUsesGeminiNative(profile)) {
     try {
       const raw = await generateGeminiNativeContent(
-        providerConfig,
+        profile,
         scoutModel,
         SCOUT_SYSTEM_PROMPT,
         userPrompt,
@@ -421,7 +421,7 @@ async function runScout(
     }
   }
 
-  const client = createAIClient(persona.provider, providerConfig);
+  const client = createAIClient(profile);
 
   try {
     const resp = await client.chat.completions.create({

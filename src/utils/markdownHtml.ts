@@ -57,6 +57,10 @@ export function sanitizeMarkdownHtml(
   return DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: [...addTags],
     ADD_ATTR: addAttr,
+    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
+    // Block javascript:, data:, and vbscript: in href/src
+    ALLOWED_URI_REGEXP:
+      /^(?:(?:https?|mailto):|#|\/|\.\/|[^:/?#]+(?:\/[^:/?#]*)*(?:\?[^#]*)?(?:#.*)?)$/i,
   });
 }
 

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "help",
+  "description": "Minimal capabilities for the static help window — no vault FS, HTTP, or dialogs",
+  "windows": ["metis-help"],
+  "permissions": ["core:default"]
+}

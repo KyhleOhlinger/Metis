@@ -41,17 +41,30 @@ export function resolveMarkdownImageAbsPath(
   return isPathWithinVault(normalized, vaultPath) ? normalized : null;
 }
 
-/** Resolve image src to a display URL (`asset://`, https, etc.). */
+/**
+ * Convert an absolute vault path to `asset://` only when inside the vault.
+ * SECURITY: never pass arbitrary paths to `convertFileSrc` (asset protocol scope).
+ */
+export function safeConvertFileSrc(absPath: string, vaultPath: string): string {
+  if (!vaultPath?.trim()) return "";
+  const normalized = normalizePosixPath(absPath);
+  if (!isPathWithinVault(normalized, vaultPath)) return "";
+  return convertFileSrc(normalized);
+}
+
+/** Resolve image src to a display URL (`asset://` for vault files only). */
 export function resolveMarkdownImageSrc(
   src: string,
   vaultPath: string,
   fileDir: string,
   assetIndex?: AssetMetadata[],
 ): string {
-  if (!src || /^(https?:|data:|asset:|blob:)/i.test(src)) return src;
+  if (!src) return "";
+  // Remote and inline URLs are not loaded in preview (tracking / XSS risk).
+  if (/^(https?:|data:|asset:|blob:)/i.test(src)) return "";
   const abs = resolveMarkdownImageAbsPath(src, vaultPath, fileDir, assetIndex);
   if (!abs) return "";
-  return convertFileSrc(abs);
+  return safeConvertFileSrc(abs, vaultPath);
 }
 
 /** True when a vault tree entry is a raster/vector image file. */

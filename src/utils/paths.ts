@@ -18,3 +18,13 @@ export function isPathWithinVault(abs: string, vaultPath: string): boolean {
   const normalized = normalizePosixPath(abs);
   return normalized === vaultPath || normalized.startsWith(`${vaultPath}/`);
 }
+
+/** Validate LLM-supplied vault-relative note paths before agent writes. */
+export function sanitizeAgentNoteRelativePath(raw: string): string | null {
+  const p = raw.trim().replace(/\\/g, "/");
+  if (!p || p.startsWith("/") || p.includes("..")) return null;
+  for (const seg of p.split("/")) {
+    if (!seg || seg === "..") return null;
+  }
+  return p;
+}
