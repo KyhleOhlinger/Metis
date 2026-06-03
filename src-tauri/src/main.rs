@@ -171,10 +171,44 @@ fn validate_relative_vault_dir(dir: &str) -> Result<String, String> {
     if trimmed.is_empty() {
         return Err("Image folder path cannot be empty.".into());
     }
-    if trimmed.contains("..") || trimmed.starts_with('/') || trimmed.contains('\\') {
+    if trimmed.starts_with('/') || trimmed.contains('\\') {
         return Err("Invalid image folder path.".into());
     }
+    for segment in trimmed.split('/') {
+        if segment.is_empty() || segment == ".." {
+            return Err("Invalid image folder path.".into());
+        }
+    }
     Ok(trimmed.to_string())
+}
+
+/// Help webview must not invoke vault or settings IPC (defense in depth with capabilities).
+fn reject_untrusted_webview(window: &tauri::WebviewWindow) -> Result<(), String> {
+    if window.label() == "metis-help" {
+        return Err("This command is not available from the help window.".into());
+    }
+    Ok(())
+}
+
+const MAX_PERSISTED_JSON_BYTES: usize = 2 * 1024 * 1024;
+
+/// Write app-data JSON with size cap and owner-only permissions on Unix.
+fn write_private_json_file(path: &Path, json: &str) -> Result<(), String> {
+    if json.len() > MAX_PERSISTED_JSON_BYTES {
+        return Err("Payload too large.".into());
+    }
+    fs::write(path, json.as_bytes()).map_err(|e| format!("Failed to write file: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path)
+            .map_err(|e| format!("Failed to set file permissions: {e}"))?
+            .permissions();
+        perms.set_mode(0o600);
+        fs::set_permissions(path, perms)
+            .map_err(|e| format!("Failed to set file permissions: {e}"))?;
+    }
+    Ok(())
 }
 
 /// Identify the likely originating tool for a non-Metis vault.
@@ -187,27 +221,14 @@ fn detect_vault_hint(root: &Path) -> String {
     }
 }
 
-/// Recursively collect all `.md` files under `root`, skipping hidden
-/// directories (dot-prefix).  Used by `convert_vault_to_metis` to count and
-/// iterate notes for metadata back-fill.
+/// Collect `.md` files under `root`, canonicalized and vault-bounded (symlink-safe).
 fn collect_md_files(root: &Path) -> Vec<PathBuf> {
     let mut result = Vec::new();
-    fn walk(dir: &Path, result: &mut Vec<PathBuf>) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') {
-                continue; // skip hidden files / dirs
-            }
-            if path.is_dir() {
-                walk(&path, result);
-            } else if path.extension().map(|e| e == "md").unwrap_or(false) {
-                result.push(path);
-            }
-        }
-    }
-    walk(root, &mut result);
+    let canon_v = match canon_vault(root) {
+        Ok(c) => c,
+        Err(_) => return result,
+    };
+    collect_md_paths(root, &canon_v, &mut result);
     result
 }
 
@@ -336,9 +357,13 @@ fn enrich_frontmatter(content: &str, file_path: &Path, vault_root: &Path) -> Str
 
 // ── Path helpers ─────────────────────────────────────────────────────────────
 
-/// Recursively build a tree of FileNodes from `root`.
-/// Includes all non-hidden directories (even empty ones) and all `.md` files.
+/// Recursively build a tree of FileNodes from `root` (symlink-safe, vault-bounded).
 fn build_file_tree(root: &Path) -> Result<Vec<FileNode>, String> {
+    let canon_v = canon_vault(root)?;
+    build_file_tree_inner(root, &canon_v)
+}
+
+fn build_file_tree_inner(root: &Path, canon_vault_root: &Path) -> Result<Vec<FileNode>, String> {
     let mut children = Vec::new();
 
     let entries =
@@ -346,7 +371,6 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileNode>, String> {
 
     let mut sorted: Vec<_> = entries.filter_map(|e| e.ok()).collect();
 
-    // Directories first, then files — both sorted alphabetically
     sorted.sort_by(|a, b| {
         let a_is_dir = a.path().is_dir();
         let b_is_dir = b.path().is_dir();
@@ -359,31 +383,34 @@ fn build_file_tree(root: &Path) -> Result<Vec<FileNode>, String> {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
 
-        // Skip hidden files / directories (e.g. .git, .DS_Store)
         if name.starts_with('.') {
             continue;
         }
 
-        if path.is_dir() {
-            // Always include directories so newly-created empty folders appear immediately
-            let sub_children = build_file_tree(&path)?;
+        // SECURITY: canonicalize every entry; skip symlinks that resolve outside the vault.
+        let canon = match path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if !canon.starts_with(canon_vault_root) {
+            continue;
+        }
+
+        if canon.is_dir() {
+            let sub_children = build_file_tree_inner(&path, canon_vault_root)?;
             children.push(FileNode {
                 name,
                 path: path.to_string_lossy().to_string(),
                 is_dir: true,
                 children: Some(sub_children),
             });
-        } else {
-            // Include .md notes and common image/asset file types so that
-            // folders like assets/ expand and show their contents in the sidebar.
-            if is_allowed_ext(&path) {
-                children.push(FileNode {
-                    name,
-                    path: path.to_string_lossy().to_string(),
-                    is_dir: false,
-                    children: None,
-                });
-            }
+        } else if is_allowed_ext(&path) {
+            children.push(FileNode {
+                name,
+                path: path.to_string_lossy().to_string(),
+                is_dir: false,
+                children: None,
+            });
         }
     }
 
@@ -404,6 +431,7 @@ fn open_vault(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultData, String> {
+    reject_untrusted_webview(&window)?;
     let root = PathBuf::from(&path);
 
     if !root.exists() {
@@ -433,7 +461,7 @@ fn open_vault(
 
     let vault_hint = if is_metis_vault {
         // For Metis vaults, idempotently re-create any missing default folders.
-        for default_dir in &["daily", "meetings", "summaries", "assets"] {
+        for default_dir in &["daily", "meetings", "summaries", "handwritten", "assets"] {
             let _ = fs::create_dir(root.join(default_dir));
         }
         None
@@ -472,6 +500,7 @@ fn save_note(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let target = PathBuf::from(&path);
 
     // Only allow saving markdown files
@@ -514,6 +543,7 @@ fn get_file_content(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let target = PathBuf::from(&path);
     if target.extension().and_then(|e| e.to_str()) != Some("md") {
         return Err("get_file_content only accepts .md files".into());
@@ -539,6 +569,88 @@ fn get_file_content(
     }
 
     fs::read_to_string(&resolved).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+/// Base-64 payload for vision OCR (one vault image at a time).
+#[derive(serde::Serialize)]
+struct VaultImageBase64 {
+    data_base64: String,
+    mime_type: String,
+}
+
+/// Read a vault image as base-64 for cloud vision OCR.
+///
+/// SECURITY: Only raster image extensions; path must stay inside the active vault.
+/// Rejects payloads that would exceed ~15 MB decoded.
+#[tauri::command]
+fn read_vault_image_base64(
+    path: String,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<VaultImageBase64, String> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    reject_untrusted_webview(&window)?;
+    let target = PathBuf::from(&path);
+    let ext = target
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    const ALLOWED: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
+    if !ALLOWED.contains(&ext.as_str()) {
+        return Err(format!(
+            "read_vault_image_base64: '.{ext}' is not an allowed image type."
+        ));
+    }
+
+    let mime_type = match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        _ => "application/octet-stream",
+    }
+    .to_string();
+
+    let lock = vault_state.0.lock().unwrap();
+    let vault_str = lock
+        .get(window.label())
+        .ok_or("read_vault_image_base64: no vault registered for this window.")?
+        .clone();
+    drop(lock);
+
+    let vault = PathBuf::from(&vault_str);
+    let canon_v =
+        canon_vault(&vault).map_err(|e| format!("read_vault_image_base64: {e}"))?;
+    let resolved =
+        safe_resolve(&target).map_err(|e| format!("read_vault_image_base64: {e}"))?;
+    if !resolved.starts_with(&canon_v) {
+        return Err("read_vault_image_base64: path is outside the active vault.".into());
+    }
+    if !resolved.is_file() {
+        return Err(format!("Image not found: {}", resolved.display()));
+    }
+
+    const MAX_BYTES: u64 = 15 * 1024 * 1024;
+    let meta = fs::metadata(&resolved)
+        .map_err(|e| format!("read_vault_image_base64: {e}"))?;
+    if meta.len() > MAX_BYTES {
+        return Err("Image is too large (max 15 MB).".into());
+    }
+
+    let bytes = fs::read(&resolved).map_err(|e| format!("Failed to read image: {e}"))?;
+    if bytes.is_empty() {
+        return Err("Image file is empty.".into());
+    }
+
+    Ok(VaultImageBase64 {
+        data_base64: STANDARD.encode(bytes),
+        mime_type,
+    })
 }
 
 /// Read many `.md` files in **one** IPC round-trip for vault index enrichment.
@@ -664,7 +776,7 @@ fn create_vault(
 
     // Create default folder structure — errors are intentionally ignored so a
     // partially-created vault (e.g. permission edge-case) still opens cleanly.
-    for default_dir in &["daily", "meetings", "summaries", "assets"] {
+    for default_dir in &["daily", "meetings", "summaries", "handwritten", "assets"] {
         let _ = fs::create_dir(vault.join(default_dir));
     }
 
@@ -791,6 +903,7 @@ fn delete_path(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let target = PathBuf::from(&path);
 
     // SECURITY: fail-closed — never trust the frontend-supplied vault_path.
@@ -1152,15 +1265,18 @@ fn open_vault_window(
 
 /// Open `url` in the OS default browser.
 ///
-/// SECURITY: Only https URLs are accepted to prevent abuse
+/// SECURITY: Only HTTPS URLs are accepted to prevent abuse
 /// (e.g. `file://` or custom-protocol injection).
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    let lower = url.to_ascii_lowercase();
-    if !lower.starts_with("https://") && !lower.starts_with("http://") {
-        return Err("Only http(s) URLs may be opened externally.".into());
+    let lower = url.trim().to_ascii_lowercase();
+    if !lower.starts_with("https://") {
+        return Err("Only https:// URLs may be opened externally.".into());
     }
-    open::that(&url).map_err(|e| format!("Failed to open URL: {e}"))
+    if lower.len() < 9 || lower.chars().nth(8) != Some('/') {
+        return Err("Invalid URL.".into());
+    }
+    open::that(url.trim()).map_err(|e| format!("Failed to open URL: {e}"))
 }
 
 /// Persist the vault-relative default folder for pasted/saved images.
@@ -1335,6 +1451,7 @@ fn get_planner_storage_dir(app_handle: tauri::AppHandle) -> Result<String, Strin
 
 #[tauri::command]
 fn load_personas(app_handle: tauri::AppHandle) -> Result<String, String> {
+    // Personas are loaded from the main app webview only (not help).
     let path = app_data_file(&app_handle, "personas.json")?;
     if !path.exists() {
         return Ok("[]".into());
@@ -1344,11 +1461,10 @@ fn load_personas(app_handle: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 fn save_personas(app_handle: tauri::AppHandle, json: String) -> Result<(), String> {
-    // Validate that the payload is valid JSON before writing
     serde_json::from_str::<serde_json::Value>(&json)
         .map_err(|e| format!("Invalid personas JSON: {e}"))?;
     let path = app_data_file(&app_handle, "personas.json")?;
-    fs::write(&path, &json).map_err(|e| format!("Failed to save personas: {e}"))
+    write_private_json_file(&path, &json)
 }
 
 #[tauri::command]
@@ -1365,7 +1481,7 @@ fn save_settings(app_handle: tauri::AppHandle, json: String) -> Result<(), Strin
     serde_json::from_str::<serde_json::Value>(&json)
         .map_err(|e| format!("Invalid settings JSON: {e}"))?;
     let path = app_data_file(&app_handle, "settings.json")?;
-    fs::write(&path, &json).map_err(|e| format!("Failed to save settings: {e}"))
+    write_private_json_file(&path, &json)
 }
 
 // ── Smart context commands ────────────────────────────────────────────────────
@@ -1888,6 +2004,10 @@ fn agent_write_note(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
+    if rel_path.contains("..") {
+        return Err("agent_write_note: path must not contain '..'.".into());
+    }
     let vault_lock = vault_state.0.lock().unwrap();
     let vault_str = vault_lock
         .get(window.label())
@@ -1949,6 +2069,7 @@ fn save_asset(
 ) -> Result<String, String> {
     use base64::{Engine, engine::general_purpose::STANDARD};
 
+    reject_untrusted_webview(&window)?;
     // SECURITY: fail-closed — require a registered vault and verify it matches.
     let trusted_vault_path = {
         let lock = vault_state.0.lock().unwrap();
@@ -1979,7 +2100,8 @@ fn save_asset(
         .unwrap_or("")
         .to_lowercase();
 
-    const ALLOWED: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "svg"];
+    // SECURITY: SVG excluded — can embed scripts when served via asset://
+    const ALLOWED: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
     if !ALLOWED.contains(&ext.as_str()) {
         return Err(format!("'.{ext}' is not an allowed image extension."));
     }
@@ -2296,6 +2418,7 @@ fn convert_vault_to_metis(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultData, String> {
+    reject_untrusted_webview(&window)?;
     let requested_root = PathBuf::from(&vault_path);
     if !requested_root.exists() {
         return Err(format!("Path does not exist: {vault_path}"));
@@ -2353,7 +2476,7 @@ fn convert_vault_to_metis(
 
     // ── Step 2: Create default folder structure ───────────────────────────────
     emit("Creating default folders…", current);
-    for dir in &["daily", "meetings", "summaries", "assets"] {
+    for dir in &["daily", "meetings", "summaries", "handwritten", "assets"] {
         let _ = fs::create_dir(root.join(dir));
     }
     current += 1;
@@ -2647,6 +2770,7 @@ fn main() {
             get_folder_md_contents,
             save_note,
             get_file_content,
+            read_vault_image_base64,
             get_file_contents_batch,
             create_vault,
             create_note,

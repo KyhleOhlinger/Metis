@@ -1,6 +1,24 @@
 // ── Persona types ─────────────────────────────────────────────────────────────
 
-export type AIProvider = "openai" | "gemini" | "groq" | "perplexity";
+/** @deprecated Legacy enum — used only when migrating old settings/personas. */
+export type LegacyAIProvider = "openai" | "gemini" | "groq" | "perplexity";
+
+/** How Metis talks to the endpoint (most providers use OpenAI-compatible chat). */
+export type ProviderAdapter = "openai-compat" | "gemini-native";
+
+/** User-configurable AI endpoint (Settings → API Providers). */
+export interface AiProviderProfile {
+  id: string;
+  /** Display name, e.g. "Work Azure", "Anthropic", "Local Ollama". */
+  name: string;
+  /** OpenAI-compatible API root, e.g. https://api.openai.com/v1 */
+  baseUrl: string;
+  apiKey: string;
+  /** Suggested model when creating a persona tied to this profile. */
+  defaultModel?: string;
+  /** Auto-inferred from URL when omitted. */
+  adapter?: ProviderAdapter;
+}
 
 export interface Persona {
   /** Stable UUID — never changes after creation */
@@ -10,10 +28,10 @@ export interface Persona {
   icon: string;
   /** Maps to the LLM's system message */
   systemPrompt: string;
-  /** e.g. "gpt-4o", "gemini-1.5-pro", "llama3-70b-8192" */
+  /** e.g. "gpt-4o", "claude-sonnet-4-20250514", "llama-3.3-70b-versatile" */
   model: string;
-  /** Which API endpoint family to use */
-  provider: AIProvider;
+  /** References `settings.providerProfiles[].id` */
+  providerProfileId: string;
   /**
    * When true the persona is hidden from the AI-tab chip bar.
    * It still exists in the store and can be re-enabled at any time.
@@ -39,14 +57,6 @@ export interface HistoryEntry {
   scope: ExecutionScope;
   userMessage: string;
   response: string;
-}
-
-// ── Settings ──────────────────────────────────────────────────────────────────
-
-export interface ProviderConfig {
-  apiKey: string;
-  /** Custom base URL (e.g. a local proxy or self-hosted endpoint) */
-  baseUrl?: string;
 }
 
 // ── Quick actions (floating selection toolbar) ────────────────────────────────
@@ -110,9 +120,15 @@ export const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
 ];
 
 export interface Settings {
-  providers: Partial<Record<AIProvider, ProviderConfig>>;
-  /** The provider selected by default when creating new personas */
-  defaultProvider: AIProvider;
+  /** All configured AI endpoints (built-in presets + user-added). */
+  providerProfiles: AiProviderProfile[];
+  /** Default profile when creating a new persona. */
+  defaultProviderProfileId: string | null;
+  /**
+   * Hostnames derived from profile base URLs — synced on save for display and
+   * preflight validation (HTTPS calls use a runtime-wide allow policy in Tauri).
+   */
+  allowedAiHosts: string[];
   /** Floating selection-toolbar actions — persisted so users can customise them */
   quickActions: QuickAction[];
   /**
@@ -133,8 +149,9 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  providers: {},
-  defaultProvider: "openai",
+  providerProfiles: [],
+  defaultProviderProfileId: "preset-openai",
+  allowedAiHosts: [],
   quickActions: DEFAULT_QUICK_ACTIONS,
   storeAiHistory: true,
   aiHistoryMaxResponseChars: 32_000,
@@ -142,25 +159,6 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 // ── Default personas shipped with the app ────────────────────────────────────
-
-// ── Shared UI constants ───────────────────────────────────────────────────────
-// Defined here (the canonical types module) so every component that renders
-// persona/provider UI can import from one place instead of duplicating them.
-
-export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  openai: "OpenAI",
-  gemini: "Google Gemini",
-  groq: "Groq",
-  perplexity: "Perplexity AI",
-};
-
-export const DEFAULT_MODELS: Record<AIProvider, string> = {
-  openai: "gpt-4o",
-  gemini: "gemini-flash-latest",
-  groq: "llama3-70b-8192",
-  // sonar-pro supports real-time web search with a 200k context window
-  perplexity: "sonar-pro",
-};
 
 export const ICON_PRESETS = [
   "✍️","🔍","🧠","⚙️","📝","🎯","💡","🚀","📊","🗂️","🤖","⚡",
@@ -172,6 +170,8 @@ export const ICON_PRESETS = [
  */
 export const LIBRARIAN_PERSONA_ID = "persona-librarian";
 export const TASK_PERSONA_ID      = "persona-task";
+/** Handwriting OCR — transcribes images in `handwritten/` to `.md` notes. */
+export const HANDWRITING_OCR_PERSONA_ID = "persona-handwriting-ocr";
 
 export const DEFAULT_PERSONAS: Persona[] = [
   {
@@ -179,7 +179,7 @@ export const DEFAULT_PERSONAS: Persona[] = [
     name: "The Librarian",
     icon: "📚",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are The Librarian, a structural intelligence embedded in a personal notes vault. " +
       "Your job is to maintain the health of the knowledge graph. " +
@@ -197,11 +197,24 @@ export const DEFAULT_PERSONAS: Persona[] = [
       "Be concise. Do not hallucinate note names — only reference notes that appear in the provided list.",
   },
   {
+    id: HANDWRITING_OCR_PERSONA_ID,
+    name: "Handwriting OCR",
+    icon: "📷",
+    model: "gpt-4o",
+    providerProfileId: "preset-openai",
+    systemPrompt:
+      "You are a handwriting transcription specialist. " +
+      "You read photographs of handwritten notes and convert them into clean, accurate Markdown. " +
+      "Preserve headings, lists, and tables when visible. " +
+      "Use [?] for uncertain words. " +
+      "Return only the transcribed text — no commentary or wrappers.",
+  },
+  {
     id: "persona-task",
     name: "Task Manager",
     icon: "✅",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are a Task Manager embedded in a personal notes vault. " +
       "You receive a structured list of open tasks extracted from every note, " +
@@ -223,7 +236,7 @@ export const DEFAULT_PERSONAS: Persona[] = [
     name: "Writer",
     icon: "✍️",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are an expert writing assistant embedded in a personal notes application. " +
       "Help the user improve clarity, structure, and tone of their notes. " +
@@ -234,7 +247,7 @@ export const DEFAULT_PERSONAS: Persona[] = [
     name: "Analyst",
     icon: "🔍",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are a sharp analytical assistant. Summarise, extract key insights, " +
       "identify patterns, and answer questions about the provided context. " +
@@ -245,7 +258,7 @@ export const DEFAULT_PERSONAS: Persona[] = [
     name: "Researcher",
     icon: "🧠",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are a research assistant helping connect ideas across notes. " +
       "Find relationships, suggest follow-up questions, and surface related concepts. " +
@@ -256,7 +269,7 @@ export const DEFAULT_PERSONAS: Persona[] = [
     name: "Coder",
     icon: "⚙️",
     model: "gpt-4o",
-    provider: "openai",
+    providerProfileId: "preset-openai",
     systemPrompt:
       "You are a senior software engineer. Help the user understand, write, debug, " +
       "or improve code found in their notes. Use fenced code blocks with language tags.",

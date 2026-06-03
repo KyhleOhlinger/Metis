@@ -1,4 +1,5 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
+import { safeConvertFileSrc } from "../utils/vaultImages";
 import type { MouseEvent } from "react";
 import { revealPlatformLabel } from "../utils/vaultNavigation";
 import { openDomContextMenu } from "../utils/domContextMenu";
@@ -10,7 +11,7 @@ interface Props {
 }
 
 export default function VaultImageViewer({ filePath, vaultPath, bgColor }: Props) {
-  const src = convertFileSrc(filePath);
+  const src = safeConvertFileSrc(filePath, vaultPath);
 
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault();

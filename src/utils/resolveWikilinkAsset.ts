@@ -1,6 +1,6 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
 import type { AssetMetadata } from "../store/useStore";
 import { normalizePosixPath, isPathWithinVault } from "./paths";
+import { safeConvertFileSrc } from "./vaultImages";
 
 /**
  * Resolve an Obsidian-style wikilink asset reference to an absolute path.
@@ -49,7 +49,6 @@ export function resolveWikilinkAssetSrc(
   assetIndex: AssetMetadata[],
   vaultPath: string,
 ): string {
-  return convertFileSrc(
-    resolveWikilinkAssetPath(wikilinkName, assetIndex, vaultPath),
-  );
+  const abs = resolveWikilinkAssetPath(wikilinkName, assetIndex, vaultPath);
+  return safeConvertFileSrc(abs, vaultPath);
 }

@@ -77,6 +77,9 @@ export function listVaultFolderOptions(
   if (!seen.has("assets")) {
     out.unshift({ relativePath: "assets", label: "assets" });
   }
+  if (!seen.has("handwritten")) {
+    out.push({ relativePath: "handwritten", label: "handwritten" });
+  }
   out.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
   return out;
 }

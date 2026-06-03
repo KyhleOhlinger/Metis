@@ -2,12 +2,16 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, syncUiAfterDiskWrites, type DiskWrite } from "../store/useStore";
-import { usePersonaStore, selectActivePersona, selectProviderKey } from "../store/usePersonaStore";
+import {
+  usePersonaStore,
+  selectActivePersona,
+  selectProfileApiKey,
+  selectProfileForPersona,
+} from "../store/usePersonaStore";
 import {
   streamResponse,
   testProviderConnection,
   AGENT_FILE_TOOLS,
-  PROVIDER_BASE_URLS,
   type ParsedToolCall,
 } from "../services/aiService";
 import ModelPicker from "./ModelPicker";
@@ -15,18 +19,31 @@ import { buildSmartContext, strategyLabel } from "../services/contextBuilder";
 import PersonaCreator from "./PersonaCreator";
 import QuickActionsSettings from "./QuickActionsSettings";
 import {
+  type AiProviderProfile,
   type Persona,
-  type AIProvider,
   type ExecutionScope,
   type HistoryEntry,
-  PROVIDER_LABELS,
-  DEFAULT_MODELS,
   ICON_PRESETS,
   LIBRARIAN_PERSONA_ID,
   TASK_PERSONA_ID,
+  HANDWRITING_OCR_PERSONA_ID,
 } from "../types/persona";
+import { transcribeHandwritingImage } from "../services/ocrService";
+import {
+  buildHandwritingNoteMarkdown,
+  collectHandwritingImages,
+  mimeTypeForImagePath,
+} from "../utils/handwriting";
+import {
+  makeProviderProfileId,
+  profileForPersona,
+  inferAdapter,
+  findProviderProfile,
+} from "../utils/providerProfiles";
+import { curatedSmallModelId } from "../services/aiService";
 import type { ContextStrategy } from "../services/contextBuilder";
 import { listVaultFolderOptions } from "../utils/noteImages";
+import { sanitizeAgentNoteRelativePath } from "../utils/paths";
 
 const metisIconUrl = new URL("../../metis_icon.png", import.meta.url).href;
 
@@ -74,7 +91,9 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
       setActivePersona: s.setActivePersona,
       addHistory: s.addHistory,
       clearHistory: s.clearHistory,
-      updateProviderConfig: s.updateProviderConfig,
+      upsertProviderProfile: s.upsertProviderProfile,
+      removeProviderProfile: s.removeProviderProfile,
+      setDefaultProviderProfileId: s.setDefaultProviderProfileId,
       updateSettings: s.updateSettings,
     })),
   );
@@ -200,7 +219,9 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
           {tab === "settings" && (
             <SettingsTab
               settings={personaSlice.settings}
-              onUpdateProvider={personaSlice.updateProviderConfig}
+              upsertProviderProfile={personaSlice.upsertProviderProfile}
+              removeProviderProfile={personaSlice.removeProviderProfile}
+              setDefaultProviderProfileId={personaSlice.setDefaultProviderProfileId}
               onUpdateSettings={personaSlice.updateSettings}
             />
           )}
@@ -772,7 +793,13 @@ function buildTodoSyncContent(
 }
 
 // IDs that ship with the app — cannot be deleted; provider/model are editable like other personas.
-const SYSTEM_DEFAULT_IDS = new Set([LIBRARIAN_PERSONA_ID, TASK_PERSONA_ID]);
+const SYSTEM_DEFAULT_IDS = new Set([
+  LIBRARIAN_PERSONA_ID,
+  TASK_PERSONA_ID,
+  HANDWRITING_OCR_PERSONA_ID,
+]);
+
+const MAX_HANDWRITING_OCR_BATCH = 25;
 
 // ── AITab ─────────────────────────────────────────────────────────────────────
 
@@ -854,9 +881,7 @@ function AITab({
   // only affects that single run without changing the active persona chip.
   const overridePersonaIdRef = useRef<string | null>(null);
 
-  const apiKey = activePersona
-    ? selectProviderKey({ ...usePersonaStore.getState(), activePersonaId } as Parameters<typeof selectProviderKey>[0], activePersona.provider)
-    : "";
+  const apiKey = usePersonaStore((s) => selectProfileApiKey(s, activePersona));
 
   const hasApiKey = apiKey.length > 0;
 
@@ -870,12 +895,12 @@ function AITab({
       : activePersona;
     overridePersonaIdRef.current = null; // consume — only affects this run
 
-    const runApiKey = runPersona
-      ? (liveSettings.providers[runPersona.provider]?.apiKey ?? "")
-      : "";
+    const runProfile = runPersona
+      ? profileForPersona(liveSettings, runPersona)
+      : undefined;
 
     const runMessage = userMessage.trim();
-    if (!runPersona || !runApiKey || !runMessage || streaming) return;
+    if (!runPersona || !runProfile?.apiKey?.trim() || !runMessage || streaming) return;
 
     // Freeze mutable run inputs so async steps and callbacks can't drift.
     const runToken = ++runTokenRef.current;
@@ -892,11 +917,6 @@ function AITab({
     setUserMessage("");
     setStreaming(true);
 
-    const runProviderConfig = {
-      apiKey: runApiKey,
-      baseUrl: liveSettings.providers[runPersona.provider]?.baseUrl,
-    };
-
     // Build context using the smart tiered strategy
     let context = "";
     try {
@@ -904,7 +924,7 @@ function AITab({
         runScope,
         runMessage,
         runPersona,
-        runProviderConfig,
+        runProfile,
         runActiveFileContent,
         vaultPath,
         (msg) => setStatusMsg(msg),
@@ -925,7 +945,7 @@ function AITab({
       runPersona,
       context,
       runMessage,
-      runProviderConfig,
+      runProfile,
       {
         onChunk: (chunk) => {
           if (runToken !== runTokenRef.current) return;
@@ -984,10 +1004,14 @@ function AITab({
                   status: "pending",
                 });
               } else if (tc.name === "create_new_note") {
+                const rel =
+                  sanitizeAgentNoteRelativePath(
+                    String(tc.args.relative_path ?? "agent-note.md"),
+                  ) ?? "agent-note.md";
                 writes.push({
                   id: tc.id,
                   tool: "create_new_note",
-                  path: String(tc.args.relative_path ?? "agent-note.md"),
+                  path: rel,
                   content: String(tc.args.content ?? ""),
                   status: "pending",
                 });
@@ -1039,10 +1063,15 @@ function AITab({
     setPendingWrites([]);
     setStreaming(true);
 
-    const providerConfig = {
-      apiKey,
-      baseUrl: settings.providers[activePersona.provider]?.baseUrl,
-    };
+    const profile = selectProfileForPersona(
+      { ...usePersonaStore.getState(), settings },
+      activePersona,
+    );
+    if (!profile) {
+      setStreaming(false);
+      setError("No API provider configured for this persona.");
+      return;
+    }
 
     let orphanContext: string;
     try {
@@ -1066,7 +1095,7 @@ function AITab({
       activePersona,
       orphanContext,
       trigger,
-      providerConfig,
+      profile,
       {
         onChunk: (chunk) => setResponse((prev) => prev + chunk),
         onDone: (text) => {
@@ -1087,7 +1116,7 @@ function AITab({
       },
     );
     abortRef.current = controller;
-  }, [activePersona, hasApiKey, streaming, apiKey, settings, onAddHistory]);
+  }, [activePersona, hasApiKey, streaming, settings, onAddHistory]);
 
   // ── Task Manager: vault-wide task scan + todo.md auto-write ────────────────
   const handleTaskScan = useCallback(async () => {
@@ -1100,10 +1129,15 @@ function AITab({
     setPendingWrites([]);
     setStreaming(true);
 
-    const providerConfig = {
-      apiKey,
-      baseUrl: settings.providers[activePersona.provider]?.baseUrl,
-    };
+    const profile = selectProfileForPersona(
+      { ...usePersonaStore.getState(), settings },
+      activePersona,
+    );
+    if (!profile) {
+      setStreaming(false);
+      setError("No API provider configured for this persona.");
+      return;
+    }
 
     let taskContext: string;
     try {
@@ -1128,7 +1162,7 @@ function AITab({
       activePersona,
       taskContext,
       trigger,
-      providerConfig,
+      profile,
       {
         onChunk: (chunk) => setResponse((prev) => prev + chunk),
         onDone: async (text) => {
@@ -1225,6 +1259,127 @@ function AITab({
       setStreaming(false);
     }
   }, [streaming, vaultPath]);
+
+  const handwritingPendingCount = useMemo(() => {
+    if (!vaultPath) return 0;
+    return collectHandwritingImages(files, vaultPath, "pending").length;
+  }, [files, vaultPath]);
+
+  const handwritingTotalCount = useMemo(() => {
+    if (!vaultPath) return 0;
+    return collectHandwritingImages(files, vaultPath, "all").length;
+  }, [files, vaultPath]);
+
+  const runHandwritingOcr = useCallback(
+    async (mode: "pending" | "all") => {
+      if (!activePersona || !hasApiKey || streaming || !vaultPath) return;
+
+      let images = collectHandwritingImages(files, vaultPath, mode);
+      if (!images.length) {
+        setError(
+          mode === "pending"
+            ? "No new images in handwritten/ — add photos there, or use Re-transcribe all."
+            : "No images in handwritten/. Add photos to that Space in the sidebar first.",
+        );
+        return;
+      }
+
+      let batchNote = "";
+      if (images.length > MAX_HANDWRITING_OCR_BATCH) {
+        images = images.slice(0, MAX_HANDWRITING_OCR_BATCH);
+        batchNote = ` (first ${MAX_HANDWRITING_OCR_BATCH} only)`;
+      }
+
+      const willOverwrite = images.some((i) => i.hasExistingNote);
+      const confirmMsg = willOverwrite
+        ? `Transcribe ${images.length} image(s)${batchNote}? Existing .md files with the same name will be overwritten.`
+        : `Transcribe ${images.length} image(s)${batchNote} into Markdown notes in handwritten/?`;
+      if (!window.confirm(confirmMsg)) return;
+
+      const profile = selectProfileForPersona(
+        { ...usePersonaStore.getState(), settings },
+        activePersona,
+      );
+      if (!profile) {
+        setError("No API provider configured for this persona.");
+        return;
+      }
+
+      setError("");
+      setResponse("");
+      setStrategy(null);
+      setPendingWrites([]);
+      setStreaming(true);
+
+      const lines: string[] = [];
+      const diskWrites: DiskWrite[] = [];
+
+      try {
+        for (let i = 0; i < images.length; i++) {
+          const img = images[i]!;
+          setStatusMsg(`Reading ${img.fileName} (${i + 1}/${images.length})…`);
+
+          const payload = await invoke<{ data_base64: string; mime_type: string }>(
+            "read_vault_image_base64",
+            { path: img.path },
+          );
+
+          setStatusMsg(`Transcribing ${img.fileName} (${i + 1}/${images.length})…`);
+          const mime =
+            payload.mime_type || mimeTypeForImagePath(img.path);
+          const result = await transcribeHandwritingImage(
+            activePersona,
+            profile,
+            payload.data_base64,
+            mime,
+            img.fileName,
+          );
+
+          if (!result.ok) {
+            lines.push(`✗ ${img.fileName}: ${result.error}`);
+            continue;
+          }
+
+          const content = buildHandwritingNoteMarkdown(
+            img.relativePath,
+            img.fileName,
+            result.text,
+          );
+          const absPath = await invoke<string>("agent_write_note", {
+            relPath: img.mdPath,
+            content,
+          });
+          diskWrites.push({ path: absPath, content });
+          lines.push(`✓ ${img.fileName} → ${img.fileName.replace(/\.[^.]+$/i, ".md")}`);
+        }
+
+        if (diskWrites.length) {
+          await syncUiAfterDiskWrites(diskWrites);
+          await useStore.getState().refreshVault();
+        }
+
+        setResponse(lines.join("\n"));
+        setStatusMsg(
+          diskWrites.length
+            ? `✓ Wrote ${diskWrites.length} note${diskWrites.length !== 1 ? "s" : ""} to handwritten/`
+            : "No notes were written.",
+        );
+        onAddHistory({
+          id: `h-${Date.now()}`,
+          timestamp: Date.now(),
+          personaId: activePersona.id,
+          scope: { type: "specific-folder", folderPath: `${vaultPath}/handwritten` },
+          userMessage: `Handwriting OCR (${mode}): ${images.length} image(s)`,
+          response: lines.join("\n"),
+        });
+      } catch (e) {
+        setError(`Handwriting OCR failed: ${String(e)}`);
+      } finally {
+        setStreaming(false);
+      }
+    },
+    [activePersona, hasApiKey, streaming, vaultPath, files, settings, onAddHistory],
+  );
 
   // Keep ref in sync so the selectionQuery effect can call handleRun
   handleRunRef.current = handleRun;
@@ -1596,6 +1751,60 @@ function AITab({
         </div>
       )}
 
+      {/* ── Handwriting OCR — images in handwritten/ Space ───────── */}
+      {activePersona?.id === HANDWRITING_OCR_PERSONA_ID && (
+        <div className="shrink-0 border-b border-border bg-surface-overlay/40 px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <span className="text-lg leading-none shrink-0">📷</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-text-primary mb-0.5">
+                Handwriting → Markdown
+              </p>
+              <p className="text-[10px] text-text-muted leading-relaxed mb-2">
+                Add photos of handwritten notes to the{" "}
+                <code className="font-mono text-[9px]">handwritten/</code> Space (sidebar).
+                Vision AI transcribes each image into a sibling{" "}
+                <code className="font-mono text-[9px]">.md</code> note with the image embedded.
+                Use a vision model (e.g. <code className="font-mono text-[9px]">gpt-4o</code>,{" "}
+                <code className="font-mono text-[9px]">gemini-1.5-flash</code>).
+              </p>
+              {vaultPath && (
+                <p className="text-[10px] text-text-muted mb-2">
+                  {handwritingPendingCount} new · {handwritingTotalCount} total image
+                  {handwritingTotalCount !== 1 ? "s" : ""} in handwritten/
+                </p>
+              )}
+              <div
+                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 mb-2 text-[10px] text-amber-200/90 leading-relaxed"
+              >
+                <span className="font-semibold text-amber-100">Writes immediately:</span>{" "}
+                each transcription is saved to{" "}
+                <code className="font-mono text-[9px]">handwritten/&lt;name&gt;.md</code>{" "}
+                after you confirm (overwrites existing notes when re-transcribing).
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void runHandwritingOcr("pending")}
+                  disabled={!hasApiKey || streaming || !vaultPath || handwritingPendingCount === 0}
+                  className="flex items-center gap-1.5 rounded-md bg-accent/15 border border-accent/30 px-3 py-1.5 text-[11px] font-medium text-accent hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {streaming ? "Working…" : `Transcribe new (${handwritingPendingCount})`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void runHandwritingOcr("all")}
+                  disabled={!hasApiKey || streaming || !vaultPath || handwritingTotalCount === 0}
+                  className="flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-3 py-1.5 text-[11px] font-medium text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Re-transcribe all
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Response area ──────────────────────────────────────────── */}
       {/* min-h-0 overrides the default min-height:auto on flex items so the
           area can actually shrink and scroll rather than overflow the panel */}
@@ -1611,6 +1820,8 @@ function AITab({
               ? "⚙ Configure your API key in the Settings tab"
               : !activePersona
               ? "Select or create a persona to get started"
+              : activePersona.id === HANDWRITING_OCR_PERSONA_ID
+              ? "Transcribe images from handwritten/ using the buttons above"
               : "Ask the persona anything about your note…"}
           </p>
         )}
@@ -1865,49 +2076,54 @@ type TestStatus =
 
 function SettingsTab({
   settings,
-  onUpdateProvider,
+  upsertProviderProfile,
+  removeProviderProfile,
+  setDefaultProviderProfileId,
   onUpdateSettings,
 }: {
   settings: ReturnType<typeof usePersonaStore.getState>["settings"];
-  onUpdateProvider: (
-    provider: AIProvider,
-    patch: { apiKey?: string; baseUrl?: string }
-  ) => void;
+  upsertProviderProfile: (profile: AiProviderProfile) => void;
+  removeProviderProfile: (id: string) => void;
+  setDefaultProviderProfileId: (id: string) => void;
   onUpdateSettings: (patch: Partial<typeof settings>) => void;
 }) {
-  const ALL_PROVIDERS: AIProvider[] = ["openai", "gemini", "groq", "perplexity"];
+  const profiles = settings.providerProfiles;
+  const configuredProfiles = profiles.filter((p) => (p.apiKey ?? "").trim().length > 0);
 
-  // Only providers that already have an API key set
-  const configuredProviders = ALL_PROVIDERS.filter(
-    (p) => (settings.providers[p]?.apiKey ?? "").length > 0,
-  );
-  const unconfiguredProviders = ALL_PROVIDERS.filter(
-    (p) => !configuredProviders.includes(p),
-  );
-
-  const [addingProvider, setAddingProvider] = useState<AIProvider | "">("");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [draftName, setDraftName] = useState("");
   const [draftKey, setDraftKey] = useState("");
-  const [draftUrl, setDraftUrl] = useState("");
+  const [draftUrl, setDraftUrl] = useState("https://api.openai.com/v1");
+  const [draftModel, setDraftModel] = useState("");
   const [draftTestStatus, setDraftTestStatus] = useState<TestStatus>({ phase: "idle" });
 
-  // Trigger signals — incrementing these opens the "new" form in child sections
   const [newPersonaTrigger, setNewPersonaTrigger] = useState(0);
-  const [newActionTrigger, setNewActionTrigger]   = useState(0);
+  const [newActionTrigger, setNewActionTrigger] = useState(0);
 
   function resetDraftForm() {
-    setAddingProvider("");
+    setShowAddForm(false);
+    setDraftName("");
     setDraftKey("");
-    setDraftUrl("");
+    setDraftUrl("https://api.openai.com/v1");
+    setDraftModel("");
     setDraftTestStatus({ phase: "idle" });
   }
 
-  async function handleDraftTest() {
-    if (!addingProvider || !draftKey.trim()) return;
-    setDraftTestStatus({ phase: "testing" });
-    const result = await testProviderConnection(addingProvider as AIProvider, {
+  function draftProfile(): AiProviderProfile {
+    return {
+      id: makeProviderProfileId(),
+      name: draftName.trim() || "Custom provider",
+      baseUrl: draftUrl.trim(),
       apiKey: draftKey.trim(),
-      baseUrl: draftUrl.trim() || undefined,
-    });
+      defaultModel: draftModel.trim() || undefined,
+      adapter: inferAdapter(draftUrl.trim()),
+    };
+  }
+
+  async function handleDraftTest() {
+    if (!draftKey.trim() || !draftUrl.trim()) return;
+    setDraftTestStatus({ phase: "testing" });
+    const result = await testProviderConnection(draftProfile());
     setDraftTestStatus(
       result.ok
         ? { phase: "ok", detail: result.detail }
@@ -1916,18 +2132,13 @@ function SettingsTab({
   }
 
   function handleAddProvider() {
-    if (!addingProvider || !draftKey.trim()) return;
-    onUpdateProvider(addingProvider as AIProvider, {
-      apiKey: draftKey.trim(),
-      baseUrl: draftUrl.trim() || undefined,
-    });
-    // If this is the first provider, also set it as default
-    if (configuredProviders.length === 0) {
-      onUpdateSettings({ defaultProvider: addingProvider });
+    if (!draftKey.trim() || !draftUrl.trim()) return;
+    const profile = draftProfile();
+    upsertProviderProfile(profile);
+    if (!settings.defaultProviderProfileId) {
+      setDefaultProviderProfileId(profile.id);
     }
-    setAddingProvider("");
-    setDraftKey("");
-    setDraftUrl("");
+    resetDraftForm();
   }
 
   const sectionBtnCls =
@@ -2027,149 +2238,118 @@ function SettingsTab({
       {/* ── API Providers ─────────────────────────────────────────────────── */}
       <CollapsibleSection
         title="API Providers"
-        defaultOpen={false}
+        defaultOpen={true}
         action={
-          unconfiguredProviders.length > 0 ? (
-            <button
-              onClick={() =>
-                setAddingProvider(addingProvider ? "" : unconfiguredProviders[0])
-              }
-              className={sectionBtnCls}
-            >
-              + Configure
-            </button>
-          ) : undefined
+          <button
+            onClick={() => setShowAddForm((v) => !v)}
+            className={sectionBtnCls}
+          >
+            {showAddForm ? "Cancel" : "+ Add"}
+          </button>
         }
       >
         <div className="space-y-3">
-        {/* No providers yet */}
-        {configuredProviders.length === 0 && !addingProvider && (
-          <div className="rounded-md border border-border border-dashed p-4 text-center">
-            <p className="text-[11px] text-text-muted">No API providers configured.</p>
-            <button
-              onClick={() => setAddingProvider(unconfiguredProviders[0])}
-              className="mt-2 rounded-md bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
-            >
-              Configure a Provider
-            </button>
-          </div>
-        )}
+        <p className="text-[10px] text-text-muted leading-relaxed">
+          Add any OpenAI-compatible API (OpenAI, Anthropic via <code className="text-[9px]">/v1</code>, Groq, Ollama, Azure, LiteLLM, etc.).
+          Enter the provider name, base URL, and API key. Optional default model is used when creating new personas.
+        </p>
 
-        {/* Configured providers */}
-        {configuredProviders.map((p) => (
-          <ProviderSection
-            key={p}
-            provider={p}
-            config={settings.providers[p]}
-            isDefault={settings.defaultProvider === p}
-            onSetDefault={() => onUpdateSettings({ defaultProvider: p })}
-            onUpdate={(patch) => onUpdateProvider(p, patch)}
-            onRemove={() => onUpdateProvider(p, { apiKey: "" })}
+        {profiles.map((p) => (
+          <ProviderProfileSection
+            key={p.id}
+            profile={p}
+            isDefault={settings.defaultProviderProfileId === p.id}
+            onSetDefault={() => setDefaultProviderProfileId(p.id)}
+            onSave={upsertProviderProfile}
+            onRemove={() => {
+              if (window.confirm(`Remove provider "${p.name}"? Personas using it will switch to the default.`)) {
+                removeProviderProfile(p.id);
+              }
+            }}
           />
         ))}
 
-        {/* Add new provider form */}
-        {addingProvider && (
+        {showAddForm && (
           <div className="rounded-md border border-border bg-surface-overlay p-3 space-y-2">
             <div className="flex items-center justify-between">
-              <FieldLabel>New Provider</FieldLabel>
-              <button
-                onClick={resetDraftForm}
-                className="text-[10px] text-text-muted hover:text-text-primary"
-              >
+              <FieldLabel>New provider</FieldLabel>
+              <button onClick={resetDraftForm} className="text-[10px] text-text-muted hover:text-text-primary">
                 ✕
               </button>
             </div>
-            <select
-              value={addingProvider}
-              onChange={(e) => {
-                setAddingProvider(e.target.value as AIProvider);
-                setDraftTestStatus({ phase: "idle" });
-              }}
-              className="w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
-            >
-              {unconfiguredProviders.map((p) => (
-                <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
-              ))}
-            </select>
             <div>
-              <label className="text-[10px] text-text-muted">API Key</label>
+              <label className="text-[10px] text-text-muted">Name</label>
               <input
-                type="password"
-                value={draftKey}
-                onChange={(e) => { setDraftKey(e.target.value); setDraftTestStatus({ phase: "idle" }); }}
-                placeholder="sk-… / API key"
-                autoFocus
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                type="text"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                placeholder="e.g. Anthropic, Local Ollama"
+                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
               />
             </div>
             <div>
-              <label className="text-[10px] text-text-muted">Base URL <span className="opacity-60">(optional — leave blank to use the default)</span></label>
+              <label className="text-[10px] text-text-muted">Base URL</label>
               <input
                 type="text"
                 value={draftUrl}
-                onChange={(e) => { setDraftUrl(e.target.value); setDraftTestStatus({ phase: "idle" }); }}
-                placeholder={addingProvider ? PROVIDER_BASE_URLS[addingProvider as AIProvider] : "https://api.openai.com/v1"}
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                onChange={(e) => {
+                  setDraftUrl(e.target.value);
+                  setDraftTestStatus({ phase: "idle" });
+                }}
+                placeholder="https://api.openai.com/v1"
+                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
               />
             </div>
-
-            {/* Test connection row */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDraftTest}
-                disabled={!draftKey.trim() || draftTestStatus.phase === "testing"}
-                className="flex items-center gap-1 rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-secondary hover:border-accent hover:text-accent disabled:opacity-50 transition-colors"
-              >
-                {draftTestStatus.phase === "testing" ? (
-                  <>
-                    <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                    </svg>
-                    Testing…
-                  </>
-                ) : (
-                  <>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path d="M5 12h14M12 5l7 7-7 7" />
-                    </svg>
-                    Test connection
-                  </>
-                )}
-              </button>
-              {draftTestStatus.phase === "ok" && (
-                <span className="flex items-center gap-1 text-[10px] text-green-400">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  {draftTestStatus.detail}
-                </span>
-              )}
-              {draftTestStatus.phase === "error" && (
-                <span
-                  className="flex items-center gap-1 text-[10px] text-red-400 break-words min-w-0"
-                  title={draftTestStatus.message}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                  {draftTestStatus.message}
-                </span>
-              )}
+            <div>
+              <label className="text-[10px] text-text-muted">API key</label>
+              <input
+                type="password"
+                value={draftKey}
+                onChange={(e) => {
+                  setDraftKey(e.target.value);
+                  setDraftTestStatus({ phase: "idle" });
+                }}
+                placeholder="Required"
+                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+              />
             </div>
-
+            <div>
+              <label className="text-[10px] text-text-muted">Default model <span className="opacity-60">(optional)</span></label>
+              <input
+                type="text"
+                value={draftModel}
+                onChange={(e) => setDraftModel(e.target.value)}
+                placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
+                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+              />
+            </div>
+            <TestConnectionRow
+              disabled={!draftKey.trim() || !draftUrl.trim()}
+              status={draftTestStatus}
+              onTest={handleDraftTest}
+            />
             <button
               onClick={handleAddProvider}
-              disabled={!draftKey.trim()}
+              disabled={!draftKey.trim() || !draftUrl.trim()}
               className="w-full rounded bg-accent py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
             >
-              Save Provider
+              Save provider
             </button>
           </div>
         )}
 
+        {configuredProfiles.length === 0 && !showAddForm && (
+          <p className="text-[11px] text-text-muted">No API keys configured yet — add a provider above.</p>
+        )}
+
+        {settings.allowedAiHosts.length > 0 && (
+          <p className="text-[9px] text-text-muted opacity-60">
+            Allowed hosts: {settings.allowedAiHosts.join(", ")}
+          </p>
+        )}
+
         <p className="text-[10px] text-text-muted opacity-50 leading-relaxed">
-          API keys are stored in the app data directory on your device.
+          Keys are stored locally in the app data directory. Custom base URLs are allowed at runtime (no app rebuild).
         </p>
         </div>
       </CollapsibleSection>
@@ -2298,6 +2478,9 @@ interface PersonaRowProps {
 }
 
 function PersonaRow({ persona, isSystemDefault, expanded, onToggle, onToggleEnabled, onSave, onDelete }: PersonaRowProps) {
+  const settings = usePersonaStore((s) => s.settings);
+  const profile = profileForPersona(settings, persona);
+  const providerLabel = profile?.name ?? "Unknown provider";
   const enabled = !persona.disabled;
   return (
     <div className={`rounded-md border overflow-hidden transition-opacity ${enabled ? "border-border bg-surface-overlay" : "border-border/50 bg-surface-overlay/50 opacity-60"}`}>
@@ -2314,7 +2497,7 @@ function PersonaRow({ persona, isSystemDefault, expanded, onToggle, onToggleEnab
             )}
           </div>
           <p className="text-[10px] text-text-muted">
-            {PROVIDER_LABELS[persona.provider]} · {persona.model}
+            {providerLabel} · {persona.model}
           </p>
         </div>
 
@@ -2378,13 +2561,23 @@ interface PersonaInlineFormProps {
 }
 
 function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel }: PersonaInlineFormProps) {
+  const settings = usePersonaStore((s) => s.settings);
+  const defaultProfileId =
+    settings.defaultProviderProfileId ??
+    settings.providerProfiles[0]?.id ??
+    "preset-openai";
+
   const [name, setName] = useState(initial?.name ?? "");
   const [icon, setIcon] = useState(initial?.icon ?? "✍️");
-  const [provider, setProvider] = useState<AIProvider>(initial?.provider ?? "openai");
-  const [model, setModel] = useState(initial?.model ?? DEFAULT_MODELS.openai);
+  const [providerProfileId, setProviderProfileId] = useState(
+    initial?.providerProfileId ?? defaultProfileId,
+  );
+  const [model, setModel] = useState(initial?.model ?? "gpt-4o");
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? "");
   const [error, setError] = useState("");
   const [showFullPrompt, setShowFullPrompt] = useState(false);
+
+  const profiles = settings.providerProfiles;
 
   function handleSave() {
     const finalName = isSystemDefault && initial ? initial.name : name.trim();
@@ -2396,7 +2589,7 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
       id: initial?.id ?? `persona-${Date.now()}`,
       name: finalName.trim(),
       icon,
-      provider,
+      providerProfileId,
       model: model.trim(),
       systemPrompt: finalPrompt.trim(),
       ...(initial?.disabled !== undefined ? { disabled: initial.disabled } : {}),
@@ -2442,20 +2635,27 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
         />
       </div>
 
-      {/* Provider */}
+      {/* API provider profile */}
       <div>
-        <FieldLabel>Provider</FieldLabel>
+        <FieldLabel>API provider</FieldLabel>
         <select
-          value={provider}
+          value={providerProfileId}
           onChange={(e) => {
-            const p = e.target.value as AIProvider;
-            setProvider(p);
-            if (!initial) setModel(DEFAULT_MODELS[p]);
+            const id = e.target.value;
+            setProviderProfileId(id);
+            if (!initial) {
+              const profile = findProviderProfile(settings, id);
+              if (profile) {
+                setModel(
+                  profile.defaultModel?.trim() || curatedSmallModelId(profile),
+                );
+              }
+            }
           }}
           className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
         >
-          {(Object.keys(PROVIDER_LABELS) as AIProvider[]).map((p) => (
-            <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       </div>
@@ -2465,7 +2665,7 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
         <FieldLabel>Model</FieldLabel>
         <div className="mt-0.5">
           <ModelPicker
-            provider={provider}
+            profileId={providerProfileId}
             value={model}
             onChange={setModel}
             size="sm"
@@ -2674,42 +2874,92 @@ function PendingWriteCard({
   );
 }
 
-// ── Provider API key section ───────────────────────────────────────────────────
-
-type ProviderPatch = { apiKey?: string; baseUrl?: string };
-
-function ProviderSection({
-  provider, config, isDefault, onSetDefault, onUpdate, onRemove,
+function TestConnectionRow({
+  disabled,
+  status,
+  onTest,
 }: {
-  provider: AIProvider;
-  config: { apiKey: string; baseUrl?: string } | undefined;
+  disabled: boolean;
+  status: TestStatus;
+  onTest: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 pt-0.5 flex-wrap">
+      <button
+        type="button"
+        onClick={onTest}
+        disabled={disabled || status.phase === "testing"}
+        className="flex items-center gap-1 rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-secondary hover:border-accent hover:text-accent disabled:opacity-50 transition-colors"
+      >
+        {status.phase === "testing" ? "Testing…" : "Test connection"}
+      </button>
+      {status.phase === "ok" && (
+        <span className="text-[10px] text-green-400">{status.detail}</span>
+      )}
+      {status.phase === "error" && (
+        <span className="text-[10px] text-red-400 break-words min-w-0" title={status.message}>
+          {status.message}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ProviderProfileSection({
+  profile,
+  isDefault,
+  onSetDefault,
+  onSave,
+  onRemove,
+}: {
+  profile: AiProviderProfile;
   isDefault: boolean;
   onSetDefault: () => void;
-  onUpdate: (patch: ProviderPatch) => void;
+  onSave: (profile: AiProviderProfile) => void;
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState<TestStatus>({ phase: "idle" });
-  const label = PROVIDER_LABELS[provider];
+  const [name, setName] = useState(profile.name);
+  const [baseUrl, setBaseUrl] = useState(profile.baseUrl);
+  const [apiKey, setApiKey] = useState(profile.apiKey);
+  const [defaultModel, setDefaultModel] = useState(profile.defaultModel ?? "");
 
-  // Reset test status whenever the user edits the key or URL so stale results
-  // don't linger after a change.
-  function handleUpdate(patch: ProviderPatch) {
-    onUpdate(patch);
-    setTestStatus({ phase: "idle" });
+  useEffect(() => {
+    setName(profile.name);
+    setBaseUrl(profile.baseUrl);
+    setApiKey(profile.apiKey);
+    setDefaultModel(profile.defaultModel ?? "");
+  }, [profile.id, profile.name, profile.baseUrl, profile.apiKey, profile.defaultModel]);
+
+  function commit(): AiProviderProfile {
+    const next: AiProviderProfile = {
+      ...profile,
+      name: name.trim() || profile.name,
+      baseUrl: baseUrl.trim(),
+      apiKey: apiKey.trim(),
+      defaultModel: defaultModel.trim() || undefined,
+      adapter: inferAdapter(baseUrl.trim(), profile.adapter),
+    };
+    onSave(next);
+    return next;
   }
 
   async function runTest() {
-    if (!config?.apiKey?.trim()) {
-      setTestStatus({ phase: "error", message: "Enter an API key first." });
+    if (!apiKey.trim() || !baseUrl.trim()) {
+      setTestStatus({ phase: "error", message: "Enter base URL and API key." });
       return;
     }
     setTestStatus({ phase: "testing" });
-    const result = await testProviderConnection(provider, {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-    });
+    const draft: AiProviderProfile = {
+      ...profile,
+      name: name.trim(),
+      baseUrl: baseUrl.trim(),
+      apiKey: apiKey.trim(),
+      adapter: inferAdapter(baseUrl.trim(), profile.adapter),
+    };
+    const result = await testProviderConnection(draft);
     setTestStatus(
       result.ok
         ? { phase: "ok", detail: result.detail }
@@ -2719,124 +2969,106 @@ function ProviderSection({
 
   return (
     <div className="rounded-md border border-border bg-surface-overlay overflow-hidden">
-      {/* Compact header */}
       <div className="flex items-center gap-2 px-2 py-1.5">
         <div className="flex-1 min-w-0">
-          <span className="text-xs font-medium text-text-primary">{label}</span>
+          <span className="text-xs font-medium text-text-primary">{profile.name}</span>
           {isDefault && (
             <span className="ml-2 rounded-full bg-accent/20 px-1.5 py-0.5 text-[9px] font-medium text-accent">
               default
             </span>
           )}
+          <p className="text-[9px] text-text-muted truncate">{profile.baseUrl}</p>
         </div>
         {!isDefault && (
           <button
+            type="button"
             onClick={onSetDefault}
-            title="Set as default provider"
             className="text-[9px] text-text-muted hover:text-accent transition-colors"
           >
             set default
           </button>
         )}
         <button
+          type="button"
           onClick={() => setExpanded((v) => !v)}
-          title="Edit"
           className="rounded p-0.5 text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            {expanded ? <polyline points="18 15 12 9 6 15" /> : <polyline points="6 9 12 15 18 9" />}
-          </svg>
+          {expanded ? "▲" : "▼"}
         </button>
         <button
-          onClick={() => { if (window.confirm(`Remove ${label} API key?`)) onRemove(); }}
-          title="Remove provider"
+          type="button"
+          onClick={onRemove}
           className="rounded p-0.5 text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
+          ✕
         </button>
       </div>
 
-      {/* Expanded edit form */}
       {expanded && (
         <div className="border-t border-border px-2 pb-2 pt-2 space-y-1.5">
           <div>
+            <label className="text-[10px] text-text-muted">Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setTestStatus({ phase: "idle" });
+              }}
+              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-text-muted">Base URL</label>
+            <input
+              type="text"
+              value={baseUrl}
+              onChange={(e) => {
+                setBaseUrl(e.target.value);
+                setTestStatus({ phase: "idle" });
+              }}
+              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+            />
+          </div>
+          <div>
             <div className="flex items-center justify-between">
-              <label className="text-[10px] text-text-muted">API Key</label>
-              <button onClick={() => setShowKey((v) => !v)} className="text-[9px] text-text-muted hover:text-text-primary transition-colors">
+              <label className="text-[10px] text-text-muted">API key</label>
+              <button type="button" onClick={() => setShowKey((v) => !v)} className="text-[9px] text-text-muted">
                 {showKey ? "hide" : "show"}
               </button>
             </div>
             <input
               type={showKey ? "text" : "password"}
-              value={config?.apiKey ?? ""}
-              onChange={(e) => handleUpdate({ apiKey: e.target.value })}
-              placeholder="sk-..."
-              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setTestStatus({ phase: "idle" });
+              }}
+              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
           <div>
-            <label className="text-[10px] text-text-muted">Base URL <span className="opacity-60">(optional — leave blank to use the default)</span></label>
+            <label className="text-[10px] text-text-muted">Default model (optional)</label>
             <input
               type="text"
-              value={config?.baseUrl ?? ""}
-              onChange={(e) => handleUpdate({ baseUrl: e.target.value || undefined })}
-              placeholder={PROVIDER_BASE_URLS[provider]}
-              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              placeholder="Used when creating new personas"
+              className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
-
-          {/* Test connection row */}
-          <div className="flex items-center gap-2 pt-0.5">
-            <button
-              onClick={runTest}
-              disabled={testStatus.phase === "testing"}
-              className="flex items-center gap-1 rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-secondary hover:border-accent hover:text-accent disabled:opacity-50 transition-colors"
-            >
-              {testStatus.phase === "testing" ? (
-                <>
-                  {/* Spinning indicator */}
-                  <svg
-                    className="animate-spin"
-                    width="10" height="10" viewBox="0 0 24 24"
-                    fill="none" stroke="currentColor" strokeWidth="2.5"
-                  >
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                  </svg>
-                  Testing…
-                </>
-              ) : (
-                <>
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M5 12h14M12 5l7 7-7 7" />
-                  </svg>
-                  Test connection
-                </>
-              )}
-            </button>
-
-            {/* Inline result badge */}
-            {testStatus.phase === "ok" && (
-              <span className="flex items-center gap-1 text-[10px] text-green-400">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                {testStatus.detail}
-              </span>
-            )}
-            {testStatus.phase === "error" && (
-              <span
-                className="flex items-center gap-1 text-[10px] text-red-400 break-words min-w-0"
-                title={testStatus.message}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-                {testStatus.message}
-              </span>
-            )}
-          </div>
+          <TestConnectionRow
+            disabled={!apiKey.trim() || !baseUrl.trim()}
+            status={testStatus}
+            onTest={runTest}
+          />
+          <button
+            type="button"
+            onClick={() => commit()}
+            className="w-full rounded border border-accent/50 bg-accent/10 py-1 text-[10px] text-accent hover:bg-accent/20"
+          >
+            Save changes
+          </button>
         </div>
       )}
     </div>
