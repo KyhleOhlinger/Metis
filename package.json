@@ -11,7 +11,8 @@
     "build": "tauri build",
     "preview": "vite preview",
     "vite:dev": "vite",
-    "vite:build": "tsc && vite build"
+    "verify:imports": "node scripts/verify-import-paths.mjs",
+    "vite:build": "npm run verify:imports && tsc && vite build"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",

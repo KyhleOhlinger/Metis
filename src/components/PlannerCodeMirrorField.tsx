@@ -40,7 +40,30 @@ const plannerCmBaseTheme = EditorView.theme(
   { dark: true },
 );
 
-function makeSizeTheme(minHeightPx: number, fillHeight: boolean) {
+function makeSizeTheme(minHeightPx: number, fillHeight: boolean, resizable: boolean) {
+  if (resizable) {
+    return EditorView.theme({
+      "&": {
+        height: "100%",
+        minHeight: `${Math.max(48, minHeightPx)}px`,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+      },
+      ".cm-editor": {
+        flex: "1 1 0%",
+        minHeight: 0,
+        display: "flex",
+        flexDirection: "column",
+      },
+      ".cm-scroller": {
+        flex: "1 1 0%",
+        minHeight: 0,
+        overflow: "auto",
+      },
+    });
+  }
+
   if (fillHeight) {
     return EditorView.theme({
       "&": {
@@ -84,6 +107,8 @@ interface Props {
   fontSizePx?: number;
   /** Grow with a flex parent (e.g. Daily Log weighted grid); `minHeightPx` is a minimum floor. */
   fillHeight?: boolean;
+  /** User-resizable shell; uses min height + fills parent (no fixed max). */
+  resizable?: boolean;
   /** Called when this editor receives focus (in addition to wiring the shared toolbar ref). */
   onEditorFocus?: () => void;
   /** Called when this editor loses focus. */
@@ -101,6 +126,7 @@ export default function PlannerCodeMirrorField({
   toolbarViewRef,
   fontSizePx = 11,
   fillHeight = false,
+  resizable = false,
   onEditorFocus,
   onEditorBlur,
 }: Props) {
@@ -118,6 +144,8 @@ export default function PlannerCodeMirrorField({
   const fontCompartmentRef = useRef(new Compartment());
   const fillHeightRef = useRef(fillHeight);
   fillHeightRef.current = fillHeight;
+  const resizableRef = useRef(resizable);
+  resizableRef.current = resizable;
   const minHeightRef = useRef(minHeightPx);
   minHeightRef.current = minHeightPx;
   const fontSizeRef = useRef(fontSizePx);
@@ -150,7 +178,7 @@ export default function PlannerCodeMirrorField({
         keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.lineWrapping,
         sizeCompartmentRef.current.of(
-          makeSizeTheme(minHeightRef.current, fillHeightRef.current),
+          makeSizeTheme(minHeightRef.current, fillHeightRef.current, resizableRef.current),
         ),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
@@ -193,7 +221,7 @@ export default function PlannerCodeMirrorField({
     view.dispatch({
       effects: [
         sizeCompartmentRef.current.reconfigure(
-          makeSizeTheme(minHeightPx, fillHeight),
+          makeSizeTheme(minHeightPx, fillHeight, resizable),
         ),
         fontCompartmentRef.current.reconfigure(
           EditorView.theme({
@@ -206,7 +234,7 @@ export default function PlannerCodeMirrorField({
         ),
       ],
     });
-  }, [minHeightPx, fillHeight, fontSizePx]);
+  }, [minHeightPx, fillHeight, resizable, fontSizePx]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -222,8 +250,8 @@ export default function PlannerCodeMirrorField({
     <div
       ref={hostRef}
       className={
-        fillHeight
-          ? "flex min-h-0 flex-1 flex-col overflow-hidden rounded border border-border bg-surface-raised"
+        fillHeight || resizable
+          ? "flex min-h-0 flex-1 flex-col overflow-hidden"
           : "overflow-hidden rounded border border-border bg-surface-raised"
       }
     />

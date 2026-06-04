@@ -474,6 +474,197 @@ function parseFilenameList(raw: string): string[] {
   return [];
 }
 
+// ── Egress transparency (pre-run estimate) ───────────────────────────────────
+
+export type PlannedEgressTier = "direct" | "tfidf" | "scout" | "scout-skipped";
+
+export interface EgressEstimate {
+  noteCount: number;
+  totalCharsInScope: number;
+  estimatedContextChars: number;
+  plannedTier: PlannedEgressTier;
+  budgetChars: number;
+  extraScoutApiCall: boolean;
+  scopeLabel: string;
+  requiresConfirm: boolean;
+  providerLabel: string;
+}
+
+function fmtChars(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+function plannedTierLabel(tier: PlannedEgressTier, extraScout: boolean): string {
+  switch (tier) {
+    case "direct":
+      return "all notes in scope (direct)";
+    case "tfidf":
+      return "relevance filter (TF-IDF)";
+    case "scout-skipped":
+      return "relevance filter (Gemini skips scout)";
+    case "scout":
+      return extraScout ? "AI scout + filtered notes" : "AI scout";
+  }
+}
+
+function planEgressFromSummaries(
+  summaries: FileSummary[],
+  userMessage: string,
+  budget: number,
+  totalChars: number,
+  profile: AiProviderProfile,
+): Pick<EgressEstimate, "estimatedContextChars" | "plannedTier" | "extraScoutApiCall"> {
+  if (totalChars <= budget) {
+    return {
+      estimatedContextChars: totalChars,
+      plannedTier: "direct",
+      extraScoutApiCall: false,
+    };
+  }
+  if (totalChars <= budget * 5) {
+    const selected = pickByBudget(scoreByRelevance(summaries, userMessage), budget);
+    return {
+      estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
+      plannedTier: "tfidf",
+      extraScoutApiCall: false,
+    };
+  }
+  if (profileUsesGeminiNative(profile)) {
+    const selected = pickByBudget(scoreByRelevance(summaries, userMessage), budget);
+    return {
+      estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
+      plannedTier: "scout-skipped",
+      extraScoutApiCall: false,
+    };
+  }
+  const candidates = scoreByRelevance(summaries, userMessage).slice(0, 60);
+  const selected = pickByBudget(candidates, budget);
+  return {
+    estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
+    plannedTier: "scout",
+    extraScoutApiCall: true,
+  };
+}
+
+/**
+ * Estimate how much note content may be sent to the AI before building full context.
+ * Does not read full file bodies (uses Rust `get_file_summaries` metadata only).
+ */
+export async function estimateContextEgress(
+  scope: ExecutionScope,
+  userMessage: string,
+  persona: Persona,
+  profile: AiProviderProfile,
+  activeFileContent: string,
+  activeFilePath: string | null,
+  vaultPath: string | null,
+): Promise<EgressEstimate> {
+  const overhead = persona.systemPrompt.length + userMessage.length + 500;
+  const budget = charBudget(persona.model, overhead);
+  const providerLabel = profile.name?.trim() || profile.baseUrl;
+
+  if (scope.type === "current-file") {
+    const chars = activeFileContent.length;
+    return {
+      noteCount: 1,
+      totalCharsInScope: chars,
+      estimatedContextChars: chars,
+      plannedTier: "direct",
+      budgetChars: budget,
+      extraScoutApiCall: false,
+      scopeLabel: activeFilePath?.split("/").pop() ?? "Current file",
+      requiresConfirm: false,
+      providerLabel,
+    };
+  }
+
+  if (scope.type === "specific-file") {
+    let chars = 0;
+    try {
+      const content = await invoke<string>("get_file_content", { path: scope.filePath });
+      chars = content.length;
+    } catch {
+      chars = 0;
+    }
+    return {
+      noteCount: 1,
+      totalCharsInScope: chars,
+      estimatedContextChars: chars,
+      plannedTier: "direct",
+      budgetChars: budget,
+      extraScoutApiCall: false,
+      scopeLabel: scope.filePath.split("/").pop() ?? "File",
+      requiresConfirm: false,
+      providerLabel,
+    };
+  }
+
+  const folderPath =
+    scope.type === "specific-folder" ? scope.folderPath : vaultPath ?? "";
+  const scopeLabel =
+    scope.type === "specific-folder"
+      ? folderPath.split("/").pop() ?? "Folder"
+      : "Full vault";
+
+  if (!folderPath) {
+    return {
+      noteCount: 0,
+      totalCharsInScope: 0,
+      estimatedContextChars: 0,
+      plannedTier: "direct",
+      budgetChars: budget,
+      extraScoutApiCall: false,
+      scopeLabel,
+      requiresConfirm: false,
+      providerLabel,
+    };
+  }
+
+  let summaries: FileSummary[];
+  try {
+    summaries = await invoke<FileSummary[]>("get_file_summaries", {
+      folderPath,
+      recursive: scope.type === "full-vault",
+    });
+  } catch {
+    summaries = [];
+  }
+
+  const noteCount = summaries.length;
+  const totalCharsInScope = summaries.reduce((s, f) => s + f.char_count, 0);
+  const planned = planEgressFromSummaries(
+    summaries,
+    userMessage,
+    budget,
+    totalCharsInScope,
+    profile,
+  );
+
+  return {
+    noteCount,
+    totalCharsInScope,
+    budgetChars: budget,
+    scopeLabel,
+    providerLabel,
+    requiresConfirm:
+      noteCount > 0 &&
+      (scope.type === "full-vault" || scope.type === "specific-folder"),
+    ...planned,
+  };
+}
+
+export function egressEstimateSummary(est: EgressEstimate): string {
+  const tier = plannedTierLabel(est.plannedTier, est.extraScoutApiCall);
+  if (est.noteCount === 0) {
+    return `Scope: ${est.scopeLabel} — no notes found.`;
+  }
+  return (
+    `Scope: ${est.scopeLabel} — ${est.noteCount} note${est.noteCount !== 1 ? "s" : ""}, ` +
+    `~${fmtChars(est.estimatedContextChars)} chars to provider (${tier}). ` +
+    `(${fmtChars(est.totalCharsInScope)} chars total in scope; model budget ~${fmtChars(est.budgetChars)}.)`
+  );
+}
+
 // ── Strategy label helper (for UI display) ────────────────────────────────────
 
 export function strategyLabel(s: ContextStrategy): string {

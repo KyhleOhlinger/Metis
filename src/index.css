@@ -301,6 +301,16 @@ body,
   color: var(--planner-text-muted) !important;
 }
 
+/* Active planner markdown editor — drag bottom edge to resize (height persisted). */
+[data-planner-resize-shell] {
+  resize: vertical;
+}
+
+[data-planner-resize-shell]:focus-within {
+  outline: 1px solid color-mix(in srgb, var(--accent, #7c3aed) 45%, transparent);
+  outline-offset: 1px;
+}
+
 /* Compact rendered markdown inside planner cells (preview + theme-aware prose). */
 .planner-markdown-preview {
   box-sizing: border-box;

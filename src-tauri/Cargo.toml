@@ -6,6 +6,14 @@ description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]
 license = "MIT"
 
+[lib]
+name = "metis"
+path = "src/lib.rs"
+
+[[bin]]
+name = "metis"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

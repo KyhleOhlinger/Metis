@@ -10,6 +10,7 @@ import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
 import { collectImagePathsFromMarkdown } from "../utils/noteImages";
 import { isVaultImageFile } from "../utils/vaultImages";
+import { isPinnedSpaceName } from "../constants/vaultSpaces";
 
 // ── Daily Note helper ─────────────────────────────────────────────────────────
 
@@ -1058,9 +1059,8 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
                 )}
               </div>
             ) : (() => {
-              const PINNED_NAMES = ["daily", "meetings", "summaries", "handwritten", "assets"];
-              const pinned = files.filter(n => n.is_dir && PINNED_NAMES.includes(n.name.toLowerCase()));
-              const rest    = files.filter(n => !(n.is_dir && PINNED_NAMES.includes(n.name.toLowerCase())));
+              const pinned = files.filter((n) => n.is_dir && isPinnedSpaceName(n.name));
+              const rest = files.filter((n) => !(n.is_dir && isPinnedSpaceName(n.name)));
               return (
                 <>
                   {pinned.length > 0 && (
