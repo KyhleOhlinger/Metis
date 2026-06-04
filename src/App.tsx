@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
-import CommandCenter from "./components/CommandCenter";
+import CommandCenter from "./components/commandCenter";
 import CommandPalette from "./components/CommandPalette";
 import ConvertVaultModal from "./components/ConvertVaultModal";
 import { useStore, VaultData } from "./store/useStore";

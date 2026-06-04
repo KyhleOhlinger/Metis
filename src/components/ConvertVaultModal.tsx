@@ -137,7 +137,7 @@ export default function ConvertVaultModal({ vaultPath, vaultHint, onDismiss }: P
               <ul className="space-y-1.5">
                 {[
                   "Write a .metis/vault.json identification marker",
-                  "Create default folders: daily/, meetings/, summaries/, assets/",
+                  "Create default folders: daily/, meetings/, summaries/, handwritten/, assets/",
                 ].map((item) => (
                   <li key={item} className="flex items-start gap-2 text-xs text-text-muted">
                     <span className="mt-0.5 text-green-400 shrink-0">✓</span>

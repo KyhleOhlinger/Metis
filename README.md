@@ -34,7 +34,7 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 
 ### Vault-based organisation
 - Each project is a **vault** — a normal folder on your filesystem
-- Create vaults with pre-built `daily/`, `meetings/`, `summaries/`, and `assets/` sections
+- Create vaults with pre-built `daily/`, `meetings/`, `summaries/`, `handwritten/`, and `assets/` sections
 - **Convert foreign vaults** — open any folder as a vault; a conversion dialog offers to add the Metis vault marker, create default folders, and optionally back-fill YAML frontmatter with a live progress bar
 - Auto-restores your last opened vault on launch
 - **Multi-window support** — opening a different vault spawns a new Metis window without losing your current one

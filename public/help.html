@@ -325,6 +325,7 @@
     <span class="nav-group-label">Getting Started</span>
     <a class="nav-item active" href="#getting-started">Introduction</a>
     <a class="nav-item" href="#vault">Vaults</a>
+    <a class="nav-item" href="#spaces">Spaces</a>
 
     <span class="nav-group-label">Editor</span>
     <a class="nav-item" href="#editor">Writing &amp; Editing</a>
@@ -390,10 +391,18 @@
       <h3>First launch</h3>
       <ol>
         <li>Click <strong>File → Open Vault…</strong> (or <kbd>⌘O</kbd>) and pick a folder to use as your vault.</li>
-        <li>Metis creates <code style="font-size:12px">daily/</code>, <code style="font-size:12px">meetings/</code>, <code style="font-size:12px">summaries/</code>, and <code style="font-size:12px">assets/</code> sub-folders automatically.</li>
+        <li>Metis creates pinned <strong>Spaces</strong> — <code style="font-size:12px">daily/</code>, <code style="font-size:12px">meetings/</code>, <code style="font-size:12px">summaries/</code>, <code style="font-size:12px">handwritten/</code>, and <code style="font-size:12px">assets/</code> — automatically.</li>
         <li>Create your first note with <kbd>⌘N</kbd> or the <strong>+</strong> button in the sidebar.</li>
-        <li>To use AI features, add at least one API key in <strong>Command Center → Settings → API Providers</strong>.</li>
+        <li>To use AI features, add at least one <strong>provider profile</strong> (name, API URL, key) in <strong>Command Center → Settings → API Providers</strong>.</li>
       </ol>
+
+      <div class="callout tip">
+        <span>ℹ️</span>
+        <span>
+          This help page opens in a separate <strong>metis-help</strong> window with restricted capabilities
+          (no vault access, no network). It documents the app only — configure providers and run AI from the main Metis window.
+        </span>
+      </div>
     </section>
 
     <!-- VAULTS ──────────────────────────────────────────────────────────── -->
@@ -420,9 +429,27 @@
           <tr><td><code>daily/</code></td><td>Daily notes and date-based planning content</td></tr>
           <tr><td><code>meetings/</code></td><td>Meeting notes and agendas</td></tr>
           <tr><td><code>summaries/</code></td><td>AI-generated/manual summaries and Task Manager output (<code>summaries/todo.md</code>)</td></tr>
+          <tr><td><code>handwritten/</code></td><td>Photos of handwritten pages for the Handwriting OCR persona</td></tr>
           <tr><td><code>assets/</code></td><td>Images and files pasted into notes</td></tr>
         </tbody>
       </table>
+    </section>
+
+    <!-- SPACES ──────────────────────────────────────────────────────────── -->
+    <section class="section" id="spaces">
+      <h2 class="section-title">Spaces (pinned folders)</h2>
+      <p class="section-intro">
+        In the sidebar <strong style="color:var(--text)">Files</strong> view, Metis groups five default vault folders under
+        <strong style="color:var(--text)">Spaces</strong>. They are created when you open or create a Metis vault and stay pinned at the top of the tree.
+      </p>
+      <ul>
+        <li><strong>daily/</strong> — daily notes (<kbd>⌘D</kbd> opens today's note).</li>
+        <li><strong>meetings/</strong> — meeting notes and agendas.</li>
+        <li><strong>summaries/</strong> — roll-ups; Task Manager writes <code>summaries/todo.md</code> here.</li>
+        <li><strong>handwritten/</strong> — scan/photo images; use the <strong>Handwriting OCR</strong> system persona to transcribe them to sibling <code>.md</code> notes.</li>
+        <li><strong>assets/</strong> — images pasted from the clipboard (<code>![](assets/…)</code>).</li>
+      </ul>
+      <p>Other folders in your vault appear below Spaces in the file tree. You can add, rename, or delete them like any normal directory.</p>
     </section>
 
     <!-- EDITOR ──────────────────────────────────────────────────────────── -->
@@ -616,10 +643,18 @@
       <h3>Running a prompt</h3>
       <ol>
         <li>Select a persona chip at the top of the AI tab.</li>
-        <li>Choose a <strong>scope</strong> — Current File, a Specific File, a Folder, or the Full Vault.</li>
-        <li>Type your prompt and press <kbd>Return</kbd> or click <strong>Run</strong>.</li>
+        <li>Choose a <strong>scope</strong> — File, Folder, or Full Vault.</li>
+        <li>For <strong>Folder</strong> or <strong>Vault</strong> scope, read the <strong>Data sent to AI</strong> estimate (note count, approximate characters, planned filter tier).</li>
+        <li>Type your prompt and press <kbd>⌘↵</kbd> or click <strong>Run</strong>. Metis asks you to confirm before sending folder/vault context to your provider.</li>
         <li>A spinning indicator with "<em>{Persona} is thinking…</em>" appears while the model processes your request. The response then streams in real-time. If the AI calls an agent file tool, a review step appears before any changes are written to disk.</li>
       </ol>
+
+      <h3>Data egress &amp; privacy</h3>
+      <p>
+        Metis only sends <code>.md</code> content required for the run — never your whole disk.
+        Folder and vault runs use metadata summaries first, then may apply a relevance filter (TF-IDF) or an optional
+        <strong>scout</strong> pre-call on very large vaults. The post-run strategy badge shows how many notes and characters were actually sent.
+      </p>
 
       <h3>Agent file tools</h3>
       <p>When running against a folder or full vault, the AI can:</p>
@@ -631,9 +666,11 @@
       </ul>
 
       <h3>System Default personas</h3>
+      <p>These ship with Metis, use dedicated panels (not the generic Ask/Run box), and cannot be deleted:</p>
       <ul>
-        <li><strong>The Librarian</strong> — scans your vault for orphaned notes (no incoming or outgoing links) and suggests connections.</li>
-        <li><strong>Task Manager</strong> — aggregates all <code>- [ ]</code> checkboxes across your vault into <code>summaries/todo.md</code>.</li>
+        <li><strong>The Librarian</strong> — maps [[wikilinks]] client-side, then asks the LLM for an orphan-note report.</li>
+        <li><strong>Task Manager</strong> — aggregates open <code>- [ ]</code> tasks into <code>summaries/todo.md</code>; includes bi-directional <strong>Vault Task Sync</strong>.</li>
+        <li><strong>Handwriting OCR</strong> — transcribes images in <code>handwritten/</code> to Markdown notes via a vision model (confirm before overwrite).</li>
       </ul>
 
       <h3>Context strategy</h3>
@@ -658,8 +695,8 @@
       <ol>
         <li>Go to <strong>Command Center → Settings → Personas</strong>.</li>
         <li>Click <strong>+ New Persona</strong>.</li>
-        <li>Fill in a name, icon (emoji), system prompt, and select a provider.</li>
-        <li>Click <strong>↓ Models</strong> to fetch the latest available models for that provider, or type a model name directly.</li>
+        <li>Fill in a name, icon (emoji), system prompt, and choose a <strong>provider profile</strong> (configured under API Providers).</li>
+        <li>Click <strong>↓ Models</strong> to fetch models for that profile's endpoint, or type a model name directly.</li>
         <li>Save the persona — it appears immediately in the AI tab chip bar.</li>
       </ol>
 
@@ -708,36 +745,41 @@
 
     <!-- AI PROVIDERS ────────────────────────────────────────────────────── -->
     <section class="section" id="providers">
-      <h2 class="section-title">AI Providers &amp; Settings</h2>
+      <h2 class="section-title">Provider profiles &amp; API settings</h2>
       <p class="section-intro">
-        All AI providers use an <strong style="color:var(--text)">OpenAI-compatible API</strong>.
-        Add your own API key for any provider in <strong>Command Center → Settings → API Providers</strong>.
+        Metis uses <strong style="color:var(--text)">provider profiles</strong> — each has a display name, base URL, API key, and optional default model.
+        Most endpoints are <strong>OpenAI-compatible</strong> (OpenAI, Groq, Perplexity, Ollama, LiteLLM, Azure OpenAI, etc.).
+        Official Google Gemini hosts can use a native path when configured. Add or edit profiles in
+        <strong>Command Center → Settings → API Providers</strong>.
       </p>
+
+      <h3>Presets</h3>
+      <p>Quick-add buttons seed common providers (OpenAI, Gemini, Groq, Perplexity). You can duplicate or edit them, or add a fully custom URL — no app rebuild required.</p>
 
       <table class="provider-table">
         <thead>
-          <tr><th>Provider</th><th>Key format</th><th>Highlights</th></tr>
+          <tr><th>Preset</th><th>Typical key</th><th>Notes</th></tr>
         </thead>
         <tbody>
           <tr>
             <td>OpenAI</td>
             <td><span class="badge">sk-…</span></td>
-            <td>GPT-4o, o1, o3 series; best general-purpose reasoning</td>
+            <td>GPT-4o and reasoning models; vision for Handwriting OCR</td>
           </tr>
           <tr>
             <td>Google Gemini</td>
             <td><span class="badge">AIzaSy…</span></td>
-            <td>Gemini 2.0 Flash, 1.5 Pro — up to 1 M token context window</td>
+            <td>Large context; native API on Google hosts</td>
           </tr>
           <tr>
             <td>Groq</td>
             <td><span class="badge">gsk_…</span></td>
-            <td>Llama 3.x, Mixtral — extremely fast inference</td>
+            <td>Fast Llama / Mixtral inference</td>
           </tr>
           <tr>
-            <td>Perplexity AI</td>
+            <td>Perplexity</td>
             <td><span class="badge">pplx-…</span></td>
-            <td>Sonar family with real-time web search integration</td>
+            <td>Sonar models with optional web search</td>
           </tr>
         </tbody>
       </table>
@@ -755,7 +797,10 @@
       <p>After entering an API key, click <strong>Test Connection</strong>. Metis makes a zero-cost <code style="font-size:12px">models.list()</code> call to verify the key is valid and the provider is reachable. Detailed error messages are shown if it fails.</p>
 
       <h3>Fetching models</h3>
-      <p>When creating or editing a persona, click <strong>↓ Models</strong> to pull the latest available models directly from the provider. Metis displays up to 5 curated models and caches the result. You can also type any model name manually in the input box.</p>
+      <p>When creating or editing a persona, click <strong>↓ Models</strong> to list models from that persona's profile endpoint. Results are cached per profile. You can also type any model id manually.</p>
+
+      <h3>Personas and profiles</h3>
+      <p>Each custom persona stores a <code>providerProfileId</code> pointing at one profile. System personas use the same mechanism — configure their API key by selecting the profile they reference in Settings.</p>
     </section>
 
     <!-- KEYBOARD SHORTCUTS ──────────────────────────────────────────────── -->
