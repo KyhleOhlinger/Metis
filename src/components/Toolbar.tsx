@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import type { RefObject } from "react";
+import type { MouseEvent, PointerEvent, RefObject } from "react";
 import {
   Bold,
   Italic,
@@ -31,10 +31,17 @@ import {
   BookOpen,
   ChevronDown,
   Table,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 import { ChangeSet, EditorSelection, type ChangeSpec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { insertStickyNote, STICKY_COLOR_PRESETS, type StickyColor } from "../utils/stickyNotes";
+import {
+  beginStickyToolbarDrag,
+  STICKY_TOOLBAR_GHOST_ID,
+  useStickyToolbarDrag,
+} from "../hooks/useStickyToolbarDrag";
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
@@ -385,6 +392,114 @@ const CALLOUT_TYPES: CalloutType[] = [
   { type: "QUOTE",     Icon: Quote,         color: "#94a3b8" },
 ];
 
+// ── Sticky note colour picker (insert or drag into editor) ───────────────────
+
+function StickyNoteDropdown({
+  viewRef,
+  iconSize,
+}: {
+  viewRef: RefObject<EditorView | null>;
+  iconSize: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  const toggle = (e: MouseEvent) => {
+    e.preventDefault();
+    if (!open && triggerRef.current) {
+      const r = triggerRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 4, left: r.left });
+    }
+    setOpen((v) => !v);
+  };
+
+  const { shouldSuppressClick } = useStickyToolbarDrag(viewRef, {
+    onDragStart: () => setOpen(false),
+  });
+
+  const insertColor = (color: StickyColor) => {
+    const view = viewRef.current;
+    if (view) insertStickyNote(view, { color });
+    setOpen(false);
+  };
+
+  const onColourPointerDown = (
+    e: PointerEvent<HTMLButtonElement>,
+    color: StickyColor,
+    label: string,
+  ) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    beginStickyToolbarDrag(color, label, e.clientX, e.clientY);
+  };
+
+  return (
+    <>
+      <div
+        id={STICKY_TOOLBAR_GHOST_ID}
+        style={{ opacity: 0, pointerEvents: "none" }}
+        className="fixed z-[10000] rounded-md border border-white/25 px-2.5 py-1 text-xs font-medium text-slate-900 shadow-lg transition-opacity"
+      />
+    <div className="relative">
+      <button
+        ref={triggerRef}
+        title="Insert sticky note"
+        onMouseDown={toggle}
+        className="flex items-center gap-0.5 rounded p-1.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary active:bg-accent/20 active:text-accent"
+      >
+        <NotebookPen size={iconSize} />
+        <ChevronDown
+          size={Math.max(7, iconSize - 5)}
+          className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && createPortal(
+        <>
+          <div
+            className="fixed inset-0 z-[998]"
+            onMouseDown={() => setOpen(false)}
+          />
+          <div
+            className="fixed z-[999] w-44 rounded-lg border border-border bg-surface-raised p-1.5 shadow-xl"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+              Sticky colour
+            </p>
+            <p className="mb-1.5 px-1 text-[9px] text-text-muted opacity-80">
+              Click to insert · press and drag into the note
+            </p>
+            <div className="grid grid-cols-2 gap-0.5">
+              {STICKY_COLOR_PRESETS.map(({ color, label, swatch }) => (
+                <button
+                  key={color}
+                  title={`${label} sticky — drag into editor`}
+                  onPointerDown={(e) => onColourPointerDown(e, color, label)}
+                  onClick={() => {
+                    if (shouldSuppressClick()) return;
+                    insertColor(color);
+                  }}
+                  className="flex items-center gap-1.5 rounded px-1.5 py-1 text-xs transition-colors hover:bg-surface-overlay"
+                >
+                  <span
+                    className="inline-block h-3.5 w-3.5 shrink-0 rounded-sm border border-white/20 shadow-sm"
+                    style={{ backgroundColor: swatch }}
+                  />
+                  <span className="leading-none text-text-secondary">{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>,
+        document.body,
+      )}
+    </div>
+    </>
+  );
+}
+
 // ── Callout dropdown ──────────────────────────────────────────────────────────
 
 /**
@@ -582,6 +697,7 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
 
       <div className={dividerCls} />
       <CalloutDropdown viewRef={viewRef} iconSize={iconSize} />
+      <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} />
 
       <div className={dividerCls} />
       <button

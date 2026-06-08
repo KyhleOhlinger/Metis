@@ -19,6 +19,7 @@ import {
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
 import { openDomContextMenu } from "../utils/domContextMenu";
+import { preprocessStickyBlocksForPreview } from "../utils/stickyNotes";
 
 interface Props {
   content: string;
@@ -87,7 +88,9 @@ export default function MarkdownPreview({
     const allImageOffsets = findImageSourceOffsets(deferredContent);
     let imageLineIdx = 0;
 
-    let md = deferredContent.replace(
+    let md = preprocessStickyBlocksForPreview(deferredContent);
+
+    md = md.replace(
       /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,
       (_, filename) => `![${filename}](${filename})`,
     );
@@ -118,7 +121,11 @@ export default function MarkdownPreview({
       },
     );
 
-    const html = sanitizeMarkdownHtml(raw, { taskLists: true, previewAttrs: true });
+    const html = sanitizeMarkdownHtml(raw, {
+      taskLists: true,
+      previewAttrs: true,
+      stickyNotes: true,
+    });
     return { html, imagePaths, imageSourceOffsets };
   }, [deferredContent, vaultPath, fileDir, assetIndex]);
 

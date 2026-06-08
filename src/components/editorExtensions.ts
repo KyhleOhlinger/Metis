@@ -11,7 +11,7 @@
  *   createVisualModePlugin — live-preview dimming + inline image rendering
  *   markdownAutoComplete   — smart auto-close for ```, [], (), *, _ etc.
  *   taskListClickExtension — click `[ ]` / `[x]` to toggle task completion
- *   makeInlinePreviewExtension — inline images (+ reveal menu), GFM tables collapse to rendered preview when the caret is outside the table (click to edit), Cmd/Ctrl+click links
+ *   makeInlinePreviewExtension — inline images (+ reveal menu), GFM tables + sticky notes collapse to rendered preview when the caret is outside (click to edit), sticky drag-drop, Cmd/Ctrl+click links
  */
 
 
