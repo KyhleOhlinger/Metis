@@ -973,6 +973,131 @@ body,
   border-color: #e2e8f0;
 }
 
+/* Sticky notes — source-mode collapsed preview + Visual float layout */
+.cm-sticky-preview {
+  margin: 10px 0 14px;
+  cursor: pointer;
+}
+.cm-sticky-preview .metis-sticky {
+  margin: 0;
+}
+
+.cm-sticky-preview .metis-sticky,
+.preview-prose .metis-sticky {
+  box-sizing: border-box;
+  border-radius: 3px 10px 8px 4px;
+  padding: 0.7em 0.9em 0.75em;
+  margin: 0 0 1em 1em;
+  font-family: "Segoe Print", "Bradley Hand", "Apple Chancery", "Snell Roundhand",
+    "Noteworthy", "Chalkboard SE", "Comic Sans MS", cursive;
+  font-size: 1.05em;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  transform: rotate(-0.6deg);
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.cm-sticky-preview .metis-sticky--left,
+.preview-prose .metis-sticky--left {
+  float: left;
+  margin: 0 1em 1em 0;
+  transform: rotate(0.5deg);
+}
+.cm-sticky-preview .metis-sticky--right,
+.preview-prose .metis-sticky--right {
+  float: right;
+  margin: 0 0 1em 1em;
+  transform: rotate(-0.6deg);
+}
+.cm-sticky-preview .metis-sticky--amber,
+.preview-prose .metis-sticky--amber {
+  background: rgba(251, 191, 36, 0.22);
+  border-color: rgba(251, 191, 36, 0.45);
+}
+.cm-sticky-preview .metis-sticky--yellow,
+.preview-prose .metis-sticky--yellow {
+  background: rgba(250, 204, 21, 0.2);
+  border-color: rgba(250, 204, 21, 0.42);
+}
+.cm-sticky-preview .metis-sticky--pink,
+.preview-prose .metis-sticky--pink {
+  background: rgba(244, 114, 182, 0.18);
+  border-color: rgba(244, 114, 182, 0.4);
+}
+.cm-sticky-preview .metis-sticky--blue,
+.preview-prose .metis-sticky--blue {
+  background: rgba(96, 165, 250, 0.18);
+  border-color: rgba(96, 165, 250, 0.4);
+}
+.cm-sticky-preview .metis-sticky--green,
+.preview-prose .metis-sticky--green {
+  background: rgba(74, 222, 128, 0.16);
+  border-color: rgba(74, 222, 128, 0.38);
+}
+.cm-sticky-preview .metis-sticky--purple,
+.preview-prose .metis-sticky--purple {
+  background: rgba(192, 132, 252, 0.18);
+  border-color: rgba(192, 132, 252, 0.4);
+}
+.cm-sticky-preview .metis-sticky--slate,
+.preview-prose .metis-sticky--slate {
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+.cm-sticky-preview .metis-sticky p:first-child,
+.preview-prose .metis-sticky p:first-child {
+  margin-top: 0;
+}
+.cm-sticky-preview .metis-sticky p:last-child,
+.preview-prose .metis-sticky p:last-child {
+  margin-bottom: 0;
+}
+.preview-prose::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky,
+[data-color-scheme="light"] .preview-prose .metis-sticky {
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--amber,
+[data-color-scheme="light"] .preview-prose .metis-sticky--amber {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--yellow,
+[data-color-scheme="light"] .preview-prose .metis-sticky--yellow {
+  background: #fefce8;
+  border-color: #facc15;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--pink,
+[data-color-scheme="light"] .preview-prose .metis-sticky--pink {
+  background: #fdf2f8;
+  border-color: #f9a8d4;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--blue,
+[data-color-scheme="light"] .preview-prose .metis-sticky--blue {
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--green,
+[data-color-scheme="light"] .preview-prose .metis-sticky--green {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--purple,
+[data-color-scheme="light"] .preview-prose .metis-sticky--purple {
+  background: #faf5ff;
+  border-color: #d8b4fe;
+}
+[data-color-scheme="light"] .cm-sticky-preview .metis-sticky--slate,
+[data-color-scheme="light"] .preview-prose .metis-sticky--slate {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
 /* Images */
 .preview-prose img {
   max-width: 100%;

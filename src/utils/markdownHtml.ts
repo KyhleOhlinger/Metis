@@ -34,6 +34,8 @@ export type SanitizeMarkdownOptions = {
   headingIds?: boolean;
   /** Extra attributes for preview images (`data-src`, wikilinks, etc.). */
   previewAttrs?: boolean;
+  /** Allow Metis sticky-note `<aside>` wrappers from `preprocessStickyBlocksForPreview`. */
+  stickyNotes?: boolean;
 };
 
 const PREVIEW_EXTRA_ATTR = [
@@ -49,8 +51,10 @@ export function sanitizeMarkdownHtml(
   rawHtml: string,
   options: SanitizeMarkdownOptions = {},
 ): string {
-  const addTags = options.taskLists ? (["input"] as const) : [];
+  const addTags: string[] = options.taskLists ? ["input"] : [];
+  if (options.stickyNotes) addTags.push("aside");
   const addAttr: string[] = ["type", "checked", "disabled"];
+  if (options.stickyNotes) addAttr.push("class", "style");
   if (options.previewAttrs) addAttr.push(...PREVIEW_EXTRA_ATTR);
   else if (options.headingIds) addAttr.push("id");
 

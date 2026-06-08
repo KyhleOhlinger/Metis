@@ -6,20 +6,26 @@
  * persona; if none is set the currently active persona is used.
  */
 
+import { useEffect, useRef } from "react";
 import { useStore } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { useShallow } from "zustand/react/shallow";
 import { DEFAULT_QUICK_ACTIONS } from "../types/persona";
 
+type Props = {
+  /** Collapse the editor selection and clear toolbar state (provided by Editor). */
+  onDismiss: () => void;
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function SelectionToolbar() {
-  const { selectedText, selectionCoords, selectionEndOffset, clearSelection } = useStore(
+export default function SelectionToolbar({ onDismiss }: Props) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const { selectedText, selectionCoords, selectionEndOffset } = useStore(
     useShallow((s) => ({
       selectedText: s.selectedText,
       selectionCoords: s.selectionCoords,
       selectionEndOffset: s.selectionEndOffset,
-      clearSelection: s.clearSelection,
     })),
   );
   const { settings, setSelectionQuery } = usePersonaStore(
@@ -30,6 +36,22 @@ export default function SelectionToolbar() {
   const quickActions = settings.quickActions?.length
     ? settings.quickActions
     : DEFAULT_QUICK_ACTIONS;
+
+  // Dismiss when clicking anywhere outside the toolbar or main editor surface.
+  useEffect(() => {
+    if (!selectedText || !selectionCoords) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (toolbarRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest(".cm-editor")) return;
+      onDismiss();
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [selectedText, selectionCoords, onDismiss]);
 
   // Hide when nothing is selected or the selection was consumed by an action
   if (!selectedText || !selectionCoords) return null;
@@ -57,11 +79,13 @@ export default function SelectionToolbar() {
       // Pass the action's dedicated persona (null means "use active persona")
       personaId: action.personaId ?? null,
     });
-    clearSelection();
+    onDismiss();
   }
 
   return (
     <div
+      ref={toolbarRef}
+      data-metis-selection-toolbar
       className="fixed z-50 flex items-center gap-0.5 rounded-lg border border-border bg-surface-raised px-1 py-1 shadow-lg"
       style={{ top, left }}
       onMouseDown={(e) => e.preventDefault()}

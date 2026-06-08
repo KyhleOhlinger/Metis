@@ -30,6 +30,13 @@ import {
 } from "@/utils/vaultImages";
 import { escapeHtml } from "@/utils/markdownHtml";
 import { openDomContextMenu } from "@/utils/domContextMenu";
+import {
+  METIS_STICKY_MIME,
+  buildStickyPreviewHtml,
+  findStickyBlocks,
+  insertStickyNoteAt,
+  parseStickyDragPayload,
+} from "@/utils/stickyNotes";
 
 // ── 2. Code block background + language badge + copy button ──────────────────
 
@@ -964,6 +971,14 @@ const SLASH_ITEMS: SlashItem[] = [
   { label: "Bug",       detail: "> [!BUG]",       section: "Callouts", insert: "> [!BUG]\n> "       },
   { label: "Example",   detail: "> [!EXAMPLE]",   section: "Callouts", insert: "> [!EXAMPLE]\n> "   },
   { label: "Quote",     detail: "> [!QUOTE]",     section: "Callouts", insert: "> [!QUOTE]\n> "     },
+  {
+    label: "Sticky Note",
+    detail: ":::sticky",
+    section: "Blocks",
+    insert:
+      ':::sticky {float="right" width="12rem" color="amber"}\nJot something down…\n:::\n',
+    cursorOffset: 56,
+  },
   // Misc
   { label: "Divider", detail: "---", section: "Misc", insert: "---\n" },
 ];
@@ -1469,7 +1484,117 @@ function makeMarkdownTableCollapseField() {
   });
 }
 
-/** Collapsed tables + inline image previews are atomic for vertical cursor motion. */
+class StickyNotePreviewWidget extends WidgetType {
+  constructor(
+    readonly html: string,
+    readonly stickyFrom: number,
+  ) {
+    super();
+  }
+  eq(other: StickyNotePreviewWidget) {
+    return other.html === this.html && other.stickyFrom === this.stickyFrom;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-sticky-preview cm-sticky-preview--collapsed";
+    wrap.title = "Click to edit sticky note";
+    wrap.innerHTML = this.html;
+    wrap.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      view.focus();
+      view.dispatch({
+        selection: EditorSelection.cursor(this.stickyFrom),
+        scrollIntoView: true,
+      });
+    });
+    return wrap;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function buildStickyCollapseDecorations(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+
+  for (const span of findStickyBlocks(state.doc)) {
+    if (selectionIntersectsRange(state.selection, span.from, span.to)) {
+      continue;
+    }
+    const html = buildStickyPreviewHtml(span.attrs, span.body);
+    builder.add(
+      span.from,
+      span.to,
+      Decoration.replace({
+        widget: new StickyNotePreviewWidget(html, span.from),
+        block: true,
+      }),
+    );
+  }
+
+  return builder.finish();
+}
+
+function makeStickyCollapseField() {
+  return StateField.define<DecorationSet>({
+    create(state) {
+      return buildStickyCollapseDecorations(state);
+    },
+    update(_decos, tr) {
+      return buildStickyCollapseDecorations(tr.state);
+    },
+    provide(f) {
+      return EditorView.decorations.from(f);
+    },
+  });
+}
+
+function isStickyDrag(dt: DataTransfer | null): boolean {
+  if (!dt) return false;
+  const types = [...dt.types];
+  return types.includes(METIS_STICKY_MIME) || types.includes("text/plain");
+}
+
+function readStickyDragPayload(dt: DataTransfer): string | null {
+  const raw = dt.getData(METIS_STICKY_MIME) || dt.getData("text/plain");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { color?: string };
+    if (parsed && typeof parsed.color === "string") return raw;
+  } catch {
+    /* not our payload */
+  }
+  return null;
+}
+
+function makeStickyDropHandler() {
+  return EditorView.domEventHandlers({
+    dragenter(event) {
+      if (isStickyDrag(event.dataTransfer)) {
+        event.preventDefault();
+      }
+    },
+    dragover(event) {
+      if (isStickyDrag(event.dataTransfer)) {
+        event.preventDefault();
+        event.dataTransfer!.dropEffect = "copy";
+      }
+    },
+    drop(event, view) {
+      const raw = readStickyDragPayload(event.dataTransfer!);
+      if (!raw) return false;
+      event.preventDefault();
+      const coords = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (coords === null) return false;
+      const attrs = parseStickyDragPayload(raw);
+      insertStickyNoteAt(view, coords, attrs);
+      return true;
+    },
+  });
+}
+
+/** Collapsed tables, stickies, and inline image previews are atomic for vertical cursor motion. */
 function makeInlinePreviewAtomicRanges() {
   return EditorView.atomicRanges.of((view) => {
     const { state } = view;
@@ -1481,6 +1606,12 @@ function makeInlinePreviewAtomicRanges() {
       const to = state.doc.line(span.endLine).to;
       if (!selectionIntersectsRange(state.selection, from, to)) {
         builder.add(from, to, mark);
+      }
+    }
+
+    for (const span of findStickyBlocks(state.doc)) {
+      if (!selectionIntersectsRange(state.selection, span.from, span.to)) {
+        builder.add(span.from, span.to, mark);
       }
     }
 
@@ -1720,8 +1851,10 @@ export function makeInlinePreviewExtension(
   return [
     makeImageDecosField(vaultPath, filePath),
     makeMarkdownTableCollapseField(),
+    makeStickyCollapseField(),
     makeInlinePreviewAtomicRanges(),
     makeLinkClickHandler(vaultPath, filePath),
+    makeStickyDropHandler(),
   ];
 }
 

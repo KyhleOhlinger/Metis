@@ -166,6 +166,19 @@ export default function Editor() {
 
   const scheduleSave = useDebouncedSave(markSaved);
 
+  const dismissSelectionToolbar = useCallback(() => {
+    useStore.getState().clearSelection();
+    const view = viewRef.current;
+    if (view && !view.state.selection.main.empty) {
+      const head = view.state.selection.main.head;
+      view.dispatch({ selection: EditorSelection.cursor(head) });
+    }
+  }, []);
+
+  useEffect(() => {
+    dismissSelectionToolbar();
+  }, [activeFilePath, editorMode, dismissSelectionToolbar]);
+
   const activeFileName = activeFilePath?.split("/").pop() ?? "";
   const isImageFile = Boolean(activeFilePath && isVaultImageFile(activeFileName));
 
@@ -740,8 +753,10 @@ export default function Editor() {
         />
       )}
 
-      {/* ── Floating AI selection toolbar ────────────────────────────────── */}
-      <SelectionToolbar />
+      {/* ── Floating AI selection toolbar (source mode only) ─────────────── */}
+      {editorMode === "source" && !isImageFile && (
+        <SelectionToolbar onDismiss={dismissSelectionToolbar} />
+      )}
 
       {/* ── Editor / Preview area ────────────────────────────────────────── */}
       <div className="relative z-0 min-h-0 flex-1 overflow-hidden">
