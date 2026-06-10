@@ -5,6 +5,8 @@ import { listen } from "@tauri-apps/api/event";
 import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import CommandCenter from "./components/commandCenter";
+import SettingsModal from "./components/settings/SettingsModal";
+import { usePersonaStore } from "./store/usePersonaStore";
 import CommandPalette from "./components/CommandPalette";
 import ConvertVaultModal from "./components/ConvertVaultModal";
 import { useStore, VaultData } from "./store/useStore";
@@ -326,9 +328,27 @@ export default function App() {
     };
   }, [refreshVault]);
 
+  useEffect(() => {
+    usePersonaStore.getState().loadFromDisk();
+  }, []);
+
+  // Global preferences shortcut (mirrors native Settings… menu item).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key !== ",") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      e.preventDefault();
+      usePersonaStore.getState().openSettings();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   return (
     <AppErrorBoundary>
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base text-text-primary">
+      <SettingsModal />
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
 
       {/* Vault conversion prompt — shown when a non-Metis folder is opened */}

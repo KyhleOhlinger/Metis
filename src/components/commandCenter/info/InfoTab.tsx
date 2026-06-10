@@ -98,7 +98,6 @@ export function InfoTab({
           </Section>
         )}
 
-        {/* About */}
         <div className="border-t border-border pt-3 mt-2">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-2">
             About

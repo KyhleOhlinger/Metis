@@ -6,7 +6,8 @@ use crate::security::{canon_vault, normalize_path, reject_untrusted_webview, saf
 use crate::state::CurrentVault;
 use crate::types::*;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
@@ -583,6 +584,47 @@ pub fn move_path(
     Ok(dest_path.to_string_lossy().to_string())
 }
 
+/// True when `from` and `to` are the same path except for ASCII case (e.g. `meetings` → `Meetings`).
+/// Needed on case-insensitive volumes where `to.exists()` is true before rename.
+fn is_case_only_rename(from: &Path, to: &Path) -> bool {
+    if from.parent() != to.parent() {
+        return false;
+    }
+    match (from.file_name(), to.file_name()) {
+        (Some(a), Some(b)) if a != b => {
+            a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
+        }
+        _ => false,
+    }
+}
+
+/// Rename within a parent directory, using a two-step temp hop for case-only renames.
+fn rename_in_parent(from: &Path, to: &Path) -> Result<(), String> {
+    if from == to {
+        return Ok(());
+    }
+    if to.exists() {
+        if is_case_only_rename(from, to) {
+            let parent = from.parent().ok_or("Cannot determine parent directory.")?;
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|e| format!("System clock error: {e}"))?
+                .as_nanos();
+            let temp = parent.join(format!(".metis-rename-{nanos}"));
+            fs::rename(from, &temp).map_err(|e| format!("Failed to rename: {e}"))?;
+            fs::rename(&temp, to).map_err(|e| format!("Failed to rename: {e}"))?;
+            return Ok(());
+        }
+        let name = to
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Err(format!("'{name}' already exists."));
+    }
+    fs::rename(from, to).map_err(|e| format!("Failed to rename: {e}"))?;
+    Ok(())
+}
+
 /// Rename a file or folder within the same parent directory.
 ///
 /// SECURITY: `new_name` is sanitised; `path` must be inside the active vault;
@@ -624,11 +666,7 @@ pub fn rename_path(
     let parent = resolved.parent().ok_or("Cannot determine parent directory.")?;
     let new_path = parent.join(&new_name);
 
-    if new_path.exists() {
-        return Err(format!("'{new_name}' already exists."));
-    }
-
-    fs::rename(&resolved, &new_path).map_err(|e| format!("Failed to rename: {e}"))?;
+    rename_in_parent(&resolved, &new_path)?;
 
     Ok(new_path.to_string_lossy().to_string())
 }

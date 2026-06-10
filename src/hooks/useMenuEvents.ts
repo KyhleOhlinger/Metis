@@ -19,6 +19,7 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, VaultData } from "../store/useStore";
+import { usePersonaStore } from "../store/usePersonaStore";
 import { LAST_VAULT_KEY } from "../constants";
 
 interface MenuEventHookOptions {
@@ -127,6 +128,10 @@ export function useMenuEvents({
         }
 
         // ── Reveal active file in Finder / Explorer ──────────────────────────
+        case "open-settings":
+          usePersonaStore.getState().openSettings();
+          break;
+
         case "reveal-in-finder": {
           const { activeFilePath, vaultPath } = store;
           if (!activeFilePath || !vaultPath) break;

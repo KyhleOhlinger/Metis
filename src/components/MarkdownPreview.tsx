@@ -1,5 +1,4 @@
 import { useMemo, useEffect, useRef, useDeferredValue } from "react";
-import { marked } from "marked";
 import { invoke } from "@tauri-apps/api/core";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
@@ -11,9 +10,12 @@ import {
   scrollPreviewToFragment,
   scrollPreviewToSourceOffset,
 } from "../utils/markdownHtml";
+import { parseMarkedWithHighlight } from "../utils/markedHighlight";
 import { resolveMarkdownImageAbsPath, resolveMarkdownImageSrc } from "../utils/vaultImages";
 import {
   followVaultHref,
+  openExternalUrl,
+  normalizeWikilinkTarget,
   openNoteByWikilinkName,
   revealPlatformLabel,
 } from "../utils/vaultNavigation";
@@ -97,11 +99,14 @@ export default function MarkdownPreview({
 
     md = md.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
       const trimmed = name.trim();
-      const encoded = encodeURIComponent(trimmed);
-      return `<a href="#" data-metis-wikilink="${encoded}">${escapeHtml(trimmed)}</a>`;
+      const target = normalizeWikilinkTarget(trimmed);
+      const display =
+        trimmed.includes("|") ? trimmed.slice(trimmed.indexOf("|") + 1).trim() : target;
+      const encoded = encodeURIComponent(target);
+      return `<a href="#" data-metis-wikilink="${encoded}">${escapeHtml(display)}</a>`;
     });
 
-    let raw = marked.parse(md, { gfm: true }) as string;
+    let raw = parseMarkedWithHighlight(md, { gfm: true });
     raw = addHeadingIds(raw);
 
     raw = raw.replace(
@@ -169,7 +174,7 @@ export default function MarkdownPreview({
 
       const wiki = a.dataset.metisWikilink;
       if (wiki) {
-        openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile);
+        openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath);
         return;
       }
 
@@ -217,7 +222,8 @@ export default function MarkdownPreview({
         openDomContextMenu(e.clientX, e.clientY, [
           {
             label: "Open Note",
-            onClick: () => openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile),
+            onClick: () =>
+              openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath),
           },
         ]);
         return;
@@ -230,9 +236,7 @@ export default function MarkdownPreview({
       openDomContextMenu(e.clientX, e.clientY, [
         {
           label: "Open Link",
-          onClick: () => {
-            invoke("open_url", { url: href }).catch(console.error);
-          },
+          onClick: () => openExternalUrl(href),
         },
       ]);
     };
@@ -255,6 +259,10 @@ export default function MarkdownPreview({
         img.loading = "lazy";
         delete img.dataset.src;
       }
+    });
+    el.querySelectorAll<HTMLElement>(".metis-sticky[data-metis-sticky-width]").forEach((node) => {
+      const w = node.dataset.metisStickyWidth?.trim();
+      if (w) node.style.setProperty("--metis-sticky-width", w);
     });
   }, [preview.html]);
 

@@ -119,6 +119,24 @@ export const DEFAULT_QUICK_ACTIONS: QuickAction[] = [
   },
 ];
 
+/** Default placement/size for newly inserted sticky notes. */
+export interface StickyNoteDefaults {
+  float?: "left" | "right" | "none";
+  width?: string;
+  color?: "amber" | "yellow" | "pink" | "blue" | "green" | "purple" | "slate";
+  /** When true, the next N lines after the sticky (N = sticky body line count) may wrap beside it. */
+  wrap?: boolean;
+}
+
+export type SettingsSectionId =
+  | "general"
+  | "editor"
+  | "sticky"
+  | "hotkeys"
+  | "ai"
+  | "personas"
+  | "about";
+
 export interface Settings {
   /** All configured AI endpoints (built-in presets + user-added). */
   providerProfiles: AiProviderProfile[];
@@ -146,6 +164,12 @@ export interface Settings {
    * Must match a directory name under `resources/dictionaries/`.
    */
   spellcheckLanguage?: string;
+  /** When true, the editor spellcheck linter is active. */
+  spellcheckEnabled?: boolean;
+  /** Editor background preset id — matches `BG_PRESETS[].id`. */
+  editorBgPresetId?: string;
+  /** Defaults applied when inserting sticky notes from the toolbar or slash menu. */
+  stickyDefaults?: StickyNoteDefaults;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -156,6 +180,14 @@ export const DEFAULT_SETTINGS: Settings = {
   storeAiHistory: true,
   aiHistoryMaxResponseChars: 32_000,
   spellcheckLanguage: "en_US",
+  spellcheckEnabled: false,
+  editorBgPresetId: "dark",
+  stickyDefaults: {
+    float: "right",
+    width: "12rem",
+    color: "amber",
+    wrap: true,
+  },
 };
 
 // ── Default personas shipped with the app ────────────────────────────────────
