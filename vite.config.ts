@@ -64,6 +64,9 @@ export default defineConfig({
           if (id.includes("marked") || id.includes("dompurify")) {
             return "markdown";
           }
+          if (id.includes("highlight.js")) {
+            return "highlight";
+          }
           if (id.includes("lucide-react")) {
             return "lucide";
           }

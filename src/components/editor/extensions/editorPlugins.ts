@@ -32,7 +32,9 @@ import { escapeHtml } from "@/utils/markdownHtml";
 import { openDomContextMenu } from "@/utils/domContextMenu";
 import {
   METIS_STICKY_MIME,
-  buildStickyPreviewHtml,
+  buildDefaultStickySlashInsert,
+  DEFAULT_STICKY_PLACEHOLDER,
+  buildStickyBlockPreviewHtml,
   findStickyBlocks,
   insertStickyNoteAt,
   parseStickyDragPayload,
@@ -898,25 +900,14 @@ const wikilinkDecoPlugin = ViewPlugin.fromClass(
  * Reads noteIndex at click-time so it's always fresh.
  */
 const wikilinkClickHandler = EditorView.domEventHandlers({
-  mousedown(e) {
-    const target = e.target as HTMLElement;
-    const linkEl = target.closest("[data-wikilink]") as HTMLElement | null;
+  click(e) {
+    if (e.button !== 0) return false;
+    const linkEl = (e.target as HTMLElement).closest("[data-wikilink]") as HTMLElement | null;
     if (!linkEl?.dataset.wikilink) return false;
 
     e.preventDefault();
-    const filename = linkEl.dataset.wikilink;
-    const { noteIndex, setActiveFile } = useStore.getState();
-    const note = noteIndex.find(
-      (n) =>
-        n.name === filename ||
-        n.name.toLowerCase() === filename.toLowerCase(),
-    );
-    if (!note) return false;
-
-    invoke<string>("get_file_content", { path: note.path })
-      .then((content) => setActiveFile(note.path, content))
-      .catch(console.error);
-
+    e.stopPropagation();
+    openNoteByWikilinkNameFromStore(linkEl.dataset.wikilink);
     return true;
   },
 });
@@ -976,7 +967,7 @@ const SLASH_ITEMS: SlashItem[] = [
     detail: ":::sticky",
     section: "Blocks",
     insert:
-      ':::sticky {float="right" width="12rem" color="amber"}\nJot something down…\n:::\n',
+      ':::sticky {float="right" width="12rem" color="amber" wrap="true"}\nJot something down…\n:::\n',
     cursorOffset: 56,
   },
   // Misc
@@ -1002,27 +993,31 @@ function slashMenuCompletionSource(
   );
   if (!filtered.length) return null;
 
-  const options = filtered.map((item) => ({
-    label: item.label,
-    detail: item.detail,
-    section: item.section,
-    type: "text" as const,
-    apply(view: EditorView, _c: unknown, _from: number, to: number) {
-      const insertPos = slashPos; // replace from the /
-      view.dispatch({
-        changes: { from: insertPos, to, insert: item.insert },
-        selection: {
-          anchor:
-            item.cursorOffset === undefined
-              ? insertPos + item.insert.length   // end of insert
-              : item.cursorOffset === -1
-                ? insertPos + item.insert.length
-                : insertPos + item.cursorOffset,
-        },
-      });
-      view.focus();
-    },
-  }));
+  const options = filtered.map((item) => {
+    const insert =
+      item.label === "Sticky Note" ? buildDefaultStickySlashInsert() : item.insert;
+    const isSticky = item.label === "Sticky Note";
+    const bodyOffset = isSticky ? insert.indexOf(DEFAULT_STICKY_PLACEHOLDER) : -1;
+    return {
+      label: item.label,
+      detail: item.detail,
+      section: item.section,
+      type: "text" as const,
+      apply(view: EditorView, _c: unknown, _from: number, to: number) {
+        const insertPos = slashPos;
+        const bodyFrom = bodyOffset >= 0 ? insertPos + bodyOffset : insertPos + insert.length;
+        const bodyTo =
+          bodyOffset >= 0
+            ? bodyFrom + DEFAULT_STICKY_PLACEHOLDER.length
+            : insertPos + insert.length;
+        view.dispatch({
+          changes: { from: insertPos, to, insert },
+          selection: EditorSelection.range(bodyFrom, bodyTo),
+        });
+        view.focus();
+      },
+    };
+  });
 
   return { from: slashPos + 1, options, filter: false };
 }
@@ -1522,7 +1517,7 @@ function buildStickyCollapseDecorations(state: EditorState): DecorationSet {
     if (selectionIntersectsRange(state.selection, span.from, span.to)) {
       continue;
     }
-    const html = buildStickyPreviewHtml(span.attrs, span.body);
+    const html = buildStickyBlockPreviewHtml(span.attrs, span.body);
     builder.add(
       span.from,
       span.to,
@@ -1626,97 +1621,86 @@ function makeInlinePreviewAtomicRanges() {
   });
 }
 
-/** Cmd/Ctrl+Click on a markdown link in source mode opens the URL or note. */
+function followMarkdownLinkAtColumn(
+  text: string,
+  col: number,
+  fileDir: string,
+  vaultPath: string,
+  filePath: string,
+): boolean {
+  const mdLinkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = mdLinkRe.exec(text)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (col < start || col > end) continue;
+    followVaultHref(m[2].trim(), { fileDir, vaultPath, filePath });
+    return true;
+  }
+
+  const wikiRe = /\[\[([^\]]+)\]\]/g;
+  while ((m = wikiRe.exec(text)) !== null) {
+    const start = m.index;
+    const end = start + m[0].length;
+    if (col < start || col > end) continue;
+    openNoteByWikilinkNameFromStore(m[1]);
+    return true;
+  }
+
+  return false;
+}
+
+/** Click wikilinks + collapsed/expanded link tokens; Cmd/Ctrl+Click also follows raw markdown links. */
 function makeLinkClickHandler(vaultPath: string, filePath: string) {
   const fileDir = filePath.substring(0, filePath.lastIndexOf("/"));
 
   return EditorView.domEventHandlers({
-    mousedown(event, view) {
-      if (!event.metaKey && !event.ctrlKey) return false;
+    click(event, view) {
+      if (event.button !== 0) return false;
 
-      const fromCollapsed = (event.target as HTMLElement | null)?.closest(
-        "[data-md-link-href]",
-      ) as HTMLElement | null;
+      const el = event.target as HTMLElement;
+      const fromCollapsed = el.closest("[data-md-link-href]") as HTMLElement | null;
       const collapsedHref = fromCollapsed?.dataset.mdLinkHref?.trim();
       if (collapsedHref) {
         event.preventDefault();
-
-        if (/^https?:\/\//i.test(collapsedHref)) {
-          invoke("open_url", { url: collapsedHref }).catch(console.error);
-        } else {
-          const noteName = collapsedHref.replace(/\.md$/i, "");
-          const { noteIndex, setActiveFile } = useStore.getState();
-          const note = noteIndex.find(
-            (n) =>
-              n.name.replace(/\.md$/i, "").toLowerCase() === noteName.toLowerCase(),
-          );
-          if (note) {
-            invoke<string>("get_file_content", { path: note.path })
-              .then((c) => setActiveFile(note.path, c))
-              .catch(console.error);
-          }
-        }
+        event.stopPropagation();
+        followVaultHref(collapsedHref, { fileDir, vaultPath, filePath });
         return true;
       }
+
+      const wikiEl = el.closest("[data-wikilink]") as HTMLElement | null;
+      if (wikiEl?.dataset.wikilink) {
+        event.preventDefault();
+        event.stopPropagation();
+        openNoteByWikilinkNameFromStore(wikiEl.dataset.wikilink);
+        return true;
+      }
+
+      const coords = { x: event.clientX, y: event.clientY };
+      const pos = view.posAtCoords(coords);
+      if (pos !== null) {
+        const line = view.state.doc.lineAt(pos);
+        const col = pos - line.from;
+        if (followMarkdownLinkAtColumn(line.text, col, fileDir, vaultPath, filePath)) {
+          event.preventDefault();
+          event.stopPropagation();
+          return true;
+        }
+      }
+
+      return false;
+    },
+    mousedown(event, view) {
+      if (!event.metaKey && !event.ctrlKey) return false;
 
       const coords = { x: event.clientX, y: event.clientY };
       const pos = view.posAtCoords(coords);
       if (pos === null) return false;
 
       const line = view.state.doc.lineAt(pos);
-      const text = line.text;
       const col = pos - line.from;
-
-      // ── External / relative link: [text](url) ───────────────────────────
-      const mdLinkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
-      let m: RegExpExecArray | null;
-      while ((m = mdLinkRe.exec(text)) !== null) {
-        const start = m.index;
-        const end = start + m[0].length;
-        if (col < start || col > end) continue;
-
-        const url = m[2].trim();
+      if (followMarkdownLinkAtColumn(line.text, col, fileDir, vaultPath, filePath)) {
         event.preventDefault();
-
-        if (/^https?:\/\//i.test(url)) {
-          invoke("open_url", { url }).catch(console.error);
-        } else {
-          // Treat as a note name (strip .md extension if present)
-          const noteName = url.replace(/\.md$/i, "");
-          const { noteIndex, setActiveFile } = useStore.getState();
-          const note = noteIndex.find(
-            (n) =>
-              n.name.replace(/\.md$/i, "").toLowerCase() ===
-              noteName.toLowerCase(),
-          );
-          if (note) {
-            invoke<string>("get_file_content", { path: note.path })
-              .then((c) => setActiveFile(note.path, c))
-              .catch(console.error);
-          }
-        }
-        return true;
-      }
-
-      // ── Wikilink: [[note name]] ──────────────────────────────────────────
-      const wikiRe = /\[\[([^\]]+)\]\]/g;
-      while ((m = wikiRe.exec(text)) !== null) {
-        const start = m.index;
-        const end = start + m[0].length;
-        if (col < start || col > end) continue;
-
-        event.preventDefault();
-        const name = m[1];
-        const { noteIndex, setActiveFile } = useStore.getState();
-        const note = noteIndex.find(
-          (n) =>
-            n.name.replace(/\.md$/i, "").toLowerCase() === name.toLowerCase(),
-        );
-        if (note) {
-          invoke<string>("get_file_content", { path: note.path })
-            .then((c) => setActiveFile(note.path, c))
-            .catch(console.error);
-        }
         return true;
       }
 

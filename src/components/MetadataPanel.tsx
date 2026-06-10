@@ -199,7 +199,9 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
   async function commitRename() {
     const newName = draftName.trim();
     setEditingName(false);
-    if (!newName || newName === currentFileName || !filePath) return;
+    if (!newName || !filePath) return;
+    // Allow case-only renames (e.g. note.md → Note.md); skip exact match only.
+    if (newName === currentFileName) return;
     try {
       const newPath = await invoke<string>("rename_path", { path: filePath, newName });
       useStore.setState({ activeFilePath: newPath });

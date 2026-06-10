@@ -62,18 +62,23 @@ type TestStatus =
   | { phase: "error"; message: string };
 
 export function SettingsTab({
+  filterSection,
   settings,
   upsertProviderProfile,
   removeProviderProfile,
   setDefaultProviderProfileId,
   onUpdateSettings,
 }: {
+  /** When set, only render AI or Personas blocks (used by SettingsPanel). */
+  filterSection?: "ai" | "personas";
   settings: ReturnType<typeof usePersonaStore.getState>["settings"];
   upsertProviderProfile: (profile: AiProviderProfile) => void;
   removeProviderProfile: (id: string) => void;
   setDefaultProviderProfileId: (id: string) => void;
   onUpdateSettings: (patch: Partial<typeof settings>) => void;
 }) {
+  const showPersonas = !filterSection || filterSection === "personas";
+  const showAi = !filterSection || filterSection === "ai";
   const profiles = settings.providerProfiles;
   const configuredProfiles = profiles.filter((p) => (p.apiKey ?? "").trim().length > 0);
 
@@ -131,11 +136,20 @@ export function SettingsTab({
   const sectionBtnCls =
     "rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-surface-overlay hover:text-text-primary transition-colors";
 
+  const embeddedInCommandCenter = filterSection === undefined;
+
   return (
-    <div className="flex-1 overflow-y-auto p-3 space-y-1" data-cc-scroll-region>
+    <div
+      className={
+        embeddedInCommandCenter
+          ? "flex-1 min-h-0 overflow-y-auto p-3 space-y-1"
+          : "space-y-1"
+      }
+      {...(embeddedInCommandCenter ? { "data-cc-scroll-region": true } : {})}
+    >
 
       {/* ── Personas ─────────────────────────────────────────────────────── */}
-      <CollapsibleSection
+      {showPersonas && <CollapsibleSection
         title="Personas"
         action={
           <button
@@ -147,10 +161,10 @@ export function SettingsTab({
         }
       >
         <PersonasSection hideHeader newPersonaTrigger={newPersonaTrigger} />
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {/* ── Quick Actions ─────────────────────────────────────────────────── */}
-      <CollapsibleSection
+      {showAi && <CollapsibleSection
         title="Quick Actions"
         defaultOpen={false}
         action={
@@ -163,28 +177,10 @@ export function SettingsTab({
         }
       >
         <QuickActionsSettings hideHeader newActionTrigger={newActionTrigger} />
-      </CollapsibleSection>
-
-      {/* ── Spellcheck dictionary ─────────────────────────────────────────── */}
-      <CollapsibleSection title="Spellcheck" defaultOpen={false}>
-        <div className="space-y-2 text-[11px] text-text-muted">
-          <p>Choose which dictionary the spellcheck linter uses.</p>
-          <select
-            value={settings.spellcheckLanguage ?? "en_US"}
-            onChange={(e) => onUpdateSettings({ spellcheckLanguage: e.target.value })}
-            className="w-full rounded border border-border bg-surface-base px-2 py-1.5 text-xs text-text-primary focus:border-accent focus:outline-none"
-          >
-            <option value="en_US">English (US)</option>
-            <option value="en_GB">English (UK)</option>
-          </select>
-          <p className="text-[10px] opacity-70">
-            Toggle spellcheck on/off from the toolbar (Abc icon).
-          </p>
-        </div>
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {/* ── AI & privacy (history) ───────────────────────────────────────── */}
-      <CollapsibleSection title="AI & privacy" defaultOpen={false}>
+      {showAi && <CollapsibleSection title="AI & privacy" defaultOpen={false}>
         <div className="space-y-3 text-[11px] text-text-muted">
           <label className="flex items-start gap-2 cursor-pointer">
             <input
@@ -220,10 +216,10 @@ export function SettingsTab({
             />
           </div>
         </div>
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       {/* ── API Providers ─────────────────────────────────────────────────── */}
-      <CollapsibleSection
+      {showAi && <CollapsibleSection
         title="API Providers"
         defaultOpen={true}
         action={
@@ -339,7 +335,7 @@ export function SettingsTab({
           Keys are stored locally in the app data directory. Custom base URLs are allowed at runtime (no app rebuild).
         </p>
         </div>
-      </CollapsibleSection>
+      </CollapsibleSection>}
     </div>
   );
 }

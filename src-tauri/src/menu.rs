@@ -31,6 +31,12 @@ pub fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tau
             }),
         )?)
         .separator()
+        .item(
+            &MenuItemBuilder::with_id("open_settings", "Settings…")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?,
+        )
+        .separator()
         .item(&PredefinedMenuItem::hide(app, None)?)
         .item(&PredefinedMenuItem::hide_others(app, None)?)
         .item(&PredefinedMenuItem::show_all(app, None)?)
@@ -124,7 +130,31 @@ pub fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tau
         .build()?;
 
     // ── Help ──────────────────────────────────────────────────────────────────
+    #[cfg(target_os = "macos")]
     let help_menu = SubmenuBuilder::new(app, "Help")
+        .item(
+            &MenuItemBuilder::with_id("open_docs", "Metis Documentation")
+                .build(app)?,
+        )
+        .separator()
+        .item(
+            &MenuItemBuilder::with_id("open_github", "GitHub — Kyhle Öhlinger")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::with_id("open_website", "Website — ohlinger.co")
+                .build(app)?,
+        )
+        .build()?;
+
+    #[cfg(not(target_os = "macos"))]
+    let help_menu = SubmenuBuilder::new(app, "Help")
+        .item(
+            &MenuItemBuilder::with_id("open_settings", "Settings…")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?,
+        )
+        .separator()
         .item(
             &MenuItemBuilder::with_id("open_docs", "Metis Documentation")
                 .build(app)?,
@@ -206,6 +236,7 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "toggle_panel" => Some("toggle-panel"),
         "source_mode" => Some("source-mode"),
         "visual_mode" => Some("visual-mode"),
+        "open_settings" => Some("open-settings"),
         _ => None,
     };
     if let Some(action) = action {

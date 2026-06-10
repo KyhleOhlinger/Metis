@@ -41,6 +41,12 @@ fn app_data_file(app_handle: &tauri::AppHandle, name: &str) -> Result<PathBuf, S
     Ok(app_data_dir_for_build(app_handle)?.join(name))
 }
 
+/// Application semver from `Cargo.toml` (matches native About dialog).
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").into()
+}
+
 /// App profile directory where the webview persists planner data (`localStorage`).
 #[tauri::command]
 pub fn get_planner_storage_dir(app_handle: tauri::AppHandle) -> Result<String, String> {

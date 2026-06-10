@@ -37,13 +37,15 @@ import {
   hideFrontmatterField,
 } from "./editorExtensions";
 import { lintGutter } from "@codemirror/lint";
-import Toolbar, { toggleInline } from "./Toolbar";
+import Toolbar from "./Toolbar";
+import { toggleInline } from "./toolbarActions";
 import MarkdownPreview from "./MarkdownPreview";
 import VaultImageViewer from "./VaultImageViewer";
 import EditorFindBar from "./EditorFindBar";
 import { spellcheckLinter } from "./spellcheck";
 import DailyTaskGrid from "./DailyTaskGrid";
 import { isVaultImageFile } from "../utils/vaultImages";
+import { openNoteByWikilinkNameFromStore } from "../utils/vaultNavigation";
 import {
   BG_PRESETS,
   bgCompartment,
@@ -124,12 +126,18 @@ function applyEditorNavigation(
 export default function Editor() {
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const [bgPreset, setBgPreset] = useState<BgPreset>(BG_PRESETS[0]);
-  const bgPresetRef = useRef<BgPreset>(BG_PRESETS[0]); // always current — used in editor-creation effect
-  const [showBgPicker, setShowBgPicker] = useState(false);
-  const [spellcheck, setSpellcheck] = useState(() => localStorage.getItem("metis_spellcheck") === "true");
-  const spellcheckRef = useRef(spellcheck);
+  const updateSettings = usePersonaStore((s) => s.updateSettings);
+  const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
+  const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
   const spellcheckLang = usePersonaStore((s) => s.settings.spellcheckLanguage ?? "en_US");
+
+  const resolveBgPreset = (id: string) =>
+    BG_PRESETS.find((p) => p.id === id) ?? BG_PRESETS[0];
+
+  const [bgPreset, setBgPreset] = useState<BgPreset>(() => resolveBgPreset(editorBgPresetId));
+  const bgPresetRef = useRef<BgPreset>(bgPreset);
+  const [showBgPicker, setShowBgPicker] = useState(false);
+  const spellcheckRef = useRef(spellcheckEnabled);
   const spellcheckLangRef = useRef(spellcheckLang);
 
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -142,7 +150,6 @@ export default function Editor() {
     setActiveFileContent,
     markSaved,
     vaultPath,
-    noteIndex,
     editorTab: editorMode,
     setEditorTab: setEditorMode,
     editorNavigateTo,
@@ -153,7 +160,6 @@ export default function Editor() {
       setActiveFileContent: s.setActiveFileContent,
       markSaved: s.markSaved,
       vaultPath: s.vaultPath,
-      noteIndex: s.noteIndex,
       editorTab: s.editorTab,
       setEditorTab: s.setEditorTab,
       editorNavigateTo: s.editorNavigateTo,
@@ -546,7 +552,12 @@ export default function Editor() {
 
   // ── Hot-swap background colour without rebuilding the editor ─────────────
   useEffect(() => {
-    bgPresetRef.current = bgPreset; // keep ref in sync for editor-creation effect
+    const next = resolveBgPreset(editorBgPresetId);
+    setBgPreset(next);
+  }, [editorBgPresetId]);
+
+  useEffect(() => {
+    bgPresetRef.current = bgPreset;
     viewRef.current?.dispatch({
       effects: [
         bgCompartment.reconfigure(makeBgTheme(bgPreset)),
@@ -557,13 +568,14 @@ export default function Editor() {
 
   // ── Hot-swap spellcheck without rebuilding the editor ────────────────────
   useEffect(() => {
-    spellcheckRef.current = spellcheck;
+    spellcheckRef.current = spellcheckEnabled;
     spellcheckLangRef.current = spellcheckLang;
-    localStorage.setItem("metis_spellcheck", String(spellcheck));
     viewRef.current?.dispatch({
-      effects: spellcheckCompartment.reconfigure(makeSpellcheckExt(spellcheck, spellcheckLang)),
+      effects: spellcheckCompartment.reconfigure(
+        makeSpellcheckExt(spellcheckEnabled, spellcheckLang),
+      ),
     });
-  }, [spellcheck, spellcheckLang]);
+  }, [spellcheckEnabled, spellcheckLang]);
 
   // ── When switching back to source mode, restore CM6 focus ─────────────────
   useEffect(() => {
@@ -668,7 +680,11 @@ export default function Editor() {
                     <button
                       key={p.id}
                       title={p.label}
-                      onClick={() => { setBgPreset(p); setShowBgPicker(false); }}
+                      onClick={() => {
+                        setBgPreset(p);
+                        updateSettings({ editorBgPresetId: p.id });
+                        setShowBgPicker(false);
+                      }}
                       className="flex flex-col items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-surface-overlay"
                     >
                       <span
@@ -721,8 +737,10 @@ export default function Editor() {
       {editorMode === "source" && !isImageFile && (
         <Toolbar
           viewRef={viewRef}
-          spellcheck={spellcheck}
-          onToggleSpellcheck={() => setSpellcheck((v) => !v)}
+          spellcheck={spellcheckEnabled}
+          onToggleSpellcheck={() =>
+            updateSettings({ spellcheckEnabled: !spellcheckEnabled })
+          }
         />
       )}
 
@@ -740,16 +758,7 @@ export default function Editor() {
               changes: { from: 0, to: view.state.doc.length, insert: newContent },
             });
           }}
-          onLinkClick={(name) => {
-            // Match by name (case-insensitive) and open the note
-            const note = noteIndex.find(
-              (n) => n.name === name || n.name.toLowerCase() === name.toLowerCase(),
-            );
-            if (!note) return;
-            invoke<string>("get_file_content", { path: note.path })
-              .then((c) => useStore.getState().setActiveFile(note.path, c))
-              .catch(console.error);
-          }}
+          onLinkClick={(name) => openNoteByWikilinkNameFromStore(name)}
         />
       )}
 

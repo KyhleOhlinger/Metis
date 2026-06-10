@@ -166,6 +166,16 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
     defaultProviderProfileId = profiles[0]?.id ?? PRESET_OPENAI;
   }
 
+  let spellcheckEnabled = saved.spellcheckEnabled;
+  if (spellcheckEnabled === undefined) {
+    try {
+      spellcheckEnabled = localStorage.getItem("metis_spellcheck") === "true";
+      if (spellcheckEnabled) localStorage.removeItem("metis_spellcheck");
+    } catch {
+      spellcheckEnabled = DEFAULT_SETTINGS.spellcheckEnabled;
+    }
+  }
+
   return {
     ...DEFAULT_SETTINGS,
     ...saved,
@@ -175,6 +185,12 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
     quickActions: saved.quickActions?.length
       ? saved.quickActions
       : DEFAULT_SETTINGS.quickActions,
+    spellcheckEnabled,
+    editorBgPresetId: saved.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
+    stickyDefaults: {
+      ...DEFAULT_SETTINGS.stickyDefaults,
+      ...saved.stickyDefaults,
+    },
   };
 }
 

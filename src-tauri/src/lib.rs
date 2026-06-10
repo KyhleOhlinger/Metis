@@ -38,6 +38,7 @@ pub fn run() {
             settings::save_personas,
             settings::load_settings,
             settings::save_settings,
+            settings::get_app_version,
             settings::get_planner_storage_dir,
             ai_context::get_file_summaries,
             ai_context::get_files_content,

@@ -79,6 +79,7 @@ export const metisTheme = EditorView.theme(
       minHeight: "100%",
       fontSize: "15px",
       lineHeight: "1.85",
+      "--metis-editor-text-size": "15px",
     },
     ".cm-gutters": {
       fontFamily: '"JetBrains Mono","Fira Code",monospace',

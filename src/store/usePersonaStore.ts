@@ -5,6 +5,7 @@ import type {
   Persona,
   QuickAction,
   Settings,
+  SettingsSectionId,
   HistoryEntry,
   ExecutionScope,
 } from "../types/persona";
@@ -60,7 +61,13 @@ interface PersonaState {
   pendingScope: ExecutionScope | null;
   selectionQuery: SelectionQuery | null;
 
+  settingsModalOpen: boolean;
+  settingsModalSection: SettingsSectionId;
+
   loadFromDisk: () => Promise<void>;
+  openSettings: (section?: SettingsSectionId) => void;
+  setSettingsSection: (section: SettingsSectionId) => void;
+  closeSettings: () => void;
   setPendingScope: (scope: ExecutionScope | null) => void;
   setSelectionQuery: (q: SelectionQuery | null) => void;
   savePersonas: () => Promise<void>;
@@ -94,6 +101,13 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
   modelFetchError: {},
   pendingScope: null,
   selectionQuery: null,
+  settingsModalOpen: false,
+  settingsModalSection: "general",
+
+  openSettings: (section = "general") =>
+    set({ settingsModalOpen: true, settingsModalSection: section }),
+  setSettingsSection: (section) => set({ settingsModalSection: section }),
+  closeSettings: () => set({ settingsModalOpen: false }),
 
   fetchModelsForProfile: async (profile, force = false) => {
     const id = profile.id;

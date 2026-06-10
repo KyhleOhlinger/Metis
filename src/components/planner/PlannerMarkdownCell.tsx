@@ -89,9 +89,8 @@ export default function PlannerMarkdownCell({
     setInternalEditing(false);
   };
 
-  const previewHeightPx = storageKey
-    ? getPlannerFieldHeight(storageKey, defaultStoredHeight)
-    : minHeightPx;
+  // Idle preview stays compact; persisted resize height applies only while editing.
+  const previewHeightPx = minHeightPx;
 
   const cmField = (
     <PlannerCodeMirrorField

@@ -1,5 +1,5 @@
-import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { parseMarkedWithHighlight } from "./markedHighlight";
 
 export function escapeHtml(text: string): string {
   return text
@@ -41,6 +41,7 @@ export type SanitizeMarkdownOptions = {
 const PREVIEW_EXTRA_ATTR = [
   "data-src",
   "data-metis-wikilink",
+  "data-metis-sticky-width",
   "data-image-idx",
   "loading",
   "id",
@@ -52,7 +53,7 @@ export function sanitizeMarkdownHtml(
   options: SanitizeMarkdownOptions = {},
 ): string {
   const addTags: string[] = options.taskLists ? ["input"] : [];
-  if (options.stickyNotes) addTags.push("aside");
+  if (options.stickyNotes) addTags.push("aside", "div");
   const addAttr: string[] = ["type", "checked", "disabled"];
   if (options.stickyNotes) addAttr.push("class", "style");
   if (options.previewAttrs) addAttr.push(...PREVIEW_EXTRA_ATTR);
@@ -62,9 +63,9 @@ export function sanitizeMarkdownHtml(
     ADD_TAGS: [...addTags],
     ADD_ATTR: addAttr,
     FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
-    // Block javascript:, data:, and vbscript: in href/src
+    // Full http(s)/mailto URLs, fragments, and vault-relative paths — not bare scheme prefixes.
     ALLOWED_URI_REGEXP:
-      /^(?:(?:https?|mailto):|#|\/|\.\/|[^:/?#]+(?:\/[^:/?#]*)*(?:\?[^#]*)?(?:#.*)?)$/i,
+      /^(?:https?:\/\/[^\s<>"']+|mailto:[^\s<>"']+|#(?:[^\s<>"']*)?|\/[^\s<>"']*|\.\/[^\s<>"']*|[^:\s<>"']+(?:\/[^\s<>"']*)*)$/i,
   });
 }
 
@@ -81,10 +82,10 @@ export function parseMarkdownToHtml(
   options: ParseMarkdownOptions = {},
 ): string {
   if (!markdown.trim()) return "";
-  const raw = marked.parse(markdown, {
+  const raw = parseMarkedWithHighlight(markdown, {
     gfm: options.gfm ?? true,
     breaks: options.breaks ?? false,
-  }) as string;
+  });
   const withIds = options.headingIds ? addHeadingIds(raw) : raw;
   return sanitizeMarkdownHtml(withIds, options.sanitize ?? { taskLists: true });
 }

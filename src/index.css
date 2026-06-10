@@ -470,7 +470,7 @@ body,
   text-decoration-style: solid;
   text-decoration-thickness: 1px;
   text-decoration-color: #60a5fa;
-  cursor: text;
+  cursor: pointer;
 }
 
 [data-color-scheme="light"] .cm-markdown-link-collapsed {
@@ -798,6 +798,7 @@ body,
   font-family: "Inter", system-ui, sans-serif;
   font-size: 15px;
   line-height: 1.85;
+  --metis-editor-text-size: 15px;
   /* No max-width — let the preview fill the full pane width so it
      uses all available space, especially in fullscreen mode. */
   padding: 1.5rem 3rem 4rem;
@@ -873,6 +874,95 @@ body,
   color: #e2e8f0;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 13px;
+}
+
+/* Visual preview — fenced code syntax (highlight.js, aligned with Source CM6 theme) */
+.preview-prose pre code.hljs {
+  display: block;
+  color: #e2e8f0;
+}
+.preview-prose pre code.hljs .hljs-keyword,
+.preview-prose pre code.hljs .hljs-selector-tag,
+.preview-prose pre code.hljs .hljs-built_in {
+  color: #c084fc;
+}
+.preview-prose pre code.hljs .hljs-title.function_,
+.preview-prose pre code.hljs .hljs-title.class_,
+.preview-prose pre code.hljs .hljs-function {
+  color: #60a5fa;
+}
+.preview-prose pre code.hljs .hljs-string,
+.preview-prose pre code.hljs .hljs-regexp,
+.preview-prose pre code.hljs .hljs-symbol {
+  color: #86efac;
+}
+.preview-prose pre code.hljs .hljs-number,
+.preview-prose pre code.hljs .hljs-literal {
+  color: #fb923c;
+}
+.preview-prose pre code.hljs .hljs-comment,
+.preview-prose pre code.hljs .hljs-quote {
+  color: #475569;
+  font-style: italic;
+}
+.preview-prose pre code.hljs .hljs-type,
+.preview-prose pre code.hljs .hljs-class .hljs-title,
+.preview-prose pre code.hljs .hljs-title {
+  color: #34d399;
+}
+.preview-prose pre code.hljs .hljs-attr,
+.preview-prose pre code.hljs .hljs-attribute,
+.preview-prose pre code.hljs .hljs-name {
+  color: #fbbf24;
+}
+.preview-prose pre code.hljs .hljs-variable,
+.preview-prose pre code.hljs .hljs-params {
+  color: #93c5fd;
+}
+.preview-prose pre code.hljs .hljs-meta,
+.preview-prose pre code.hljs .hljs-meta .hljs-keyword {
+  color: #64748b;
+}
+
+[data-color-scheme="light"] .preview-prose pre code.hljs {
+  color: #1e293b;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-keyword,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-selector-tag,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-built_in {
+  color: #7c3aed;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-title.function_,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-title.class_,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-function {
+  color: #2563eb;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-string,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-regexp,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-symbol {
+  color: #047857;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-number,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-literal {
+  color: #c2410c;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-comment,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-quote {
+  color: #64748b;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-type,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-class .hljs-title,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-title {
+  color: #0f766e;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-attr,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-attribute,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-name {
+  color: #b45309;
+}
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-variable,
+[data-color-scheme="light"] .preview-prose pre code.hljs .hljs-params {
+  color: #1d4ed8;
 }
 
 /* Blockquotes */
@@ -973,10 +1063,28 @@ body,
   border-color: #e2e8f0;
 }
 
+/* Hidden host for measuring rendered sticky height (wrap line count). */
+.metis-sticky-measure-host {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  width: 48rem;
+  --metis-editor-text-size: 15px;
+}
+
 /* Sticky notes — source-mode collapsed preview + Visual float layout */
 .cm-sticky-preview {
   margin: 10px 0 14px;
   cursor: pointer;
+  /* Contain floats so the block grows to the sticky height; CM lines after start below */
+  display: flow-root;
+}
+.cm-sticky-preview::after {
+  content: "";
+  display: block;
+  clear: both;
 }
 .cm-sticky-preview .metis-sticky {
   margin: 0;
@@ -985,29 +1093,52 @@ body,
 .cm-sticky-preview .metis-sticky,
 .preview-prose .metis-sticky {
   box-sizing: border-box;
+  width: var(--metis-sticky-width, 12rem);
+  max-width: 100%;
   border-radius: 3px 10px 8px 4px;
-  padding: 0.7em 0.9em 0.75em;
+  padding:
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.7)
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.9)
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.75);
   margin: 0 0 1em 1em;
   font-family: "Segoe Print", "Bradley Hand", "Apple Chancery", "Snell Roundhand",
     "Noteworthy", "Chalkboard SE", "Comic Sans MS", cursive;
-  font-size: 1.05em;
+  font-size: calc(var(--metis-editor-text-size, 15px) * 1.05);
   line-height: 1.5;
   letter-spacing: 0.02em;
   transform: rotate(-0.6deg);
   box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
-.cm-sticky-preview .metis-sticky--left,
+.cm-sticky-preview .metis-sticky--left {
+  float: left;
+  margin: 0 1em 0 0;
+  transform: rotate(0.5deg);
+}
+.cm-sticky-preview .metis-sticky--right {
+  float: right;
+  margin: 0 0 0 1em;
+  transform: rotate(-0.6deg);
+}
 .preview-prose .metis-sticky--left {
   float: left;
   margin: 0 1em 1em 0;
   transform: rotate(0.5deg);
 }
-.cm-sticky-preview .metis-sticky--right,
 .preview-prose .metis-sticky--right {
   float: right;
   margin: 0 0 1em 1em;
   transform: rotate(-0.6deg);
+}
+.cm-sticky-preview .metis-sticky--nofloat {
+  float: none;
+  margin: 0;
+  transform: none;
+}
+.preview-prose .metis-sticky--nofloat {
+  float: none;
+  margin: 0 0 1em 0;
+  transform: none;
 }
 .cm-sticky-preview .metis-sticky--amber,
 .preview-prose .metis-sticky--amber {
@@ -1044,6 +1175,10 @@ body,
   background: rgba(148, 163, 184, 0.16);
   border-color: rgba(148, 163, 184, 0.35);
 }
+.cm-sticky-preview .metis-sticky p,
+.preview-prose .metis-sticky p {
+  margin: 0.25em 0;
+}
 .cm-sticky-preview .metis-sticky p:first-child,
 .preview-prose .metis-sticky p:first-child {
   margin-top: 0;
@@ -1051,6 +1186,13 @@ body,
 .cm-sticky-preview .metis-sticky p:last-child,
 .preview-prose .metis-sticky p:last-child {
   margin-bottom: 0;
+}
+.metis-sticky-clear {
+  clear: both;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .preview-prose::after {
   content: "";

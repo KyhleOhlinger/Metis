@@ -219,18 +219,23 @@ pub fn open_vault_window(
 
 /// Open `url` in the OS default browser.
 ///
-/// SECURITY: Only HTTPS URLs are accepted to prevent abuse
-/// (e.g. `file://` or custom-protocol injection).
+/// SECURITY: Only `http://` and `https://` URLs are accepted to prevent abuse
+/// (e.g. `file://`, `javascript:`, or custom-protocol injection).
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
-    let lower = url.trim().to_ascii_lowercase();
-    if !lower.starts_with("https://") {
-        return Err("Only https:// URLs may be opened externally.".into());
-    }
-    if lower.len() < 9 || lower.chars().nth(8) != Some('/') {
+    let trimmed = url.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    let host_start = if lower.starts_with("https://") {
+        8
+    } else if lower.starts_with("http://") {
+        7
+    } else {
+        return Err("Only http(s) URLs may be opened externally.".into());
+    };
+    if trimmed.len() <= host_start {
         return Err("Invalid URL.".into());
     }
-    open::that(url.trim()).map_err(|e| format!("Failed to open URL: {e}"))
+    open::that(trimmed).map_err(|e| format!("Failed to open URL: {e}"))
 }
 
 /// Persist the vault-relative default folder for pasted/saved images.
