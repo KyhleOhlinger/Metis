@@ -21,7 +21,11 @@ import {
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
 import { openDomContextMenu } from "../utils/domContextMenu";
-import { preprocessStickyBlocksForPreview } from "../utils/stickyNotes";
+import {
+  listStickyPairOffsets,
+  preprocessStickyBlocksForPreview,
+  type StickyPairOffsets,
+} from "../utils/stickyNotes";
 
 interface Props {
   content: string;
@@ -33,6 +37,8 @@ interface Props {
   scrollAnchorOffset?: number | null;
   /** Visual preview image click — jump to source at the image markdown line. */
   onImageActivate?: (sourceOffset: number) => void;
+  /** Visual sticky / wrap click — jump to source at the fence. */
+  onStickyActivate?: (sourceOffset: number) => void;
 }
 
 type PreviewContext = {
@@ -45,6 +51,8 @@ type PreviewContext = {
   imageSourceOffsets: number[];
   revealLabel: string;
   onImageActivate?: (sourceOffset: number) => void;
+  onStickyActivate?: (sourceOffset: number) => void;
+  stickyOffsets: StickyPairOffsets[];
 };
 
 export default function MarkdownPreview({
@@ -55,6 +63,7 @@ export default function MarkdownPreview({
   textColor,
   scrollAnchorOffset = null,
   onImageActivate,
+  onStickyActivate,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -66,6 +75,7 @@ export default function MarkdownPreview({
     vaultPath: "",
     imagePaths: [],
     imageSourceOffsets: [],
+    stickyOffsets: [],
     revealLabel: "Reveal in Finder",
   });
 
@@ -88,6 +98,7 @@ export default function MarkdownPreview({
     const imagePaths: string[] = [];
     const imageSourceOffsets: number[] = [];
     const allImageOffsets = findImageSourceOffsets(deferredContent);
+    const stickyOffsets = listStickyPairOffsets(deferredContent);
     let imageLineIdx = 0;
 
     let md = preprocessStickyBlocksForPreview(deferredContent);
@@ -131,7 +142,7 @@ export default function MarkdownPreview({
       previewAttrs: true,
       stickyNotes: true,
     });
-    return { html, imagePaths, imageSourceOffsets };
+    return { html, imagePaths, imageSourceOffsets, stickyOffsets };
   }, [deferredContent, vaultPath, fileDir, assetIndex]);
 
   ctxRef.current = {
@@ -144,6 +155,8 @@ export default function MarkdownPreview({
     imageSourceOffsets: preview.imageSourceOffsets,
     revealLabel: revealPlatformLabel(),
     onImageActivate,
+    onStickyActivate,
+    stickyOffsets: preview.stickyOffsets,
   };
 
   useEffect(() => {
@@ -162,6 +175,21 @@ export default function MarkdownPreview({
         const offset = ctx.imageSourceOffsets[idx];
         if (offset !== undefined && ctx.onImageActivate) {
           ctx.onImageActivate(offset);
+        }
+        return;
+      }
+
+      const stickyEl = target.closest("[data-metis-sticky-idx]") as HTMLElement | null;
+      if (stickyEl && root.contains(stickyEl) && ctx.onStickyActivate) {
+        e.preventDefault();
+        e.stopPropagation();
+        const idx = Number(stickyEl.dataset.metisStickyIdx);
+        const pair = ctx.stickyOffsets[idx];
+        if (pair) {
+          const inWrap = target.closest(".metis-sticky-wrap") !== null;
+          const offset =
+            inWrap && pair.wrapFrom !== null ? pair.wrapFrom : pair.stickyFrom;
+          ctx.onStickyActivate(offset);
         }
         return;
       }
