@@ -124,8 +124,8 @@ export interface StickyNoteDefaults {
   float?: "left" | "right" | "none";
   width?: string;
   color?: "amber" | "yellow" | "pink" | "blue" | "green" | "purple" | "slate";
-  /** When true, the next N lines after the sticky (N = sticky body line count) may wrap beside it. */
-  wrap?: boolean;
+  /** When true, toolbar/slash insert also adds a `:::stickywrap` block after the sticky. */
+  includeWrapBlock?: boolean;
 }
 
 export type SettingsSectionId =
@@ -186,7 +186,7 @@ export const DEFAULT_SETTINGS: Settings = {
     float: "right",
     width: "12rem",
     color: "amber",
-    wrap: true,
+    includeWrapBlock: false,
   },
 };
 

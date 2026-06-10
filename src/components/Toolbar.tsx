@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { ChangeSet, EditorSelection, type ChangeSpec } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
+import { usePersonaStore } from "../store/usePersonaStore";
 import { insertStickyNote, STICKY_COLOR_PRESETS, type StickyColor } from "../utils/stickyNotes";
 import {
   beginStickyToolbarDrag,
@@ -343,6 +344,7 @@ function StickyNoteDropdown({
   iconSize: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [includeWrap, setIncludeWrap] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
 
@@ -351,6 +353,9 @@ function StickyNoteDropdown({
     if (!open && triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect();
       setPos({ top: r.bottom + 4, left: r.left });
+      setIncludeWrap(
+        usePersonaStore.getState().settings.stickyDefaults?.includeWrapBlock === true,
+      );
     }
     setOpen((v) => !v);
   };
@@ -361,7 +366,7 @@ function StickyNoteDropdown({
 
   const insertColor = (color: StickyColor) => {
     const view = viewRef.current;
-    if (view) insertStickyNote(view, { color });
+    if (view) insertStickyNote(view, { color }, undefined, { includeWrap });
     setOpen(false);
   };
 
@@ -372,7 +377,7 @@ function StickyNoteDropdown({
   ) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    beginStickyToolbarDrag(color, label, e.clientX, e.clientY);
+    beginStickyToolbarDrag(color, label, e.clientX, e.clientY, includeWrap);
   };
 
   return (
@@ -412,6 +417,17 @@ function StickyNoteDropdown({
             <p className="mb-1.5 px-1 text-[9px] text-text-muted opacity-80">
               Click to insert · press and drag into the note
             </p>
+            <label className="mb-1.5 flex items-start gap-2 px-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeWrap}
+                onChange={(e) => setIncludeWrap(e.target.checked)}
+                className="mt-0.5 rounded border-border"
+              />
+              <span className="text-[10px] leading-snug text-text-muted">
+                Add <code className="text-[9px]">:::stickywrap</code> block
+              </span>
+            </label>
             <div className="grid grid-cols-2 gap-0.5">
               {STICKY_COLOR_PRESETS.map(({ color, label, swatch }) => (
                 <button

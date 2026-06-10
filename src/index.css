@@ -1063,23 +1063,14 @@ body,
   border-color: #e2e8f0;
 }
 
-/* Hidden host for measuring rendered sticky height (wrap line count). */
-.metis-sticky-measure-host {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  visibility: hidden;
-  pointer-events: none;
-  width: 48rem;
-  --metis-editor-text-size: 15px;
-}
-
 /* Sticky notes — source-mode collapsed preview + Visual float layout */
 .cm-sticky-preview {
   margin: 10px 0 14px;
-  cursor: pointer;
   /* Contain floats so the block grows to the sticky height; CM lines after start below */
   display: flow-root;
+}
+.cm-sticky-preview--collapsed {
+  cursor: pointer;
 }
 .cm-sticky-preview::after {
   content: "";
@@ -1088,6 +1079,15 @@ body,
 }
 .cm-sticky-preview .metis-sticky {
   margin: 0;
+}
+
+.preview-prose .metis-sticky,
+.preview-prose .metis-sticky-wrap {
+  cursor: pointer;
+}
+.preview-prose .metis-sticky:hover,
+.preview-prose .metis-sticky-wrap:hover {
+  filter: brightness(1.06);
 }
 
 .cm-sticky-preview .metis-sticky,
@@ -1110,15 +1110,15 @@ body,
   box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
-.cm-sticky-preview .metis-sticky--left {
-  float: left;
-  margin: 0 1em 0 0;
-  transform: rotate(0.5deg);
-}
+/* Source collapsed preview: no float — avoids overlay on raw wrap lines below the widget. */
+.cm-sticky-preview .metis-sticky--left,
 .cm-sticky-preview .metis-sticky--right {
-  float: right;
-  margin: 0 0 0 1em;
+  float: none;
+  margin: 0 0 1em 0;
   transform: rotate(-0.6deg);
+}
+.cm-sticky-preview .metis-sticky--left {
+  transform: rotate(0.5deg);
 }
 .preview-prose .metis-sticky--left {
   float: left;
@@ -1187,6 +1187,25 @@ body,
 .preview-prose .metis-sticky p:last-child {
   margin-bottom: 0;
 }
+/* Markdown rendered beside a floated sticky (`:::stickywrap` body). */
+.metis-sticky-wrap {
+  overflow: hidden;
+  font-size: var(--metis-editor-text-size, 15px);
+  line-height: 1.5;
+}
+.metis-sticky-wrap p {
+  margin: 0.5em 0;
+}
+.metis-sticky-wrap p:first-child {
+  margin-top: 0;
+}
+.metis-sticky-wrap p:last-child {
+  margin-bottom: 0;
+}
+[data-color-scheme="light"] .metis-sticky-wrap {
+  color: #334155;
+}
+
 .metis-sticky-clear {
   clear: both;
   height: 0;

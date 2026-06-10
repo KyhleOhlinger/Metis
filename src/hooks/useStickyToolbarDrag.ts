@@ -13,6 +13,7 @@ interface StickyToolbarDrag {
   color: StickyColor;
   label: string;
   swatch: string;
+  includeWrap: boolean;
   startX: number;
   startY: number;
   active: boolean;
@@ -52,11 +53,13 @@ export function beginStickyToolbarDrag(
   label: string,
   clientX: number,
   clientY: number,
+  includeWrap = false,
 ) {
   _drag = {
     color,
     label,
     swatch: swatchForColor(color),
+    includeWrap,
     startX: clientX,
     startY: clientY,
     active: false,
@@ -98,7 +101,20 @@ export function useStickyToolbarDrag(
       _drag = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      updateGhost(drag ?? { color: "amber", label: "", swatch: "", startX: 0, startY: 0, active: false }, 0, 0, false);
+      updateGhost(
+        drag ?? {
+          color: "amber",
+          label: "",
+          swatch: "",
+          includeWrap: false,
+          startX: 0,
+          startY: 0,
+          active: false,
+        },
+        0,
+        0,
+        false,
+      );
 
       if (!drag?.active) return;
 
@@ -108,7 +124,9 @@ export function useStickyToolbarDrag(
       const pos = editorPosAt(view, e.clientX, e.clientY);
       if (pos === null) return;
 
-      insertStickyNoteAt(view, pos, { color: drag.color });
+      insertStickyNoteAt(view, pos, { color: drag.color }, undefined, {
+        includeWrap: drag.includeWrap,
+      });
       suppressClickRef.current = true;
     };
 

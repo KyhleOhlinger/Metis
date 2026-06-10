@@ -187,10 +187,22 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
       : DEFAULT_SETTINGS.quickActions,
     spellcheckEnabled,
     editorBgPresetId: saved.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
-    stickyDefaults: {
-      ...DEFAULT_SETTINGS.stickyDefaults,
-      ...saved.stickyDefaults,
-    },
+    stickyDefaults: (() => {
+      const raw = saved.stickyDefaults ?? {};
+      const legacy = raw as { wrap?: boolean; includeWrapBlock?: boolean };
+      const includeWrapBlock =
+        legacy.includeWrapBlock !== undefined
+          ? legacy.includeWrapBlock
+          : legacy.wrap === true
+            ? true
+            : DEFAULT_SETTINGS.stickyDefaults?.includeWrapBlock;
+      const { wrap: _legacyWrap, ...rest } = legacy;
+      return {
+        ...DEFAULT_SETTINGS.stickyDefaults,
+        ...rest,
+        includeWrapBlock,
+      };
+    })(),
   };
 }
 

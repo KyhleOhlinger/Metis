@@ -244,20 +244,21 @@ function StickySettingsSection({
         />
       </div>
       <div>
-        <p className={labelCls}>Text wrap</p>
+        <p className={labelCls}>Wrap zone</p>
         <label className="mt-2 flex items-start gap-2 cursor-pointer">
           <input
             type="checkbox"
-            checked={d.wrap !== false}
-            onChange={(e) => patch({ wrap: e.target.checked })}
+            checked={d.includeWrapBlock === true}
+            onChange={(e) => patch({ includeWrapBlock: e.target.checked })}
             className="mt-0.5 rounded border-border"
           />
           <span>
-            <span className="font-medium text-text-primary">Wrap following lines beside the sticky (Visual)</span>
+            <span className="font-medium text-text-primary">Insert a </span>
+            <code className="text-[10px]">:::stickywrap</code>
+            <span className="font-medium text-text-primary"> block with new stickies</span>
             {" "}
-            — in Visual preview, the next N lines after the sticky (N = rendered sticky height; blank lines count)
-            render beside the card. Source shows the sticky only; wrap lines stay editable markdown. Use{" "}
-            <code className="text-[10px]">wrap=&quot;false&quot;</code> on a single sticky to override.
+            — explicit markdown beside the card (toolbar, drag, slash menu). Notes below the wrap block stay
+            full width.
           </span>
         </label>
       </div>

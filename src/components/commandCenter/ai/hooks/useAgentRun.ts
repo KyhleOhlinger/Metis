@@ -2,7 +2,7 @@ import { useCallback, type MutableRefObject } from "react";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { streamResponse, AGENT_FILE_TOOLS, type ParsedToolCall } from "@/services/aiService";
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
-import { confirmEgressBeforeRun } from "@/components/EgressTransparency";
+import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { isSystemPersona } from "@/systemPersonas/registry";
 import { profileForPersona } from "@/utils/providerProfiles";
 import { sanitizeAgentNoteRelativePath } from "@/utils/paths";

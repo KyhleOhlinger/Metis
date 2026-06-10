@@ -34,8 +34,6 @@ import {
   METIS_STICKY_MIME,
   buildDefaultStickySlashInsert,
   DEFAULT_STICKY_PLACEHOLDER,
-  buildStickyBlockPreviewHtml,
-  findStickyBlocks,
   insertStickyNoteAt,
   parseStickyDragPayload,
 } from "@/utils/stickyNotes";
@@ -967,8 +965,16 @@ const SLASH_ITEMS: SlashItem[] = [
     detail: ":::sticky",
     section: "Blocks",
     insert:
-      ':::sticky {float="right" width="12rem" color="amber" wrap="true"}\nJot something down…\n:::\n',
-    cursorOffset: 56,
+      ':::sticky {float="right" width="12rem" color="amber"}\nJot something down…\n:::\n',
+    cursorOffset: 48,
+  },
+  {
+    label: "Sticky + Wrap",
+    detail: ":::stickywrap",
+    section: "Blocks",
+    insert:
+      ':::sticky {float="right" width="12rem" color="amber"}\nJot something down…\n:::\n:::stickywrap\nText beside the sticky…\n:::\n',
+    cursorOffset: 48,
   },
   // Misc
   { label: "Divider", detail: "---", section: "Misc", insert: "---\n" },
@@ -1422,13 +1428,18 @@ class CollapsedMarkdownTableWidget extends WidgetType {
   }
 }
 
+/** True when the caret or selection should show raw fences (not collapsed preview). */
 function selectionIntersectsRange(
   sel: EditorState["selection"],
   from: number,
   to: number,
 ): boolean {
   const { main } = sel;
-  return main.from <= to && main.to >= from;
+  if (main.empty) {
+    // Inclusive start, exclusive end — caret at `from` expands; at `to` stays collapsed.
+    return main.head >= from && main.head < to;
+  }
+  return main.from < to && main.to > from;
 }
 
 function buildMarkdownTableCollapseDecorations(state: EditorState): DecorationSet {
@@ -1472,72 +1483,6 @@ function makeMarkdownTableCollapseField() {
     update(_decos, tr) {
       // Selection affects collapse vs raw markdown — rebuild each transaction (cheap vs doc size).
       return buildMarkdownTableCollapseDecorations(tr.state);
-    },
-    provide(f) {
-      return EditorView.decorations.from(f);
-    },
-  });
-}
-
-class StickyNotePreviewWidget extends WidgetType {
-  constructor(
-    readonly html: string,
-    readonly stickyFrom: number,
-  ) {
-    super();
-  }
-  eq(other: StickyNotePreviewWidget) {
-    return other.html === this.html && other.stickyFrom === this.stickyFrom;
-  }
-  toDOM(view: EditorView): HTMLElement {
-    const wrap = document.createElement("div");
-    wrap.className = "cm-sticky-preview cm-sticky-preview--collapsed";
-    wrap.title = "Click to edit sticky note";
-    wrap.innerHTML = this.html;
-    wrap.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      view.focus();
-      view.dispatch({
-        selection: EditorSelection.cursor(this.stickyFrom),
-        scrollIntoView: true,
-      });
-    });
-    return wrap;
-  }
-  ignoreEvent() {
-    return false;
-  }
-}
-
-function buildStickyCollapseDecorations(state: EditorState): DecorationSet {
-  const builder = new RangeSetBuilder<Decoration>();
-
-  for (const span of findStickyBlocks(state.doc)) {
-    if (selectionIntersectsRange(state.selection, span.from, span.to)) {
-      continue;
-    }
-    const html = buildStickyBlockPreviewHtml(span.attrs, span.body);
-    builder.add(
-      span.from,
-      span.to,
-      Decoration.replace({
-        widget: new StickyNotePreviewWidget(html, span.from),
-        block: true,
-      }),
-    );
-  }
-
-  return builder.finish();
-}
-
-function makeStickyCollapseField() {
-  return StateField.define<DecorationSet>({
-    create(state) {
-      return buildStickyCollapseDecorations(state);
-    },
-    update(_decos, tr) {
-      return buildStickyCollapseDecorations(tr.state);
     },
     provide(f) {
       return EditorView.decorations.from(f);
@@ -1589,7 +1534,7 @@ function makeStickyDropHandler() {
   });
 }
 
-/** Collapsed tables, stickies, and inline image previews are atomic for vertical cursor motion. */
+/** Collapsed tables and inline image previews are atomic for vertical cursor motion. */
 function makeInlinePreviewAtomicRanges() {
   return EditorView.atomicRanges.of((view) => {
     const { state } = view;
@@ -1601,12 +1546,6 @@ function makeInlinePreviewAtomicRanges() {
       const to = state.doc.line(span.endLine).to;
       if (!selectionIntersectsRange(state.selection, from, to)) {
         builder.add(from, to, mark);
-      }
-    }
-
-    for (const span of findStickyBlocks(state.doc)) {
-      if (!selectionIntersectsRange(state.selection, span.from, span.to)) {
-        builder.add(span.from, span.to, mark);
       }
     }
 
@@ -1835,7 +1774,6 @@ export function makeInlinePreviewExtension(
   return [
     makeImageDecosField(vaultPath, filePath),
     makeMarkdownTableCollapseField(),
-    makeStickyCollapseField(),
     makeInlinePreviewAtomicRanges(),
     makeLinkClickHandler(vaultPath, filePath),
     makeStickyDropHandler(),

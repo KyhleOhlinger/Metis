@@ -188,14 +188,19 @@ export default function Editor() {
   const activeFileName = activeFilePath?.split("/").pop() ?? "";
   const isImageFile = Boolean(activeFilePath && isVaultImageFile(activeFileName));
 
-  const handlePreviewImageActivate = useCallback(
+  const handlePreviewSourceActivate = useCallback(
     (sourceOffset: number) => {
       setEditorMode("source");
-      requestAnimationFrame(() => {
+      let attempts = 0;
+      const tryNavigate = () => {
         const view = viewRef.current;
-        if (!view) return;
-        applyEditorNavigation(view, sourceOffset);
-      });
+        if (view) {
+          applyEditorNavigation(view, sourceOffset);
+          return;
+        }
+        if (attempts++ < 24) requestAnimationFrame(tryNavigate);
+      };
+      requestAnimationFrame(tryNavigate);
     },
     [setEditorMode],
   );
@@ -796,7 +801,8 @@ export default function Editor() {
             bgColor={bgPreset.bg}
             textColor={bgPreset.fg}
             scrollAnchorOffset={visualScrollAnchor}
-            onImageActivate={handlePreviewImageActivate}
+            onImageActivate={handlePreviewSourceActivate}
+            onStickyActivate={handlePreviewSourceActivate}
           />
         )}
 
