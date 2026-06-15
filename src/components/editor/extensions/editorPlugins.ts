@@ -21,6 +21,8 @@ import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
 import {
   followVaultHref,
+  isExternalHttpUrl,
+  openExternalUrl,
   openNoteByWikilinkNameFromStore,
   revealPlatformLabel,
 } from "@/utils/vaultNavigation";
@@ -1050,11 +1052,50 @@ export const taskListClickExtension = [taskCheckboxDecoPlugin, taskCheckboxClick
 /** Collapses [text](url) links to display-name tokens in source mode. */
 export const markdownLinkCollapseExtension = [markdownLinkCollapsePlugin];
 
+/** Open http(s) links from planner cells in the OS browser (not the Metis webview). */
+const plannerLinkClickHandler = EditorView.domEventHandlers({
+  click(event, view) {
+    if (event.button !== 0) return false;
+
+    const el = event.target as HTMLElement;
+    const collapsedHref = el.closest("[data-md-link-href]")?.getAttribute("data-md-link-href")?.trim();
+    if (collapsedHref && isExternalHttpUrl(collapsedHref)) {
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalUrl(collapsedHref);
+      return true;
+    }
+
+    const coords = { x: event.clientX, y: event.clientY };
+    const pos = view.posAtCoords(coords);
+    if (pos === null) return false;
+
+    const line = view.state.doc.lineAt(pos);
+    const col = pos - line.from;
+    const mdLinkRe = /\[([^\]]*)\]\(([^)]+)\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = mdLinkRe.exec(line.text)) !== null) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (col < start || col > end) continue;
+      const href = m[2].trim();
+      if (!isExternalHttpUrl(href)) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      openExternalUrl(href);
+      return true;
+    }
+
+    return false;
+  },
+});
+
 /** Live-preview extensions for planner markdown cells (dim markers, callouts, links, tasks). */
 export const plannerMarkdownVisualExtensions = [
   createVisualModePlugin("", ""),
   calloutPlugin,
   ...markdownLinkCollapseExtension,
+  plannerLinkClickHandler,
   ...taskListClickExtension,
 ];
 

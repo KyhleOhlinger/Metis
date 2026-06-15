@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { parseMarkdownToHtml } from "../../utils/markdownHtml";
+import { isExternalHttpUrl, openExternalUrl } from "../../utils/vaultNavigation";
 
 interface Props {
   content: string;
@@ -22,6 +23,8 @@ export default function PlannerMarkdownPreview({
   className = "",
   onClick,
 }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
   const html = useMemo(
     () =>
       parseMarkdownToHtml(content, {
@@ -32,12 +35,33 @@ export default function PlannerMarkdownPreview({
     [content],
   );
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest("a") as HTMLAnchorElement | null;
+      if (!a || !root.contains(a)) return;
+
+      const href = a.getAttribute("href") ?? "";
+      if (!isExternalHttpUrl(href)) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      openExternalUrl(href);
+    };
+
+    root.addEventListener("click", onClick, true);
+    return () => root.removeEventListener("click", onClick, true);
+  }, []);
+
   const sizeStyle = fillHeight
     ? { flex: "1 1 0%", minHeight: `${Math.max(48, minHeightPx)}px` }
     : { minHeight: `${minHeightPx}px`, maxHeight: `${minHeightPx}px` };
 
   return (
     <div
+      ref={rootRef}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
