@@ -264,7 +264,7 @@ API keys are stored in your OS app-data directory (`~/Library/Application Suppor
 - [ ] **Graph view** — Visual map of wikilink connections across the vault
 - [ ] **Canvas** — Infinite freeform canvas (tldraw SDK) embedded in the editor
 - [ ] **Planner analytics** — Reporting views for trend analysis across daily/weekly/monthly planning data
-- [ ] **Export** — PDF and HTML export of single notes or the entire vault
+- [x] **Export** — PDF export of Visual-rendered notes (file, folder, or full vault)
 - [ ] **Stronghold key storage** — Migrate API keys to `tauri-plugin-stronghold` for hardware-backed encryption
 - [ ] **Plugin API** — Extension points for custom commands and editor widgets
 

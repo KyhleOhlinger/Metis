@@ -72,6 +72,10 @@ pub fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tau
                 .accelerator("CmdOrCtrl+S")
                 .build(app)?,
         )
+        .item(
+            &MenuItemBuilder::with_id("export_pdf", "Export PDF…")
+                .build(app)?,
+        )
         .separator()
         .item(
             &MenuItemBuilder::with_id("daily_note", "Open Daily Note")
@@ -230,6 +234,7 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "open_vault" => Some("open-vault"),
         "new_vault" => Some("new-vault"),
         "save" => Some("save"),
+        "export_pdf" => Some("export-pdf"),
         "daily_note" => Some("daily-note"),
         "reveal_in_finder" => Some("reveal-in-finder"),
         "toggle_sidebar" => Some("toggle-sidebar"),

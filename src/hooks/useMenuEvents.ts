@@ -29,6 +29,8 @@ interface MenuEventHookOptions {
   togglePanel: () => void;
   /** Opens / creates today's daily note */
   openDailyNote: () => void;
+  /** Opens the Visual PDF export modal */
+  onExportPdf: () => void;
   /** Called when the opened vault is not a Metis vault, so App can show the conversion prompt */
   onForeignVault: (path: string, hint?: string) => void;
 }
@@ -37,6 +39,7 @@ export function useMenuEvents({
   toggleSidebar,
   togglePanel,
   openDailyNote,
+  onExportPdf,
   onForeignVault,
 }: MenuEventHookOptions) {
   useEffect(() => {
@@ -126,6 +129,10 @@ export function useMenuEvents({
             .catch(console.error);
           break;
         }
+
+        case "export-pdf":
+          onExportPdf();
+          break;
 
         // ── Reveal active file in Finder / Explorer ──────────────────────────
         case "open-settings":

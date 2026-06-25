@@ -56,6 +56,8 @@ pub fn run() {
             vault_fs::save_asset,
             shell::set_vault_default_image_dir,
             shell::copy_files_to_folder,
+            shell::pick_save_path,
+            shell::write_export_bytes,
             vault_fs::agent_write_note,
             watcher::set_vault_watch,
             search::search_vault,

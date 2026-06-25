@@ -18,6 +18,10 @@ export const BG_PRESETS = [
 
 export type BgPreset = (typeof BG_PRESETS)[number];
 
+export function resolveBgPreset(id: string | undefined): BgPreset {
+  return BG_PRESETS.find((p) => p.id === id) ?? BG_PRESETS[0];
+}
+
 export const bgCompartment = new Compartment();
 export const highlightCompartment = new Compartment();
 export const spellcheckCompartment = new Compartment();

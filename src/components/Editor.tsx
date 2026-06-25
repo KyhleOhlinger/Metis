@@ -54,6 +54,7 @@ import {
   makeBgTheme,
   metisTheme,
   plannerThemeVars,
+  resolveBgPreset,
   spellcheckCompartment,
   type BgPreset,
 } from "./editor/bgPresets";
@@ -130,9 +131,6 @@ export default function Editor() {
   const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
   const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
   const spellcheckLang = usePersonaStore((s) => s.settings.spellcheckLanguage ?? "en_US");
-
-  const resolveBgPreset = (id: string) =>
-    BG_PRESETS.find((p) => p.id === id) ?? BG_PRESETS[0];
 
   const [bgPreset, setBgPreset] = useState<BgPreset>(() => resolveBgPreset(editorBgPresetId));
   const bgPresetRef = useRef<BgPreset>(bgPreset);

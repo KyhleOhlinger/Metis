@@ -44,6 +44,7 @@ const PREVIEW_EXTRA_ATTR = [
   "data-metis-sticky-width",
   "data-metis-sticky-idx",
   "data-image-idx",
+  "data-export-abs-path",
   "loading",
   "id",
 ] as const;
@@ -56,7 +57,7 @@ export function sanitizeMarkdownHtml(
   const addTags: string[] = options.taskLists ? ["input"] : [];
   if (options.stickyNotes) addTags.push("aside", "div");
   const addAttr: string[] = ["type", "checked", "disabled"];
-  if (options.stickyNotes) addAttr.push("class", "style");
+  if (options.stickyNotes) addAttr.push("class", "style", "aria-hidden");
   if (options.previewAttrs) addAttr.push(...PREVIEW_EXTRA_ATTR);
   else if (options.headingIds) addAttr.push("id");
 
