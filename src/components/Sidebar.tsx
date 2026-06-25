@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { FoldVertical, UnfoldVertical, Search, Image, Copy } from "lucide-react";
+import { FoldVertical, UnfoldVertical, Search, Image, Copy, FileDown } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, FileNode, VaultData } from "../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../store/usePersonaStore";
@@ -9,6 +9,7 @@ import ContextMenu, { ContextMenuEntry } from "./ContextMenu";
 import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
 import { collectImagePathsFromMarkdown } from "../utils/noteImages";
+import { exportNotesToPdf } from "../services/pdfExportService";
 import { isVaultImageFile } from "../utils/vaultImages";
 import { isPinnedSpaceName } from "../constants/vaultSpaces";
 
@@ -331,6 +332,17 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           }
         },
       });
+      items.push({
+        label: "Export Folder PDF…",
+        icon: <FileDown className="h-3.5 w-3.5" />,
+        onClick: async () => {
+          try {
+            await exportNotesToPdf({ scope: "folder", folderPath: node.path });
+          } catch (err) {
+            alert(String(err));
+          }
+        },
+      });
       items.push({ separator: true });
     }
 
@@ -358,6 +370,17 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
     });
 
     if (isNote) {
+      items.push({
+        label: "Export PDF…",
+        icon: <FileDown className="h-3.5 w-3.5" />,
+        onClick: async () => {
+          try {
+            await exportNotesToPdf({ scope: "file", filePath: node.path });
+          } catch (err) {
+            alert(String(err));
+          }
+        },
+      });
       items.push({
         label: "Copy Images to Folder…",
         icon: <Copy className="h-3.5 w-3.5" />,

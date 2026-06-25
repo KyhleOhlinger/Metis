@@ -20,6 +20,7 @@ import {
   revealPlatformLabel,
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
+import { preserveBlankLinesBeforeRenderedBlocks } from "../utils/previewMarkdown";
 import { openDomContextMenu } from "../utils/domContextMenu";
 import {
   listStickyPairOffsets,
@@ -101,7 +102,8 @@ export default function MarkdownPreview({
     const stickyOffsets = listStickyPairOffsets(deferredContent);
     let imageLineIdx = 0;
 
-    let md = preprocessStickyBlocksForPreview(deferredContent);
+    let md = preserveBlankLinesBeforeRenderedBlocks(deferredContent);
+    md = preprocessStickyBlocksForPreview(md);
 
     md = md.replace(
       /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,

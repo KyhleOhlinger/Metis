@@ -169,6 +169,36 @@ function normalizeFenceBody(raw: string): string {
   return lines.join("\n");
 }
 
+/** Reconstruct markdown source for `lines[start..end)`; append `\n` when a sticky fence follows. */
+function extractMarkdownLines(
+  lines: string[],
+  start: number,
+  end: number,
+  followedBySticky: boolean,
+): string {
+  if (start >= end) {
+    return followedBySticky && end > start ? "\n".repeat(end - start) : "";
+  }
+  const inner = lines.slice(start, end).join("\n");
+  return followedBySticky ? `${inner}\n` : inner;
+}
+
+/** Join markdown + sticky HTML chunks without collapsing blank lines before stickies. */
+function joinPreviewChunks(chunks: string[]): string {
+  if (chunks.length === 0) return "";
+  let out = chunks[0];
+  for (let i = 1; i < chunks.length; i++) {
+    const prevHtml = chunks[i - 1].trimStart().startsWith("<");
+    const curHtml = chunks[i].trimStart().startsWith("<");
+    if (prevHtml && !curHtml) {
+      out += `\n\n${chunks[i]}`;
+    } else {
+      out += chunks[i];
+    }
+  }
+  return out;
+}
+
 /** Parse `{float="right" width="12rem" color="amber"}` attribute string. */
 export function parseStickyAttrs(raw: string | undefined): StickyAttrs {
   const attrs = { ...getDefaultStickyAttrs() };
@@ -348,9 +378,9 @@ export function parseStickyAdjacentMarkdown(md: string): string {
 
 /** Render sticky body markdown to sanitized HTML. */
 export function stickyBodyToHtml(body: string): string {
-  const trimmed = normalizeFenceBody(body.trim());
-  if (!trimmed) return "";
-  const raw = parseMarkedWithHighlight(trimmed, { gfm: true, breaks: true });
+  const normalized = normalizeFenceBody(body);
+  if (!normalized.trim()) return "";
+  const raw = parseMarkedWithHighlight(normalized, { gfm: true, breaks: true });
   const html = sanitizeMarkdownHtml(raw, { taskLists: true });
   return html.replace(/(?:\s*<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>)+\s*$/gi, "");
 }
@@ -382,8 +412,8 @@ export function buildStickyBlockPreviewHtml(
   stickyIdx?: number,
 ): string {
   const parts = [buildStickyPreviewHtml(attrs, body, stickyIdx)];
-  const wrap = wrapMarkdown?.trim();
-  if (wrap) {
+  const wrap = wrapMarkdown ? normalizeFenceBody(wrapMarkdown) : undefined;
+  if (wrap?.trim()) {
     const inner = parseStickyAdjacentMarkdown(wrap);
     const idxAttr =
       stickyIdx !== undefined ? ` data-metis-sticky-idx="${stickyIdx}"` : "";
@@ -411,7 +441,13 @@ export function preprocessStickyBlocksForPreview(markdown: string): string {
       while (lineNo < lines.length && !STICKY_OPEN_RE.test(lines[lineNo])) {
         lineNo++;
       }
-      chunks.push(lines.slice(start, lineNo).join("\n"));
+      const segment = extractMarkdownLines(
+        lines,
+        start,
+        lineNo,
+        lineNo < lines.length,
+      );
+      if (segment.length > 0) chunks.push(segment);
       continue;
     }
 
@@ -433,7 +469,7 @@ export function preprocessStickyBlocksForPreview(markdown: string): string {
     lineNo = afterIdx;
   }
 
-  return chunks.filter((chunk) => chunk.length > 0).join("\n\n");
+  return joinPreviewChunks(chunks);
 }
 
 function stickyInsertSelection(selectFrom: number, selectLen: number) {

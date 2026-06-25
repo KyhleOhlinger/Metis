@@ -362,3 +362,88 @@ pub fn copy_files_to_folder(
     Ok(copied)
 }
 
+// ── PDF / export file I/O (user-chosen paths via save dialog) ─────────────────
+
+/// Native save-file dialog. Returns absolute path or `None` if cancelled.
+#[tauri::command]
+pub async fn pick_save_path(
+    window: tauri::WebviewWindow,
+    default_name: String,
+    extension: String,
+) -> Option<String> {
+    use std::sync::mpsc;
+    use tauri_plugin_dialog::DialogExt;
+
+    let ext = extension.trim().trim_start_matches('.').to_lowercase();
+    let default = if default_name.to_lowercase().ends_with(&format!(".{ext}")) {
+        default_name
+    } else if ext.is_empty() {
+        default_name
+    } else {
+        format!("{default_name}.{ext}")
+    };
+
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+
+    window
+        .app_handle()
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_file_name(&default)
+        .add_filter("Export", &[ext.as_str()])
+        .save_file(move |result| {
+            let path = result.map(|fp| {
+                let mut p = fp.to_string();
+                if !ext.is_empty() && !p.to_lowercase().ends_with(&format!(".{ext}")) {
+                    p.push('.');
+                    p.push_str(&ext);
+                }
+                p
+            });
+            let _ = tx.send(path);
+        });
+
+    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .unwrap_or(None)
+}
+
+/// Write export bytes to a user-selected path (may be outside the vault).
+///
+/// SECURITY: Caller must only pass paths from `pick_save_path`. Rejects empty payloads
+/// and oversize exports (~100 MB).
+#[tauri::command]
+pub fn write_export_bytes(path: String, data_base64: String) -> Result<(), String> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    if path.contains('\0') {
+        return Err("Invalid export path.".into());
+    }
+    let target = PathBuf::from(&path);
+    if target.as_os_str().is_empty() {
+        return Err("Export path is empty.".into());
+    }
+
+    let bytes = STANDARD
+        .decode(data_base64.trim())
+        .map_err(|e| format!("Invalid export payload: {e}"))?;
+
+    const MAX_BYTES: usize = 100 * 1024 * 1024;
+    if bytes.is_empty() {
+        return Err("Export file is empty.".into());
+    }
+    if bytes.len() > MAX_BYTES {
+        return Err("Export file is too large (max 100 MB).".into());
+    }
+
+    if let Some(parent) = target.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create export directory: {e}"))?;
+        }
+    }
+
+    fs::write(&target, bytes).map_err(|e| format!("Failed to write export file: {e}"))
+}
+
