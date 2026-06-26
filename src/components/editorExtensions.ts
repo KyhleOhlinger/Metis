@@ -30,6 +30,7 @@ export {
   wikilinkExtensions,
   taskListClickExtension,
   markdownLinkCollapseExtension,
+  markdownCaretAtomicExtension,
   plannerMarkdownVisualExtensions,
   listContinuationKeymap,
   makeInlinePreviewExtension,

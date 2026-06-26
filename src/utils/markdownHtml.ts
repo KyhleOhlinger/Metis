@@ -43,6 +43,8 @@ const PREVIEW_EXTRA_ATTR = [
   "data-metis-wikilink",
   "data-metis-sticky-width",
   "data-metis-sticky-idx",
+  "data-metis-source-offset",
+  "data-metis-source-end",
   "data-image-idx",
   "data-export-abs-path",
   "loading",
