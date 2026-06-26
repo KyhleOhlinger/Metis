@@ -21,6 +21,11 @@ import {
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
 import { preserveBlankLinesBeforeRenderedBlocks } from "../utils/previewMarkdown";
+import {
+  findMarkdownLinkSpans,
+  findTaskMarkerOffsets,
+  tagPreviewInteractiveHtml,
+} from "../utils/previewSourceOffsets";
 import { openDomContextMenu } from "../utils/domContextMenu";
 import {
   listStickyPairOffsets,
@@ -36,10 +41,10 @@ interface Props {
   textColor?: string;
   /** Source-mode cursor offset — used once when entering Visual to preserve scroll position. */
   scrollAnchorOffset?: number | null;
-  /** Visual preview image click — jump to source at the image markdown line. */
-  onImageActivate?: (sourceOffset: number) => void;
-  /** Visual sticky / wrap click — jump to source at the fence. */
-  onStickyActivate?: (sourceOffset: number) => void;
+  /** Jump to Source at offset (optional end selects a range). Plain click on links/tasks. */
+  onSourceActivate?: (sourceOffset: number, matchEnd?: number) => void;
+  /** Toggle `- [ ]` ↔ `- [x]` in the underlying markdown (Visual mode). */
+  onTaskToggle?: (markerOffset: number, checked: boolean) => void;
 }
 
 type PreviewContext = {
@@ -51,8 +56,8 @@ type PreviewContext = {
   imagePaths: string[];
   imageSourceOffsets: number[];
   revealLabel: string;
-  onImageActivate?: (sourceOffset: number) => void;
-  onStickyActivate?: (sourceOffset: number) => void;
+  onSourceActivate?: (sourceOffset: number, matchEnd?: number) => void;
+  onTaskToggle?: (markerOffset: number, checked: boolean) => void;
   stickyOffsets: StickyPairOffsets[];
 };
 
@@ -63,8 +68,8 @@ export default function MarkdownPreview({
   bgColor,
   textColor,
   scrollAnchorOffset = null,
-  onImageActivate,
-  onStickyActivate,
+  onSourceActivate,
+  onTaskToggle,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -105,18 +110,21 @@ export default function MarkdownPreview({
     let md = preserveBlankLinesBeforeRenderedBlocks(deferredContent);
     md = preprocessStickyBlocksForPreview(md);
 
+    const taskMarkerOffsets = findTaskMarkerOffsets(md);
+    const linkSpans = findMarkdownLinkSpans(md);
+
     md = md.replace(
       /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,
       (_, filename) => `![${filename}](${filename})`,
     );
 
-    md = md.replace(/\[\[([^\]]+)\]\]/g, (_, name) => {
+    md = md.replace(/\[\[([^\]]+)\]\]/g, (full, name, offset) => {
       const trimmed = name.trim();
       const target = normalizeWikilinkTarget(trimmed);
       const display =
         trimmed.includes("|") ? trimmed.slice(trimmed.indexOf("|") + 1).trim() : target;
       const encoded = encodeURIComponent(target);
-      return `<a href="#" data-metis-wikilink="${encoded}">${escapeHtml(display)}</a>`;
+      return `<a href="#" data-metis-wikilink="${encoded}" data-metis-source-offset="${offset}" data-metis-source-end="${offset + full.length}">${escapeHtml(display)}</a>`;
     });
 
     let raw = parseMarkedWithHighlight(md, { gfm: true });
@@ -139,11 +147,12 @@ export default function MarkdownPreview({
       },
     );
 
-    const html = sanitizeMarkdownHtml(raw, {
+    let html = sanitizeMarkdownHtml(raw, {
       taskLists: true,
       previewAttrs: true,
       stickyNotes: true,
     });
+    html = tagPreviewInteractiveHtml(html, taskMarkerOffsets, linkSpans);
     return { html, imagePaths, imageSourceOffsets, stickyOffsets };
   }, [deferredContent, vaultPath, fileDir, assetIndex]);
 
@@ -156,8 +165,8 @@ export default function MarkdownPreview({
     imagePaths: preview.imagePaths,
     imageSourceOffsets: preview.imageSourceOffsets,
     revealLabel: revealPlatformLabel(),
-    onImageActivate,
-    onStickyActivate,
+    onSourceActivate,
+    onTaskToggle,
     stickyOffsets: preview.stickyOffsets,
   };
 
@@ -165,9 +174,24 @@ export default function MarkdownPreview({
     const root = rootRef.current;
     if (!root) return;
 
+    const followModifier = (e: MouseEvent) => e.metaKey || e.ctrlKey;
+
     const onClick = (e: MouseEvent) => {
       const ctx = ctxRef.current;
       const target = e.target as HTMLElement;
+      const modifier = followModifier(e);
+
+      const checkbox = target.closest(
+        'input[type="checkbox"][data-metis-source-offset]',
+      ) as HTMLInputElement | null;
+      if (checkbox && root.contains(checkbox)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const markerOffset = Number(checkbox.dataset.metisSourceOffset);
+        if (!Number.isFinite(markerOffset)) return;
+        ctx.onTaskToggle?.(markerOffset, !checkbox.checked);
+        return;
+      }
 
       const img = target.closest("img[data-image-idx]") as HTMLImageElement | null;
       if (img && root.contains(img)) {
@@ -175,14 +199,12 @@ export default function MarkdownPreview({
         e.stopPropagation();
         const idx = Number(img.dataset.imageIdx);
         const offset = ctx.imageSourceOffsets[idx];
-        if (offset !== undefined && ctx.onImageActivate) {
-          ctx.onImageActivate(offset);
-        }
+        if (offset !== undefined) ctx.onSourceActivate?.(offset);
         return;
       }
 
       const stickyEl = target.closest("[data-metis-sticky-idx]") as HTMLElement | null;
-      if (stickyEl && root.contains(stickyEl) && ctx.onStickyActivate) {
+      if (stickyEl && root.contains(stickyEl)) {
         e.preventDefault();
         e.stopPropagation();
         const idx = Number(stickyEl.dataset.metisStickyIdx);
@@ -191,7 +213,7 @@ export default function MarkdownPreview({
           const inWrap = target.closest(".metis-sticky-wrap") !== null;
           const offset =
             inWrap && pair.wrapFrom !== null ? pair.wrapFrom : pair.stickyFrom;
-          ctx.onStickyActivate(offset);
+          ctx.onSourceActivate?.(offset);
         }
         return;
       }
@@ -199,22 +221,36 @@ export default function MarkdownPreview({
       const a = target.closest("a") as HTMLAnchorElement | null;
       if (!a || !root.contains(a)) return;
 
-      e.preventDefault();
-      e.stopPropagation();
-
+      const sourceFrom = a.dataset.metisSourceOffset;
+      const sourceEnd = a.dataset.metisSourceEnd;
       const wiki = a.dataset.metisWikilink;
-      if (wiki) {
-        openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath);
+
+      if (modifier) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (wiki) {
+          openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath);
+          return;
+        }
+        followVaultHref(a.getAttribute("href") ?? "", {
+          fileDir: ctx.fileDir,
+          vaultPath: ctx.vaultPath,
+          filePath: ctx.filePath,
+          setActiveFile: ctx.setActiveFile,
+          onSamePageFragment: (fragment) => scrollPreviewToFragment(root, fragment),
+        });
         return;
       }
 
-      followVaultHref(a.getAttribute("href") ?? "", {
-        fileDir: ctx.fileDir,
-        vaultPath: ctx.vaultPath,
-        filePath: ctx.filePath,
-        setActiveFile: ctx.setActiveFile,
-        onSamePageFragment: (fragment) => scrollPreviewToFragment(root, fragment),
-      });
+      if (sourceFrom !== undefined) {
+        e.preventDefault();
+        e.stopPropagation();
+        const from = Number(sourceFrom);
+        const to = sourceEnd !== undefined ? Number(sourceEnd) : undefined;
+        if (Number.isFinite(from)) {
+          ctx.onSourceActivate?.(from, Number.isFinite(to!) ? to : undefined);
+        }
+      }
     };
 
     const onContextMenu = (e: MouseEvent) => {

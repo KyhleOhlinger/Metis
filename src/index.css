@@ -993,7 +993,7 @@ body,
   margin-right: 0.45em;
   accent-color: #7c3aed;
   vertical-align: middle;
-  cursor: default;
+  cursor: pointer;
 }
 
 /* Tables */

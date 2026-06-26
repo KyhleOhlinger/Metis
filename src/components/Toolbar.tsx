@@ -44,6 +44,8 @@ import {
   useStickyToolbarDrag,
 } from "../hooks/useStickyToolbarDrag";
 import { insertCallout, toggleInline } from "./toolbarActions";
+import ToolbarCalendarPopover from "./toolbar/ToolbarCalendarPopover";
+import ToolbarCalculatorPopover from "./toolbar/ToolbarCalculatorPopover";
 
 // ── Formatting helpers ────────────────────────────────────────────────────────
 
@@ -655,6 +657,10 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
       <div className={dividerCls} />
       <CalloutDropdown viewRef={viewRef} iconSize={iconSize} />
       <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} />
+
+      <div className={dividerCls} />
+      <ToolbarCalendarPopover iconSize={iconSize} btnCls={`${btnCls} flex items-center gap-0.5`} />
+      <ToolbarCalculatorPopover viewRef={viewRef} iconSize={iconSize} btnCls={`${btnCls} flex items-center gap-0.5`} />
 
       <div className={dividerCls} />
       <button

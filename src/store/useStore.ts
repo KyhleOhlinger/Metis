@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { pathsEqual } from "../utils/paths";
+import type { PlannerNavigateTarget } from "./plannerNavigation";
 
 /**
  * UI components should subscribe with **selectors** or `useShallow` from `zustand/react/shallow`
@@ -288,6 +289,9 @@ interface MetisState {
   /** Consumed by Editor to scroll/select after opening a file from search, etc. */
   editorNavigateTo: EditorNavigateTarget | null;
 
+  /** Consumed by DailyTaskGrid to jump to daily / weekly / monthly planner views. */
+  plannerNavigateTo: PlannerNavigateTarget | null;
+
   // Actions
   setEditorTab: (tab: "source" | "visual" | "planner") => void;
   setPendingMenuAction: (action: string | null) => void;
@@ -315,6 +319,8 @@ interface MetisState {
   setDefaultImageFolder: (relativeDir: string) => Promise<void>;
   navigateEditorTo: (target: EditorNavigateTarget) => void;
   clearEditorNavigateTo: () => void;
+  navigatePlannerTo: (target: PlannerNavigateTarget) => void;
+  clearPlannerNavigateTo: () => void;
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -338,6 +344,7 @@ export const useStore = create<MetisState>((set, get) => ({
   pendingMenuAction: null,
   sidebarView: "files",
   editorNavigateTo: null,
+  plannerNavigateTo: null,
 
   setEditorTab: (tab) => set({ editorTab: tab }),
 
@@ -366,6 +373,7 @@ export const useStore = create<MetisState>((set, get) => ({
       selectionEndOffset: 0,
       activeFolderPath: null,
       editorNavigateTo: null,
+      plannerNavigateTo: null,
     });
     // Enrich metadata in the background so the store is never blocked.
     setTimeout(() => get().enrichNoteIndex(), 0);
@@ -491,6 +499,11 @@ export const useStore = create<MetisState>((set, get) => ({
 
   clearEditorNavigateTo: () => set({ editorNavigateTo: null }),
 
+  navigatePlannerTo: (target) =>
+    set({ plannerNavigateTo: target, editorTab: "planner" }),
+
+  clearPlannerNavigateTo: () => set({ plannerNavigateTo: null }),
+
   clearVault: () =>
     set({
       vaultPath: null,
@@ -510,5 +523,6 @@ export const useStore = create<MetisState>((set, get) => ({
       pendingMenuAction: null,
       sidebarView: "files",
       editorNavigateTo: null,
+      plannerNavigateTo: null,
     }),
 }));

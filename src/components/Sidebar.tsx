@@ -276,10 +276,6 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button")) return;
 
-    // Prevent the browser's native text-selection / image-drag behaviour so the
-    // custom pointer-based drag takes over cleanly.
-    e.preventDefault();
-
     _drag = {
       srcPath: node.path,
       isDir: node.is_dir,
@@ -288,6 +284,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       startY: e.clientY,
       active: false,
     };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   // ── Context menu ────────────────────────────────────────────────────────────
@@ -725,6 +722,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
       if (!_drag.active) {
         if (Math.hypot(dx, dy) < THRESHOLD) return;
         _drag.active = true;
+        e.preventDefault();
         document.body.style.cursor = "grabbing";
         // Disable text selection globally for the duration of the drag so
         // nothing gets highlighted as the pointer moves across the page.
@@ -744,6 +742,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
       const vp = useStore.getState().vaultPath ?? "";
       const target = findDropTarget(e.clientX, e.clientY, _drag.srcPath, vp);
       setDragOverEl(target);
+      if (_drag.active) e.preventDefault();
     };
 
     const onUp = async (_e: PointerEvent) => {

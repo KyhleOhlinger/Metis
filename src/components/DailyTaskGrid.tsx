@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import Toolbar from "./Toolbar";
 import PlannerMarkdownCell from "./planner/PlannerMarkdownCell";
 import ReviewsPlannerGrid from "./planner/ReviewsPlannerGrid";
+import { useStore } from "@/store/useStore";
 
 import {
   type PlannerTab,
@@ -59,6 +60,7 @@ import {
   getTracker,
   monthEntryFor,
   dayDate,
+  dayNameFromDate,
   recurrenceLabel,
   matchingTemplatesForDate,
   makeRowId,
@@ -118,6 +120,8 @@ export default function DailyTaskGrid() {
   const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
   const [activePlannerFieldKey, setActivePlannerFieldKey] = useState<string | null>(null);
   const dailyGridShellRef = useRef<HTMLDivElement>(null);
+  const plannerNavigateTo = useStore((s) => s.plannerNavigateTo);
+  const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
   const visibleWeeks = useMemo(
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
     [anchorWeek],
@@ -171,6 +175,42 @@ export default function DailyTaskGrid() {
   useEffect(() => {
     saveTemplates(templates);
   }, [templates]);
+
+  useEffect(() => {
+    if (!plannerNavigateTo) return;
+    const target = plannerNavigateTo;
+
+    if (target.kind === "daily") {
+      const d = parseIsoDateLocal(target.dateIso);
+      if (d) {
+        const monday = startOfWeekMonday(d);
+        setTab("daily");
+        setAnchorWeek(monday);
+        const day = dayNameFromDate(d);
+        if (day) {
+          setDailyExpandedCellKey(`${weekKey(monday)}_${day}`);
+        } else {
+          setDailyExpandedCellKey(null);
+        }
+      }
+    } else if (target.kind === "weekly") {
+      const d = parseIsoDateLocal(target.dateIso);
+      if (d) {
+        setTab("weekly");
+        setAnchorWeek(startOfWeekMonday(d));
+      }
+    } else if (target.kind === "monthly") {
+      setTab("monthly");
+      setAnchorWeek(startOfWeekMonday(monthStart(target.year, target.monthIndex)));
+      requestAnimationFrame(() => {
+        const el = plannerScrollRef.current;
+        const row = el?.querySelector<HTMLElement>(`[data-monthly-row="${target.monthIndex}"]`);
+        row?.scrollIntoView({ block: "start" });
+      });
+    }
+
+    clearPlannerNavigateTo();
+  }, [plannerNavigateTo, clearPlannerNavigateTo]);
 
   useEffect(() => {
     saveLayoutTemplates(layoutTemplates);

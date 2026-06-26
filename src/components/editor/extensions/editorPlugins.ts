@@ -343,6 +343,20 @@ const DIM_NODE_NAMES = new Set([
 const WIKI_IMAGE_RE =
   /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
 
+/** True when the caret or selection should show raw markdown (not collapsed preview). */
+function selectionIntersectsRange(
+  sel: EditorState["selection"],
+  from: number,
+  to: number,
+): boolean {
+  const { main } = sel;
+  if (main.empty) {
+    // Inclusive start, exclusive end — caret at `from` expands; at `to` stays collapsed.
+    return main.head >= from && main.head < to;
+  }
+  return main.from < to && main.to > from;
+}
+
 function buildVisualDecorations(
   view: EditorView,
   activeFilePath: string,
@@ -376,9 +390,7 @@ function buildVisualDecorations(
     // Replace ![alt](url) with an inline image when cursor is not inside it
     if (node.name === "Image") {
       const { from, to } = node;
-      const cursorInside =
-        state.selection.main.from <= to && state.selection.main.to >= from;
-      if (!cursorInside) {
+      if (!selectionIntersectsRange(state.selection, from, to)) {
         const text = state.sliceDoc(from, to);
         const m = text.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
         if (m) {
@@ -402,9 +414,7 @@ function buildVisualDecorations(
   while ((wm = WIKI_IMAGE_RE.exec(vpText)) !== null) {
     const from = vpFrom + wm.index;
     const to = from + wm[0].length;
-    const cursorInside =
-      state.selection.main.from <= to && state.selection.main.to >= from;
-    if (!cursorInside) {
+    if (!selectionIntersectsRange(state.selection, from, to)) {
       const src = resolveWikiSrc(wm[1], vaultPath);
       ranges.push({
         from,
@@ -731,6 +741,90 @@ function buildWikilinkDecorations(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
+const STANDARD_MD_LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/g;
+const WIKILINK_SPAN_RE = /\[\[([^\]]+)\]\]/g;
+
+/** Non-image `[text](url)` spans in document order. */
+function findStandardMarkdownLinks(doc: Text): Array<{ from: number; to: number }> {
+  const links: Array<{ from: number; to: number }> = [];
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const text = line.text;
+    STANDARD_MD_LINK_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = STANDARD_MD_LINK_RE.exec(text)) !== null) {
+      if (m.index > 0 && text[m.index - 1] === "!") continue;
+      links.push({
+        from: line.from + m.index,
+        to: line.from + m.index + m[0].length,
+      });
+    }
+  }
+  return links;
+}
+
+/** Wikilink `[[note]]` spans (excludes `![[image]]`). */
+function findWikilinkSpans(doc: Text): Array<{ from: number; to: number }> {
+  const spans: Array<{ from: number; to: number }> = [];
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const text = line.text;
+    WIKILINK_SPAN_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = WIKILINK_SPAN_RE.exec(text)) !== null) {
+      if (m.index > 0 && text[m.index - 1] === "!") continue;
+      spans.push({
+        from: line.from + m.index,
+        to: line.from + m.index + m[0].length,
+      });
+    }
+  }
+  return spans;
+}
+
+/** List marker prefix spans (`- `, `- [ ] `, `1. `, …) for atomic caret motion. */
+function findListMarkerPrefixSpans(doc: Text): Array<{ from: number; to: number }> {
+  const spans: Array<{ from: number; to: number }> = [];
+  for (let n = 1; n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const taskMatch = line.text.match(/^([ \t]*(?:[-*+]|\d+\.)\s+\[[ xX]\] ?)/);
+    const bulletMatch = !taskMatch
+      ? line.text.match(/^([ \t]*(?:[-*+]|\d+\.)\s+)/)
+      : null;
+    const match = taskMatch ?? bulletMatch;
+    if (!match) continue;
+    spans.push({ from: line.from, to: line.from + match[0].length });
+  }
+  return spans;
+}
+
+/** Collapsed links and list markers skip as one unit unless the caret is editing them. */
+export const markdownCaretAtomicExtension = EditorView.atomicRanges.of((view) => {
+  const { state } = view;
+  const builder = new RangeSetBuilder<Decoration>();
+  const mark = Decoration.mark({ class: "cm-inline-preview-atomic" });
+
+  for (const { from, to } of findStandardMarkdownLinks(state.doc)) {
+    if (!selectionIntersectsRange(state.selection, from, to)) {
+      builder.add(from, to, mark);
+    }
+  }
+
+  for (const { from, to } of findWikilinkSpans(state.doc)) {
+    if (!selectionIntersectsRange(state.selection, from, to)) {
+      builder.add(from, to, mark);
+    }
+  }
+
+  for (const { from, to } of findListMarkerPrefixSpans(state.doc)) {
+    if (!selectionIntersectsRange(state.selection, from, to)) {
+      builder.add(from, to, mark);
+    }
+  }
+
+  return builder.finish();
+});
+
 /**
  * Collapses standard markdown links in source mode:
  *   [Display Name](https://example.com)
@@ -741,22 +835,20 @@ function buildWikilinkDecorations(view: EditorView): DecorationSet {
  */
 function buildMarkdownLinkCollapseDecorations(view: EditorView): DecorationSet {
   const ranges: Array<{ from: number; to: number; deco: Decoration }> = [];
-  const LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/g;
-  const sel = view.state.selection.main;
+  const sel = view.state.selection;
 
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.sliceDoc(from, to);
-    LINK_RE.lastIndex = 0;
+    STANDARD_MD_LINK_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
-    while ((m = LINK_RE.exec(text)) !== null) {
+    while ((m = STANDARD_MD_LINK_RE.exec(text)) !== null) {
       // Don't treat image markdown as a collapsed text link: ![alt](url)
       if (m.index > 0 && text[m.index - 1] === "!") continue;
 
       const fullFrom = from + m.index;
       const fullTo = fullFrom + m[0].length;
 
-      const selectionTouchesLink = sel.from <= fullTo && sel.to >= fullFrom;
-      if (selectionTouchesLink) continue;
+      if (selectionIntersectsRange(sel, fullFrom, fullTo)) continue;
 
       const displayFrom = fullFrom + 1; // Skip opening '['
       const displayTo = displayFrom + m[1].length;
@@ -862,7 +954,9 @@ const taskCheckboxClickHandler = EditorView.domEventHandlers({
     const marker = target.closest("[data-task-checkbox]") as HTMLElement | null;
     if (!marker) return false;
 
-    const pos = view.posAtDOM(marker, 0);
+    const pos =
+      view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+      view.posAtDOM(marker, 0);
     const line = view.state.doc.lineAt(pos);
     const m = line.text.match(/^([ \t]*(?:[-*+]|\d+\.)\s+\[)([ xX])(\])/);
     if (!m) return false;
@@ -896,12 +990,12 @@ const wikilinkDecoPlugin = ViewPlugin.fromClass(
 );
 
 /**
- * Click handler: mousedown on a `.cm-wikilink` element opens the linked note.
- * Reads noteIndex at click-time so it's always fresh.
+ * Cmd/Ctrl+click on a `.cm-wikilink` opens the linked note.
+ * Plain click leaves caret placement to CodeMirror so wikilink text stays editable.
  */
 const wikilinkClickHandler = EditorView.domEventHandlers({
-  click(e) {
-    if (e.button !== 0) return false;
+  mousedown(e) {
+    if (e.button !== 0 || (!e.metaKey && !e.ctrlKey)) return false;
     const linkEl = (e.target as HTMLElement).closest("[data-wikilink]") as HTMLElement | null;
     if (!linkEl?.dataset.wikilink) return false;
 
@@ -1035,7 +1129,7 @@ function slashMenuCompletionSource(
  *  - `[[ ` completion dropdown sourced from the note index
  *  - `/command` slash menu for fast block insertion
  *  - Decorates existing [[links]] so they look clickable
- *  - Mousedown handler to open the linked file
+ *  - Mousedown handler (Cmd/Ctrl+click) to open the linked file
  */
 export const wikilinkExtensions = [
   autocompletion({
@@ -1052,10 +1146,10 @@ export const taskListClickExtension = [taskCheckboxDecoPlugin, taskCheckboxClick
 /** Collapses [text](url) links to display-name tokens in source mode. */
 export const markdownLinkCollapseExtension = [markdownLinkCollapsePlugin];
 
-/** Open http(s) links from planner cells in the OS browser (not the Metis webview). */
+/** Cmd/Ctrl+click opens external http(s) links in planner cells; plain click edits. */
 const plannerLinkClickHandler = EditorView.domEventHandlers({
-  click(event, view) {
-    if (event.button !== 0) return false;
+  mousedown(event, view) {
+    if (event.button !== 0 || (!event.metaKey && !event.ctrlKey)) return false;
 
     const el = event.target as HTMLElement;
     const collapsedHref = el.closest("[data-md-link-href]")?.getAttribute("data-md-link-href")?.trim();
@@ -1095,6 +1189,7 @@ export const plannerMarkdownVisualExtensions = [
   createVisualModePlugin("", ""),
   calloutPlugin,
   ...markdownLinkCollapseExtension,
+  markdownCaretAtomicExtension,
   plannerLinkClickHandler,
   ...taskListClickExtension,
 ];
@@ -1175,14 +1270,7 @@ export const listContinuationKeymap = keymap.of([
         return true;
       }
 
-      // Non-list line: plain newline at column 0.  This prevents
-      // defaultKeymap's insertNewlineAndIndent from carrying over
-      // whitespace from a manually-tabbed line.
-      view.dispatch({
-        changes: { from, to, insert: "\n" },
-        selection: { anchor: from + 1 },
-      });
-      return true;
+      return false;
     },
   },
 ]);
@@ -1469,20 +1557,6 @@ class CollapsedMarkdownTableWidget extends WidgetType {
   }
 }
 
-/** True when the caret or selection should show raw fences (not collapsed preview). */
-function selectionIntersectsRange(
-  sel: EditorState["selection"],
-  from: number,
-  to: number,
-): boolean {
-  const { main } = sel;
-  if (main.empty) {
-    // Inclusive start, exclusive end — caret at `from` expands; at `to` stays collapsed.
-    return main.head >= from && main.head < to;
-  }
-  return main.from < to && main.to > from;
-}
-
 function buildMarkdownTableCollapseDecorations(state: EditorState): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
   const doc = state.doc;
@@ -1575,7 +1649,7 @@ function makeStickyDropHandler() {
   });
 }
 
-/** Collapsed tables and inline image previews are atomic for vertical cursor motion. */
+/** Collapsed tables and inline image previews are atomic for arrow-key caret motion. */
 function makeInlinePreviewAtomicRanges() {
   return EditorView.atomicRanges.of((view) => {
     const { state } = view;
@@ -1630,48 +1704,24 @@ function followMarkdownLinkAtColumn(
   return false;
 }
 
-/** Click wikilinks + collapsed/expanded link tokens; Cmd/Ctrl+Click also follows raw markdown links. */
+/** Cmd/Ctrl+Click follows links; plain click places the caret (collapsed links expand for editing). */
 function makeLinkClickHandler(vaultPath: string, filePath: string) {
   const fileDir = filePath.substring(0, filePath.lastIndexOf("/"));
 
   return EditorView.domEventHandlers({
-    click(event, view) {
-      if (event.button !== 0) return false;
+    mousedown(event, view) {
+      if (!event.metaKey && !event.ctrlKey) return false;
 
       const el = event.target as HTMLElement;
-      const fromCollapsed = el.closest("[data-md-link-href]") as HTMLElement | null;
-      const collapsedHref = fromCollapsed?.dataset.mdLinkHref?.trim();
+      const collapsedHref = el
+        .closest("[data-md-link-href]")
+        ?.getAttribute("data-md-link-href")
+        ?.trim();
       if (collapsedHref) {
         event.preventDefault();
-        event.stopPropagation();
         followVaultHref(collapsedHref, { fileDir, vaultPath, filePath });
         return true;
       }
-
-      const wikiEl = el.closest("[data-wikilink]") as HTMLElement | null;
-      if (wikiEl?.dataset.wikilink) {
-        event.preventDefault();
-        event.stopPropagation();
-        openNoteByWikilinkNameFromStore(wikiEl.dataset.wikilink);
-        return true;
-      }
-
-      const coords = { x: event.clientX, y: event.clientY };
-      const pos = view.posAtCoords(coords);
-      if (pos !== null) {
-        const line = view.state.doc.lineAt(pos);
-        const col = pos - line.from;
-        if (followMarkdownLinkAtColumn(line.text, col, fileDir, vaultPath, filePath)) {
-          event.preventDefault();
-          event.stopPropagation();
-          return true;
-        }
-      }
-
-      return false;
-    },
-    mousedown(event, view) {
-      if (!event.metaKey && !event.ctrlKey) return false;
 
       const coords = { x: event.clientX, y: event.clientY };
       const pos = view.posAtCoords(coords);

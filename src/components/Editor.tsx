@@ -30,6 +30,7 @@ import {
   markdownAutoComplete,
   wikilinkExtensions,
   markdownLinkCollapseExtension,
+  markdownCaretAtomicExtension,
   taskListClickExtension,
   listContinuationKeymap,
   smartPasteExtension,
@@ -187,13 +188,13 @@ export default function Editor() {
   const isImageFile = Boolean(activeFilePath && isVaultImageFile(activeFileName));
 
   const handlePreviewSourceActivate = useCallback(
-    (sourceOffset: number) => {
+    (sourceOffset: number, matchEnd?: number) => {
       setEditorMode("source");
       let attempts = 0;
       const tryNavigate = () => {
         const view = viewRef.current;
         if (view) {
-          applyEditorNavigation(view, sourceOffset);
+          applyEditorNavigation(view, sourceOffset, matchEnd);
           return;
         }
         if (attempts++ < 24) requestAnimationFrame(tryNavigate);
@@ -202,6 +203,15 @@ export default function Editor() {
     },
     [setEditorMode],
   );
+
+  const handlePreviewTaskToggle = useCallback((markerOffset: number, checked: boolean) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const insert = checked ? "x" : " ";
+    view.dispatch({
+      changes: { from: markerOffset + 1, to: markerOffset + 2, insert },
+    });
+  }, []);
 
   // ── Apply pending navigation from search results, etc. ─────────────────────
   useEffect(() => {
@@ -299,6 +309,7 @@ export default function Editor() {
         ...wikilinkExtensions,
         // Collapse [Display](url) links to clean inline tokens while not editing
         ...markdownLinkCollapseExtension,
+        markdownCaretAtomicExtension,
         // Clickable task markers in source mode (`[ ]` / `[x]`)
         ...taskListClickExtension,
         // List continuation (Enter key) — before defaultKeymap for priority
@@ -463,6 +474,7 @@ export default function Editor() {
           {
             key: "Mod-f",
             run() {
+              if (useStore.getState().editorTab !== "source") return false;
               setFindBarOpen((prev) => {
                 if (!prev) {
                   setFindBarReplace(false);
@@ -478,6 +490,7 @@ export default function Editor() {
           {
             key: "Mod-r",
             run() {
+              if (useStore.getState().editorTab !== "source") return false;
               setFindBarOpen((prev) => {
                 if (!prev) {
                   setFindBarReplace(true);
@@ -597,6 +610,13 @@ export default function Editor() {
   useEffect(() => {
     setShowBgPicker(false);
   }, [editorMode, activeFilePath]);
+
+  // Find/replace targets the hidden CodeMirror surface — close when leaving Source.
+  useEffect(() => {
+    if (editorMode !== "source") {
+      setFindBarOpen(false);
+    }
+  }, [editorMode]);
 
   // Capture cursor position when entering Visual; restore editor scroll when returning to Source.
   useEffect(() => {
@@ -725,8 +745,8 @@ export default function Editor() {
         </div>
       </div>
 
-      {/* ── Find / Replace bar ── */}
-      {findBarOpen && (
+      {/* ── Find / Replace bar (Source mode only) ── */}
+      {findBarOpen && editorMode === "source" && (
         <div ref={findBarRef}>
           <EditorFindBar
             viewRef={viewRef}
@@ -799,8 +819,8 @@ export default function Editor() {
             bgColor={bgPreset.bg}
             textColor={bgPreset.fg}
             scrollAnchorOffset={visualScrollAnchor}
-            onImageActivate={handlePreviewSourceActivate}
-            onStickyActivate={handlePreviewSourceActivate}
+            onSourceActivate={handlePreviewSourceActivate}
+            onTaskToggle={handlePreviewTaskToggle}
           />
         )}
 
