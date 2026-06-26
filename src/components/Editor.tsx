@@ -667,7 +667,7 @@ export default function Editor() {
 
   return (
     <div
-      className="flex h-full flex-col bg-surface-base"
+      className="flex h-full min-w-0 flex-col bg-surface-base"
       data-color-scheme={bgPreset.isDark ? "dark" : "light"}
     >
       {/* ── Header bar ───────────────────────────────────────────────────── */}

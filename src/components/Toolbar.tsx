@@ -306,7 +306,8 @@ function insertTable(view: EditorView) {
 
 const ICON_SIZE_NORMAL = 14;
 const ICON_SIZE_COMPACT = 11;
-const COMPACT_THRESHOLD = 480;
+/** Switch to tighter padding/icons when the toolbar strip is narrow. */
+const COMPACT_THRESHOLD = 640;
 
 interface CalloutType {
   type: string;
@@ -341,9 +342,11 @@ const CALLOUT_TYPES: CalloutType[] = [
 function StickyNoteDropdown({
   viewRef,
   iconSize,
+  btnCls,
 }: {
   viewRef: RefObject<EditorView | null>;
   iconSize: number;
+  btnCls: string;
 }) {
   const [open, setOpen] = useState(false);
   const [includeWrap, setIncludeWrap] = useState(false);
@@ -389,12 +392,12 @@ function StickyNoteDropdown({
         style={{ opacity: 0, pointerEvents: "none" }}
         className="fixed z-[10000] rounded-md border border-white/25 px-2.5 py-1 text-xs font-medium text-slate-900 shadow-lg transition-opacity"
       />
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         ref={triggerRef}
         title="Insert sticky note"
         onMouseDown={toggle}
-        className="flex items-center gap-0.5 rounded p-1.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary active:bg-accent/20 active:text-accent"
+        className={`${btnCls} flex items-center gap-0.5`}
       >
         <NotebookPen size={iconSize} />
         <ChevronDown
@@ -469,7 +472,15 @@ function StickyNoteDropdown({
  * MetadataPanel which follows the Toolbar in the DOM and would otherwise
  * cover an absolutely-positioned dropdown regardless of z-index.
  */
-function CalloutDropdown({ viewRef, iconSize }: { viewRef: RefObject<EditorView | null>; iconSize: number }) {
+function CalloutDropdown({
+  viewRef,
+  iconSize,
+  btnCls,
+}: {
+  viewRef: RefObject<EditorView | null>;
+  iconSize: number;
+  btnCls: string;
+}) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -485,12 +496,12 @@ function CalloutDropdown({ viewRef, iconSize }: { viewRef: RefObject<EditorView 
   };
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         ref={triggerRef}
         title="Insert callout block"
         onMouseDown={toggle}
-        className="flex items-center gap-0.5 rounded p-1.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary active:bg-accent/20 active:text-accent"
+        className={`${btnCls} flex items-center gap-0.5`}
       >
         <StickyNote size={iconSize} />
         <ChevronDown
@@ -606,7 +617,7 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
   const btnCls = compact
     ? "rounded p-0.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary active:bg-accent/20 active:text-accent"
     : "rounded p-1.5 text-text-muted transition-colors hover:bg-surface-overlay hover:text-text-primary active:bg-accent/20 active:text-accent";
-  const dividerCls = compact ? "mx-0.5 h-3 w-px bg-border" : "mx-1 h-4 w-px bg-border";
+  const dividerCls = compact ? "mx-0.5 h-3 w-px shrink-0 bg-border" : "mx-1 h-4 w-px shrink-0 bg-border";
 
   const handleAction = useCallback((action: (view: EditorView) => void) => {
     const view = viewRef.current;
@@ -625,15 +636,18 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
   return (
     <div
       ref={containerRef}
-      className={`flex shrink-0 items-center border-b border-border bg-surface-raised/70 backdrop-blur-sm ${
-        compact ? "gap-0 px-1 py-0.5" : "gap-0.5 px-2 py-1"
-      }`}
+      className="metis-toolbar-scroll min-w-0 w-full shrink-0 overflow-x-auto overflow-y-hidden border-b border-border bg-surface-raised/70 backdrop-blur-sm"
     >
+      <div
+        className={`flex w-max min-w-full flex-nowrap items-center ${
+          compact ? "gap-0 px-1 py-0.5" : "gap-0.5 px-2 py-1"
+        }`}
+      >
       {orderedGroups.map((groupKey, gi) => {
         const groupItems = groups[groupKey];
         if (!groupItems) return null;
         return (
-          <div key={groupKey} className={`flex items-center ${compact ? "gap-0" : "gap-0.5"}`}>
+          <div key={groupKey} className={`flex shrink-0 items-center ${compact ? "gap-0" : "gap-0.5"}`}>
             {gi > 0 && <div className={dividerCls} />}
             {groupItems.map((item) => (
               <button
@@ -643,7 +657,7 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
                   e.preventDefault();
                   handleAction(item.action);
                 }}
-                className={btnCls}
+                className={`${btnCls} shrink-0`}
               >
                 {item.Icon
                   ? <item.Icon size={iconSize} />
@@ -655,12 +669,12 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
       })}
 
       <div className={dividerCls} />
-      <CalloutDropdown viewRef={viewRef} iconSize={iconSize} />
-      <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} />
+      <CalloutDropdown viewRef={viewRef} iconSize={iconSize} btnCls={btnCls} />
+      <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} btnCls={btnCls} />
 
       <div className={dividerCls} />
-      <ToolbarCalendarPopover iconSize={iconSize} btnCls={`${btnCls} flex items-center gap-0.5`} />
-      <ToolbarCalculatorPopover viewRef={viewRef} iconSize={iconSize} btnCls={`${btnCls} flex items-center gap-0.5`} />
+      <ToolbarCalendarPopover iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
+      <ToolbarCalculatorPopover viewRef={viewRef} iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
 
       <div className={dividerCls} />
       <button
@@ -669,7 +683,7 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
           e.preventDefault();
           onToggleSpellcheck();
         }}
-        className={`rounded transition-colors ${compact ? "p-0.5" : "p-1.5"} ${
+        className={`shrink-0 rounded transition-colors ${compact ? "p-0.5" : "p-1.5"} ${
           spellcheck
             ? "bg-accent/20 text-accent"
             : "text-text-muted hover:bg-surface-overlay hover:text-text-primary"
@@ -677,6 +691,7 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
       >
         <SpellCheck size={iconSize} />
       </button>
+      </div>
     </div>
   );
 }

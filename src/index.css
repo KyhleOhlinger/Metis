@@ -1302,6 +1302,13 @@ body,
   width: 6px;
   height: 6px;
 }
+
+/* Editor / planner formatting toolbar — horizontal scroll when narrow */
+.metis-toolbar-scroll {
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
 ::-webkit-scrollbar-track {
   background: transparent;
 }
