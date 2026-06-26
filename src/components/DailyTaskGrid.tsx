@@ -754,7 +754,7 @@ export default function DailyTaskGrid() {
           tab === "goals" ||
           tab === "reviews" ||
           tab === "daily") && (
-          <div className="mt-2 border-t border-border pt-2" data-metis-planner-toolbar>
+          <div className="mt-2 min-w-0 border-t border-border pt-2" data-metis-planner-toolbar>
             <Toolbar
               viewRef={plannerToolbarViewRef}
               spellcheck={false}

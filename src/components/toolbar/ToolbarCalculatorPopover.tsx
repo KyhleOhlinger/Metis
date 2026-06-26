@@ -151,7 +151,7 @@ export default function ToolbarCalculatorPopover({ viewRef, iconSize, btnCls }: 
   ];
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         ref={triggerRef}
         type="button"

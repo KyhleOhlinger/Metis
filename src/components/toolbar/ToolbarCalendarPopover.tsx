@@ -77,7 +77,7 @@ export default function ToolbarCalendarPopover({ iconSize, btnCls }: Props) {
   };
 
   return (
-    <div className="relative">
+    <div className="relative shrink-0">
       <button
         ref={triggerRef}
         type="button"
