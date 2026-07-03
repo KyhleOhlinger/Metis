@@ -1,0 +1,35 @@
+# LiteLLM example config for Metis (escape hatch)
+#
+# Use when a provider does not work via @ai-sdk/* or OpenAI-compatible URLs.
+# Metis profile: preset-litellm → http://127.0.0.1:4000/v1
+#
+# Setup:
+#   pip install 'litellm[proxy]'
+#   export OPENAI_API_KEY=...
+#   export ANTHROPIC_API_KEY=...
+#   export GEMINI_API_KEY=...
+#   litellm --config /path/to/litellm.example.yaml --port 4000
+#
+# In Metis Settings → API Providers → LiteLLM Gateway:
+#   Base URL: http://127.0.0.1:4000/v1
+#   API key:  same as general_settings.master_key below
+# Persona models: use model_name values (fast, smart, gemini-flash)
+
+model_list:
+  - model_name: fast
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: smart
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: gemini-flash
+    litellm_params:
+      model: gemini/gemini-2.0-flash
+      api_key: os.environ/GEMINI_API_KEY
+
+general_settings:
+  master_key: sk-metis-local

@@ -58,8 +58,24 @@ export default defineConfig({
           ) {
             return "codemirror";
           }
-          if (id.includes("node_modules/openai")) {
-            return "openai";
+          if (
+            id.includes("node_modules/@ai-sdk") ||
+            id.includes("node_modules/ai/") ||
+            id.includes("node_modules/zod")
+          ) {
+            return "ai-sdk";
+          }
+          if (
+            id.includes("html2pdf") ||
+            id.includes("node_modules/jspdf") ||
+            id.includes("html2canvas") ||
+            id.includes("node_modules/canvg") ||
+            id.includes("node_modules/core-js")
+          ) {
+            return "pdf-export";
+          }
+          if (id.includes("node_modules/fuse.js")) {
+            return "fuse";
           }
           if (id.includes("marked") || id.includes("dompurify")) {
             return "markdown";
@@ -97,7 +113,7 @@ export default defineConfig({
     //
     // These proxy rules forward /api-proxy/<provider>/... to the real API
     // host via the Vite dev server (Node.js), which is not subject to CORS.
-    // The corresponding base URLs are switched in aiService.ts when
+    // The corresponding base URLs are switched in metisFetch.ts when
     // import.meta.env.DEV is true.
     proxy: {
       "/api-proxy/openai": {
@@ -112,13 +128,7 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api-proxy\/groq/, ""),
         configure: stripClientOriginHeaders,
       },
-      "/api-proxy/gemini": {
-        target: "https://generativelanguage.googleapis.com",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-proxy\/gemini/, ""),
-        configure: stripClientOriginHeaders,
-      },
-      /** Native v1beta REST (generateContent) — used when OpenAI-compat path hits bogus 429s in the browser. */
+      /** Google Generative Language API (browser-only dev; used by @ai-sdk/google). */
       "/api-proxy/gemini-native": {
         target: "https://generativelanguage.googleapis.com",
         changeOrigin: true,

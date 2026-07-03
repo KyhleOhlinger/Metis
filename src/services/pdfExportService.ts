@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import html2pdf from "html2pdf.js";
 import type { NoteMetadata } from "@/store/useStore";
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
@@ -217,6 +216,7 @@ async function renderChaptersToPdf(
 }
 
 async function htmlToPdfBlob(host: HTMLElement, preset: BgPreset): Promise<Blob> {
+  const { default: html2pdf } = await import("html2pdf.js");
   const target = host.querySelector(".preview-prose") ?? host;
   return (await html2pdf()
     .set(pdfOptions(preset))

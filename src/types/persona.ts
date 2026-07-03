@@ -3,20 +3,29 @@
 /** @deprecated Legacy enum — used only when migrating old settings/personas. */
 export type LegacyAIProvider = "openai" | "gemini" | "groq" | "perplexity";
 
-/** How Metis talks to the endpoint (most providers use OpenAI-compatible chat). */
+/** @deprecated Migrated to `providerKind` — read-only for legacy settings.json. */
 export type ProviderAdapter = "openai-compat" | "gemini-native";
+
+/** Selects the Vercel AI SDK factory in `providerRegistry.ts`. */
+export type ProviderKind =
+  | "openai"
+  | "google"
+  | "anthropic"
+  | "openai-compatible";
 
 /** User-configurable AI endpoint (Settings → API Providers). */
 export interface AiProviderProfile {
   id: string;
   /** Display name, e.g. "Work Azure", "Anthropic", "Local Ollama". */
   name: string;
-  /** OpenAI-compatible API root, e.g. https://api.openai.com/v1 */
+  /** API root — OpenAI-compat `/v1`, Google `/v1beta`, or custom gateway URL. */
   baseUrl: string;
   apiKey: string;
   /** Suggested model when creating a persona tied to this profile. */
   defaultModel?: string;
-  /** Auto-inferred from URL when omitted. */
+  /** SDK wiring; inferred from preset id when omitted. */
+  providerKind?: ProviderKind;
+  /** @deprecated Use `providerKind`. */
   adapter?: ProviderAdapter;
 }
 

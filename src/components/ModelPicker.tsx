@@ -10,7 +10,7 @@ import {
   curatedModelsForProfile,
   curatedSmallModelId,
   type CuratedModel,
-} from "../services/aiService";
+} from "../services/llmService";
 
 interface ModelPickerProps {
   profileId: string;

@@ -6,7 +6,7 @@ use tauri::Manager;
 // ── Persona & settings persistence ───────────────────────────────────────────
 //
 // `personas.json` and `settings.json` are stored in the OS-level application
-// data directory (e.g. ~/Library/Application Support/com.metis.app/ on macOS).
+// data directory (e.g. ~/Library/Application Support/com.metis.desktop/ on macOS).
 // This keeps user configuration outside the vault so it is shared across vaults.
 //
 // SECURITY: The settings file contains the user's AI API key stored as plain
@@ -16,8 +16,8 @@ use tauri::Manager;
 // that credentials entered during development are **never** visible to a
 // release build.
 //
-//   Debug   → <AppData>/com.metis.app/dev/settings.json
-//   Release → <AppData>/com.metis.app/settings.json
+//   Debug   → <AppData>/com.metis.desktop/dev/settings.json
+//   Release → <AppData>/com.metis.desktop/settings.json
 //
 // This means you can configure test keys freely in dev without any risk of
 // them appearing when you run `tauri build`.

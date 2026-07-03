@@ -6,7 +6,7 @@ import type {
   AiProviderProfile,
   LegacyAIProvider,
   Persona,
-  ProviderAdapter,
+  ProviderKind,
   Settings,
 } from "../types/persona";
 import { DEFAULT_SETTINGS } from "../types/persona";
@@ -15,6 +15,8 @@ export const PRESET_OPENAI = "preset-openai";
 export const PRESET_GEMINI = "preset-gemini";
 export const PRESET_GROQ = "preset-groq";
 export const PRESET_PERPLEXITY = "preset-perplexity";
+export const PRESET_ANTHROPIC = "preset-anthropic";
+export const PRESET_LITELLM = "preset-litellm";
 
 /** Shipped defaults — users can edit keys/URLs; ids must stay stable for migration. */
 export const DEFAULT_PROVIDER_PROFILES: AiProviderProfile[] = [
@@ -24,15 +26,15 @@ export const DEFAULT_PROVIDER_PROFILES: AiProviderProfile[] = [
     baseUrl: "https://api.openai.com/v1",
     apiKey: "",
     defaultModel: "gpt-4o",
-    adapter: "openai-compat",
+    providerKind: "openai",
   },
   {
     id: PRESET_GEMINI,
     name: "Google Gemini",
-    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
     apiKey: "",
     defaultModel: "gemini-flash-latest",
-    adapter: "gemini-native",
+    providerKind: "google",
   },
   {
     id: PRESET_GROQ,
@@ -40,7 +42,7 @@ export const DEFAULT_PROVIDER_PROFILES: AiProviderProfile[] = [
     baseUrl: "https://api.groq.com/openai/v1",
     apiKey: "",
     defaultModel: "llama-3.3-70b-versatile",
-    adapter: "openai-compat",
+    providerKind: "openai-compatible",
   },
   {
     id: PRESET_PERPLEXITY,
@@ -48,7 +50,23 @@ export const DEFAULT_PROVIDER_PROFILES: AiProviderProfile[] = [
     baseUrl: "https://api.perplexity.ai",
     apiKey: "",
     defaultModel: "sonar-pro",
-    adapter: "openai-compat",
+    providerKind: "openai-compatible",
+  },
+  {
+    id: PRESET_ANTHROPIC,
+    name: "Anthropic",
+    baseUrl: "https://api.anthropic.com/v1",
+    apiKey: "",
+    defaultModel: "claude-sonnet-4-20250514",
+    providerKind: "anthropic",
+  },
+  {
+    id: PRESET_LITELLM,
+    name: "LiteLLM Gateway (local)",
+    baseUrl: "http://127.0.0.1:4000/v1",
+    apiKey: "",
+    defaultModel: "",
+    providerKind: "openai-compatible",
   },
 ];
 
@@ -61,6 +79,45 @@ const LEGACY_TO_PRESET: Record<LegacyAIProvider, string> = {
 
 export function makeProviderProfileId(): string {
   return `prov-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** SDK factory selection — see `providerRegistry.ts`. */
+export function providerKindForProfile(profile: AiProviderProfile): ProviderKind {
+  if (profile.providerKind) return profile.providerKind;
+  if (profile.adapter === "gemini-native") return "google";
+  switch (profile.id) {
+    case PRESET_OPENAI:
+      return "openai";
+    case PRESET_GEMINI:
+      return "google";
+    case PRESET_ANTHROPIC:
+      return "anthropic";
+    default:
+      return "openai-compatible";
+  }
+}
+
+export function isGoogleProvider(profile: AiProviderProfile): boolean {
+  return providerKindForProfile(profile) === "google";
+}
+
+function migrateProfileRow(
+  row: AiProviderProfile,
+  preset?: AiProviderProfile,
+): AiProviderProfile {
+  const providerKind = providerKindForProfile(row);
+  let baseUrl = row.baseUrl.trim();
+  if (providerKind === "google" && baseUrl.includes("/openai")) {
+    baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+  }
+  return {
+    id: row.id,
+    name: row.name.trim(),
+    baseUrl,
+    apiKey: row.apiKey ?? "",
+    defaultModel: row.defaultModel?.trim() || preset?.defaultModel,
+    providerKind,
+  };
 }
 
 /** Parse hostname from a base URL for allowlist / preflight checks. */
@@ -111,14 +168,18 @@ export function mergeProviderProfiles(
   for (const row of persisted ?? []) {
     if (!row?.id || !row.name?.trim() || !row.baseUrl?.trim()) continue;
     const preset = byId.get(row.id);
-    byId.set(row.id, {
-      id: row.id,
-      name: row.name.trim(),
-      baseUrl: row.baseUrl.trim(),
-      apiKey: row.apiKey ?? "",
-      defaultModel: row.defaultModel?.trim() || preset?.defaultModel,
-      adapter: row.adapter ?? preset?.adapter ?? "openai-compat",
-    });
+    byId.set(row.id, migrateProfileRow(
+      {
+        id: row.id,
+        name: row.name.trim(),
+        baseUrl: row.baseUrl.trim(),
+        apiKey: row.apiKey ?? "",
+        defaultModel: row.defaultModel?.trim() || preset?.defaultModel,
+        providerKind: row.providerKind,
+        adapter: row.adapter ?? preset?.adapter,
+      },
+      preset,
+    ));
   }
   return [...byId.values()];
 }
@@ -240,18 +301,4 @@ export function migratePersona(
     providerProfileId: profileId,
     disabled: persona.disabled,
   };
-}
-
-/** Official Google Generative Language API host (exact match — blocks typosquatting). */
-export const OFFICIAL_GEMINI_API_HOST = "generativelanguage.googleapis.com";
-
-export function isOfficialGeminiApiHost(hostname: string): boolean {
-  return hostname.trim().toLowerCase() === OFFICIAL_GEMINI_API_HOST;
-}
-
-export function inferAdapter(baseUrl: string, explicit?: ProviderAdapter): ProviderAdapter {
-  if (explicit) return explicit;
-  const host = hostFromBaseUrl(baseUrl);
-  if (host && isOfficialGeminiApiHost(host)) return "gemini-native";
-  return "openai-compat";
 }
