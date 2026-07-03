@@ -1,6 +1,6 @@
 import { useCallback, type MutableRefObject } from "react";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { streamResponse, AGENT_FILE_TOOLS, type ParsedToolCall } from "@/services/aiService";
+import { streamResponse, agentFileTools, type ParsedToolCall } from "@/services/llmService";
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
 import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { isSystemPersona } from "@/systemPersonas/registry";
@@ -227,7 +227,7 @@ export function useAgentRun(ui: AgentRunUi) {
         setError(err.message);
       },
     },
-    AGENT_FILE_TOOLS,
+    agentFileTools,
   );
   if (runToken !== runTokenRef.current) {
     controller.abort();

@@ -2,7 +2,7 @@ import { useCallback, useMemo, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, syncUiAfterDiskWrites, type DiskWrite } from "@/store/useStore";
 import { usePersonaStore, selectProfileForPersona } from "@/store/usePersonaStore";
-import { streamResponse } from "@/services/aiService";
+import { streamResponse } from "@/services/llmService";
 import { buildOrphanReport } from "@/systemPersonas/librarianContext";
 import {
   buildTaskContext,

@@ -255,7 +255,7 @@ Metis/
 4. Switch to the **AI** tab to select a persona and run your first prompt.
 5. When creating or editing a persona, click **↓ Models** to fetch the latest available models from the provider and pick from a dropdown.
 
-API keys are stored in your OS app-data directory (`~/Library/Application Support/com.metis.app/` on macOS) and are never sent anywhere other than your chosen AI provider. Only the specific note content needed for each task is ever transmitted — your full vault is never sent in a single call.
+API keys are stored in your OS app-data directory (`~/Library/Application Support/com.metis.desktop/` on macOS) and are never sent anywhere other than your chosen AI provider. Only the specific note content needed for each task is ever transmitted — your full vault is never sent in a single call.
 
 ---
 

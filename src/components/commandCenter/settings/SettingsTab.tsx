@@ -5,8 +5,8 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import QuickActionsSettings from "../../QuickActionsSettings";
 import ModelPicker from "../../ModelPicker";
 import { SYSTEM_PERSONA_IDS } from "@/systemPersonas/registry";
-import { profileForPersona, inferAdapter, findProviderProfile, makeProviderProfileId } from "@/utils/providerProfiles";
-import { testProviderConnection, curatedSmallModelId } from "@/services/aiService";
+import { profileForPersona, findProviderProfile, makeProviderProfileId } from "@/utils/providerProfiles";
+import { testProviderConnection, curatedSmallModelId } from "@/services/llmService";
 import { FieldLabel } from "../shared/ui";
 
 function CollapsibleSection({
@@ -108,7 +108,7 @@ export function SettingsTab({
       baseUrl: draftUrl.trim(),
       apiKey: draftKey.trim(),
       defaultModel: draftModel.trim() || undefined,
-      adapter: inferAdapter(draftUrl.trim()),
+      providerKind: "openai-compatible",
     };
   }
 
@@ -769,7 +769,7 @@ function ProviderProfileSection({
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
       defaultModel: defaultModel.trim() || undefined,
-      adapter: inferAdapter(baseUrl.trim(), profile.adapter),
+      providerKind: profile.providerKind ?? "openai-compatible",
     };
     onSave(next);
     return next;
@@ -786,7 +786,7 @@ function ProviderProfileSection({
       name: name.trim(),
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
-      adapter: inferAdapter(baseUrl.trim(), profile.adapter),
+      providerKind: profile.providerKind ?? "openai-compatible",
     };
     const result = await testProviderConnection(draft);
     setTestStatus(

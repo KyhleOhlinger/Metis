@@ -10,7 +10,7 @@ import type {
   ExecutionScope,
 } from "../types/persona";
 import { DEFAULT_PERSONAS, DEFAULT_QUICK_ACTIONS } from "../types/persona";
-import { fetchProviderModels } from "../services/aiService";
+import { fetchProviderModels } from "../services/llmService";
 import {
   collectAllowedAiHosts,
   migratePersona,
@@ -350,13 +350,4 @@ export function selectProfileForPersona(
 ): AiProviderProfile | undefined {
   if (!persona) return undefined;
   return profileForPersona(state.settings, persona);
-}
-
-/** @deprecated Use selectProfileApiKey */
-export function selectProviderKey(
-  state: PersonaState,
-  _provider: string,
-): string {
-  const persona = selectActivePersona(state);
-  return selectProfileApiKey(state, persona);
 }

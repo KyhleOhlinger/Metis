@@ -24,8 +24,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { AiProviderProfile, Persona, ExecutionScope } from "../types/persona";
-import { createAIClient, curatedSmallModelId } from "./aiService";
-import { generateGeminiNativeContent, profileUsesGeminiNative } from "./geminiNative";
+import { curatedSmallModelId, generateCompletion } from "./llmService";
+import { isGoogleProvider } from "./providerRegistry";
 
 // ── Model context limits ──────────────────────────────────────────────────────
 // Approximate token context windows for common models. Unknown ids use
@@ -227,7 +227,7 @@ export async function buildSmartContext(
   // Google AI Studio / Gemini free tiers frequently return HTTP 429 when Metis
   // sends scout + main chat back-to-back; a single curl only hits one call.
   // Use the same TF-IDF + budget pick as tier 2, over the full ranked list.
-  if (profileUsesGeminiNative(profile)) {
+  if (isGoogleProvider(profile)) {
     onStatus?.(`Large vault — selecting notes by relevance (Gemini skips scout to avoid rate limits)…`);
     const ranked = scoreByRelevance(summaries, userMessage);
     const selected = pickByBudget(ranked, budget);
@@ -404,37 +404,14 @@ async function runScout(
     `Task: ${userMessage}\n\nAvailable notes:\n\n${listing}\n\n` +
     "Return a JSON array of the filenames most relevant to this task.";
 
-  if (profileUsesGeminiNative(profile)) {
-    try {
-      const raw = await generateGeminiNativeContent(
-        profile,
-        scoutModel,
-        SCOUT_SYSTEM_PROMPT,
-        userPrompt,
-        new AbortController().signal,
-        256,
-      );
-      return parseFilenameList(raw);
-    } catch (e) {
-      console.warn("[Metis] Gemini native scout failed:", e);
-      return [];
-    }
-  }
-
-  const client = createAIClient(profile);
-
   try {
-    const resp = await client.chat.completions.create({
-      model: scoutModel,
-      messages: [
-        { role: "system", content: SCOUT_SYSTEM_PROMPT },
-        { role: "user",   content: userPrompt },
-      ],
-      max_tokens: 256,
-      stream: false,
-    });
-
-    const raw = resp.choices[0]?.message?.content ?? "";
+    const raw = await generateCompletion(
+      profile,
+      scoutModel,
+      SCOUT_SYSTEM_PROMPT,
+      userPrompt,
+      256,
+    );
     return parseFilenameList(raw);
   } catch (e) {
     console.warn("[Metis] Scout call failed:", e);
@@ -529,7 +506,7 @@ function planEgressFromSummaries(
       extraScoutApiCall: false,
     };
   }
-  if (profileUsesGeminiNative(profile)) {
+  if (isGoogleProvider(profile)) {
     const selected = pickByBudget(scoreByRelevance(summaries, userMessage), budget);
     return {
       estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),

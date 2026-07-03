@@ -4,7 +4,7 @@ import { usePersonaStore } from "../store/usePersonaStore";
 import ModelPicker from "./ModelPicker";
 import { type Persona, ICON_PRESETS } from "../types/persona";
 import { findProviderProfile } from "../utils/providerProfiles";
-import { curatedSmallModelId } from "../services/aiService";
+import { curatedSmallModelId } from "../services/llmService";
 
 interface Props {
   editing?: Persona;
