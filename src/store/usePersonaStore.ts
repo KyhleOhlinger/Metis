@@ -9,8 +9,10 @@ import type {
   HistoryEntry,
   ExecutionScope,
 } from "../types/persona";
+import type { AgentRunLogEntry } from "../types/agentRunLog";
 import { DEFAULT_PERSONAS, DEFAULT_QUICK_ACTIONS } from "../types/persona";
 import { fetchProviderModels } from "../services/llmService";
+import { loadAgentRunLogFromDisk } from "../services/agentRunLogService";
 import {
   collectAllowedAiHosts,
   migratePersona,
@@ -47,6 +49,7 @@ interface PersonaState {
   activePersonaId: string | null;
   settings: Settings;
   history: HistoryEntry[];
+  agentRunLog: AgentRunLogEntry[];
   loading: boolean;
 
   modelCache: Partial<Record<string, ModelCacheEntry>>;
@@ -85,6 +88,10 @@ interface PersonaState {
   addHistory: (entry: HistoryEntry) => void;
   clearHistory: () => void;
 
+  prependAgentRunLog: (entry: AgentRunLogEntry) => void;
+  setAgentRunLog: (entries: AgentRunLogEntry[]) => void;
+  loadAgentRunLog: () => Promise<void>;
+
   upsertQuickAction: (action: QuickAction) => void;
   deleteQuickAction: (id: string) => void;
   reorderQuickActions: (orderedIds: string[]) => void;
@@ -95,6 +102,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
   activePersonaId: DEFAULT_PERSONAS[0].id,
   settings: settingsWithHosts(migrateSettings({})),
   history: [],
+  agentRunLog: [],
   loading: false,
   modelCache: {},
   modelFetchStatus: {},
@@ -172,6 +180,8 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         activePersonaId: personas[0]?.id ?? null,
         settings,
       });
+
+      void get().loadAgentRunLog();
     } catch (e) {
       console.warn("[Metis] Could not load personas/settings from disk:", e);
       const settings = settingsWithHosts(migrateSettings({}));
@@ -291,6 +301,18 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
   },
 
   clearHistory: () => set({ history: [] }),
+
+  prependAgentRunLog: (entry) =>
+    set((s) => ({
+      agentRunLog: [entry, ...s.agentRunLog.filter((e) => e.id !== entry.id)].slice(0, 1000),
+    })),
+
+  setAgentRunLog: (entries) => set({ agentRunLog: entries }),
+
+  loadAgentRunLog: async () => {
+    const entries = await loadAgentRunLogFromDisk();
+    set({ agentRunLog: entries });
+  },
 
   upsertQuickAction: (action) => {
     set((s) => {

@@ -18,6 +18,7 @@ import {
   normalizeWikilinkTarget,
   openNoteByWikilinkName,
   revealPlatformLabel,
+  resolveExternalHref,
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
 import { preserveBlankLinesBeforeRenderedBlocks } from "../utils/previewMarkdown";
@@ -27,6 +28,10 @@ import {
   tagPreviewInteractiveHtml,
 } from "../utils/previewSourceOffsets";
 import { openDomContextMenu } from "../utils/domContextMenu";
+import {
+  findPreviewAnchor,
+  handlePreviewAnchorClick,
+} from "../utils/previewLinkHandlers";
 import {
   listStickyPairOffsets,
   preprocessStickyBlocksForPreview,
@@ -174,12 +179,9 @@ export default function MarkdownPreview({
     const root = rootRef.current;
     if (!root) return;
 
-    const followModifier = (e: MouseEvent) => e.metaKey || e.ctrlKey;
-
     const onClick = (e: MouseEvent) => {
       const ctx = ctxRef.current;
       const target = e.target as HTMLElement;
-      const modifier = followModifier(e);
 
       const checkbox = target.closest(
         'input[type="checkbox"][data-metis-source-offset]',
@@ -218,38 +220,17 @@ export default function MarkdownPreview({
         return;
       }
 
-      const a = target.closest("a") as HTMLAnchorElement | null;
-      if (!a || !root.contains(a)) return;
-
-      const sourceFrom = a.dataset.metisSourceOffset;
-      const sourceEnd = a.dataset.metisSourceEnd;
-      const wiki = a.dataset.metisWikilink;
-
-      if (modifier) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (wiki) {
-          openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath);
-          return;
-        }
-        followVaultHref(a.getAttribute("href") ?? "", {
+      const a = findPreviewAnchor(e, root);
+      if (a) {
+        handlePreviewAnchorClick(e, a, {
+          noteIndex: ctx.noteIndex,
+          setActiveFile: ctx.setActiveFile,
           fileDir: ctx.fileDir,
           vaultPath: ctx.vaultPath,
           filePath: ctx.filePath,
-          setActiveFile: ctx.setActiveFile,
           onSamePageFragment: (fragment) => scrollPreviewToFragment(root, fragment),
+          onSourceActivate: ctx.onSourceActivate,
         });
-        return;
-      }
-
-      if (sourceFrom !== undefined) {
-        e.preventDefault();
-        e.stopPropagation();
-        const from = Number(sourceFrom);
-        const to = sourceEnd !== undefined ? Number(sourceEnd) : undefined;
-        if (Number.isFinite(from)) {
-          ctx.onSourceActivate?.(from, Number.isFinite(to!) ? to : undefined);
-        }
       }
     };
 
@@ -278,8 +259,8 @@ export default function MarkdownPreview({
         return;
       }
 
-      const a = target.closest("a") as HTMLAnchorElement | null;
-      if (!a || !root.contains(a)) return;
+      const a = findPreviewAnchor(e, root);
+      if (!a) return;
 
       const wiki = a.dataset.metisWikilink;
       if (wiki) {
@@ -296,13 +277,34 @@ export default function MarkdownPreview({
       }
 
       const href = a.getAttribute("href") ?? "";
-      if (!/^https?:\/\//i.test(href)) return;
+      const external = resolveExternalHref(href);
+      if (external) {
+        e.preventDefault();
+        e.stopPropagation();
+        openDomContextMenu(e.clientX, e.clientY, [
+          {
+            label: "Open Link",
+            onClick: () => openExternalUrl(external),
+          },
+        ]);
+        return;
+      }
+
+      const trimmed = href.trim();
+      if (!trimmed || trimmed === "#") return;
       e.preventDefault();
       e.stopPropagation();
       openDomContextMenu(e.clientX, e.clientY, [
         {
           label: "Open Link",
-          onClick: () => openExternalUrl(href),
+          onClick: () =>
+            followVaultHref(trimmed, {
+              fileDir: ctx.fileDir,
+              vaultPath: ctx.vaultPath,
+              filePath: ctx.filePath,
+              setActiveFile: ctx.setActiveFile,
+              onSamePageFragment: (fragment) => scrollPreviewToFragment(root, fragment),
+            }),
         },
       ]);
     };

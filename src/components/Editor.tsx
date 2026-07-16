@@ -45,6 +45,9 @@ import VaultImageViewer from "./VaultImageViewer";
 import EditorFindBar from "./EditorFindBar";
 import { spellcheckLinter } from "./spellcheck";
 import DailyTaskGrid from "./DailyTaskGrid";
+import AgentRunHistoryPage from "./agentHistory/AgentRunHistoryPage";
+import { EditorSaveIndicator } from "./EditorWorkspaceHeader";
+import { toastError } from "../store/useToastStore";
 import { isVaultImageFile } from "../utils/vaultImages";
 import { openNoteByWikilinkNameFromStore } from "../utils/vaultNavigation";
 import {
@@ -67,6 +70,7 @@ function makeSpellcheckExt(enabled: boolean, language: string) {
 // ── Debounced auto-save (1 s after last keystroke) ────────────────────────────
 function useDebouncedSave(
   markSaved: () => void,
+  setSaveStatus: (status: "idle" | "saving" | "saved" | "error", error?: string | null) => void,
   delay = 1000,
 ) {
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -84,21 +88,24 @@ function useDebouncedSave(
       const existing = timers.current.get(path);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(async () => {
+        setSaveStatus("saving");
         try {
           await invoke("save_note", { path, content });
-          // Only clear the dirty state if this saved file is still active.
           if (useStore.getState().activeFilePath === path) {
             markSaved();
           }
         } catch (err) {
+          const msg = String(err);
           console.error("Auto-save failed:", err);
+          setSaveStatus("error", msg);
+          toastError(`Auto-save failed: ${msg}`);
         } finally {
           timers.current.delete(path);
         }
       }, delay);
       timers.current.set(path, timer);
     },
-    [markSaved, delay],
+    [markSaved, setSaveStatus, delay],
   );
 }
 
@@ -148,6 +155,7 @@ export default function Editor() {
     activeFileContent,
     setActiveFileContent,
     markSaved,
+    setSaveStatus,
     vaultPath,
     editorTab: editorMode,
     setEditorTab: setEditorMode,
@@ -158,6 +166,7 @@ export default function Editor() {
       activeFileContent: s.activeFileContent,
       setActiveFileContent: s.setActiveFileContent,
       markSaved: s.markSaved,
+      setSaveStatus: s.setSaveStatus,
       vaultPath: s.vaultPath,
       editorTab: s.editorTab,
       setEditorTab: s.setEditorTab,
@@ -169,7 +178,7 @@ export default function Editor() {
   const [visualScrollAnchor, setVisualScrollAnchor] = useState<number | null>(null);
   const prevEditorModeRef = useRef(editorMode);
 
-  const scheduleSave = useDebouncedSave(markSaved);
+  const scheduleSave = useDebouncedSave(markSaved, setSaveStatus);
 
   const dismissSelectionToolbar = useCallback(() => {
     useStore.getState().clearSelection();
@@ -645,25 +654,50 @@ export default function Editor() {
   }, [editorMode]);
 
   // ── Empty state ───────────────────────────────────────────────────────────────
-  // Planner is a workspace view and should be accessible even when no file is open.
-  if (!activeFilePath && editorMode !== "planner") {
+  if (!activeFilePath && editorMode !== "planner" && editorMode !== "agent-history") {
+    const openSettings = () => usePersonaStore.getState().openSettings();
+    const openPalette = () => useStore.getState().setPendingMenuAction("open-palette");
+    const openExport = () => useStore.getState().setPendingMenuAction("export-hub");
+
     return (
       <div className="flex h-full flex-col bg-surface-base select-none">
-        <div className="shrink-0 border-b border-border bg-surface-raised/70 px-4 py-2 backdrop-blur-sm" />
-        <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="mb-2 text-4xl text-text-muted opacity-30">⌘</div>
-          <p className="text-sm text-text-muted">
-            Select a note from the sidebar to start editing.
-          </p>
-          <p className="mt-1 text-xs text-text-muted opacity-60">
-            Cmd+S to save · changes are also auto-saved
+        <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised/70 px-4 py-1.5 backdrop-blur-sm">
+          <span className="text-xs text-text-muted">No note open</span>
+        </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
+          <p className="text-sm text-text-secondary">Open a note to start writing</p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <EmptyAction label="Quick switcher" hint="⌘P" onClick={openPalette} />
+            <EmptyAction
+              label="Planner"
+              onClick={() => setEditorMode("planner")}
+            />
+            <EmptyAction
+              label="Run log"
+              onClick={() => setEditorMode("agent-history")}
+            />
+            {vaultPath && (
+              <>
+                <EmptyAction label="Export…" onClick={openExport} />
+                <EmptyAction label="Settings" hint="⌘," onClick={openSettings} />
+              </>
+            )}
+          </div>
+          <p className="max-w-sm text-center text-xs text-text-muted opacity-70">
+            Notes auto-save after you edit. Use the sidebar or ⌘P to browse your vault.
           </p>
         </div>
       </div>
     );
   }
 
-  const fileName = activeFilePath ? activeFilePath.split("/").pop() ?? activeFilePath : "Planner";
+  const fileName = activeFilePath
+    ? activeFilePath.split("/").pop() ?? activeFilePath
+    : editorMode === "planner"
+      ? "Planner"
+      : editorMode === "agent-history"
+        ? "Agent Run Log"
+        : "Metis";
 
   return (
     <div
@@ -671,8 +705,11 @@ export default function Editor() {
       data-color-scheme={bgPreset.isDark ? "dark" : "light"}
     >
       {/* ── Header bar ───────────────────────────────────────────────────── */}
-      <div className="relative z-30 flex shrink-0 items-center justify-between border-b border-border bg-surface-raised/70 px-4 py-1.5 backdrop-blur-sm">
-        <span className="truncate text-xs text-text-secondary">{fileName}</span>
+      <div className="relative z-30 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface-raised/70 px-4 py-1.5 backdrop-blur-sm">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs text-text-secondary">{fileName}</span>
+          <EditorSaveIndicator />
+        </div>
 
         <div className="flex shrink-0 items-center gap-2">
           {/* ── Background colour picker ──────────────────────────────── */}
@@ -725,7 +762,7 @@ export default function Editor() {
           </div>
 
           {/* ── Source / Visual mode toggle — notes only ───────────────── */}
-          {!isImageFile && (
+          {!isImageFile && editorMode !== "planner" && editorMode !== "agent-history" && (
           <div className="flex items-center gap-0.5 rounded-md border border-border bg-surface-raised p-0.5">
             {(["source", "visual"] as const).map((mode) => (
               <button
@@ -830,8 +867,35 @@ export default function Editor() {
             <DailyTaskGrid />
           </div>
         )}
+
+        {editorMode === "agent-history" && (
+          <div className="h-full min-h-0">
+            <AgentRunHistoryPage />
+          </div>
+        )}
       </div>
 
     </div>
+  );
+}
+
+function EmptyAction({
+  label,
+  hint,
+  onClick,
+}: {
+  label: string;
+  hint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-lg border border-border bg-surface-raised px-3 py-2 text-xs text-text-primary transition hover:border-accent/40 hover:bg-surface-overlay"
+    >
+      {label}
+      {hint && <span className="ml-1.5 font-mono text-[10px] text-text-muted">{hint}</span>}
+    </button>
   );
 }

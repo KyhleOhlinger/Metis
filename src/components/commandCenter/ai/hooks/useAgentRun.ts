@@ -1,4 +1,4 @@
-import { useCallback, type MutableRefObject } from "react";
+import { useCallback, useRef, type MutableRefObject } from "react";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { streamResponse, agentFileTools, type ParsedToolCall } from "@/services/llmService";
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
@@ -6,6 +6,10 @@ import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { isSystemPersona } from "@/systemPersonas/registry";
 import { profileForPersona } from "@/utils/providerProfiles";
 import { sanitizeAgentNoteRelativePath } from "@/utils/paths";
+import {
+  mapParsedToolCalls,
+  recordAgentRun,
+} from "@/services/agentRunLogService";
 import type { ExecutionScope, Persona, HistoryEntry } from "@/types/persona";
 import type { ContextStrategy } from "@/services/contextBuilder";
 import type { PendingWrite, PendingWriteTool } from "../../agent/pendingWrite.types";
@@ -60,6 +64,17 @@ export function useAgentRun(ui: AgentRunUi) {
     selectionEndOffsetRef,
   } = ui;
 
+  const activeRunRef = useRef<{
+    startedAt: number;
+    persona: Persona;
+    profile: ReturnType<typeof profileForPersona>;
+    scope: ExecutionScope;
+    userMessage: string;
+    strategy: ContextStrategy | null;
+    activeFilePath: string | null;
+    vaultPath: string | null;
+  } | null>(null);
+
   const handleRun = useCallback(async () => {
   // Resolve the persona for this run.  A quick action may pin a specific
   // persona via overridePersonaIdRef; otherwise fall back to the active one.
@@ -88,7 +103,7 @@ export function useAgentRun(ui: AgentRunUi) {
         activeFilePath,
         vaultPath,
       );
-      if (!confirmEgressBeforeRun(egress)) return;
+      if (!(await confirmEgressBeforeRun(egress))) return;
     } catch {
       // If estimation fails, proceed — buildSmartContext will surface errors.
     }
@@ -109,6 +124,17 @@ export function useAgentRun(ui: AgentRunUi) {
   setUserMessage("");
   setStreaming(true);
 
+  activeRunRef.current = {
+    startedAt: Date.now(),
+    persona: runPersona,
+    profile: runProfile,
+    scope: runScope,
+    userMessage: runMessage,
+    strategy: null,
+    activeFilePath: runActiveFilePath,
+    vaultPath,
+  };
+
   // Build context using the smart tiered strategy
   let context = "";
   try {
@@ -124,8 +150,26 @@ export function useAgentRun(ui: AgentRunUi) {
     if (runToken !== runTokenRef.current) return;
     context = result.context;
     setStrategy(result.strategy);
+    if (activeRunRef.current) activeRunRef.current.strategy = result.strategy;
   } catch (e) {
     if (runToken !== runTokenRef.current) return;
+    const snap = activeRunRef.current;
+    if (snap?.profile) {
+      void recordAgentRun({
+        startedAt: snap.startedAt,
+        status: "error",
+        persona: snap.persona,
+        profile: snap.profile,
+        agentType: "generic",
+        scope: snap.scope,
+        activeFilePath: snap.activeFilePath,
+        vaultPath: snap.vaultPath,
+        userMessage: snap.userMessage,
+        errorMessage: `Failed to build context: ${String(e)}`,
+        contextStrategy: snap.strategy,
+      });
+    }
+    activeRunRef.current = null;
     setError(`Failed to build context: ${String(e)}`);
     setStreaming(false);
     return;
@@ -143,9 +187,29 @@ export function useAgentRun(ui: AgentRunUi) {
         if (runToken !== runTokenRef.current) return;
         setResponse((prev) => prev + chunk);
       },
-      onDone: (text, toolCalls) => {
+      onDone: (text, toolCalls, meta) => {
         if (runToken !== runTokenRef.current) return;
         setStreaming(false);
+
+        const snap = activeRunRef.current;
+        if (snap?.profile) {
+          void recordAgentRun({
+            startedAt: snap.startedAt,
+            status: "success",
+            persona: snap.persona,
+            profile: snap.profile,
+            agentType: "generic",
+            scope: snap.scope,
+            activeFilePath: snap.activeFilePath,
+            vaultPath: snap.vaultPath,
+            userMessage: snap.userMessage,
+            response: text,
+            contextStrategy: snap.strategy,
+            toolCalls: mapParsedToolCalls(toolCalls, snap.activeFilePath),
+            meta,
+          });
+        }
+        activeRunRef.current = null;
 
         // If the action requested an inline insert and the model returned
         // plain text (no tool calls), auto-create a pending insert write so
@@ -225,6 +289,23 @@ export function useAgentRun(ui: AgentRunUi) {
         if (runToken !== runTokenRef.current) return;
         setStreaming(false);
         setError(err.message);
+        const snap = activeRunRef.current;
+        if (snap?.profile) {
+          void recordAgentRun({
+            startedAt: snap.startedAt,
+            status: "error",
+            persona: snap.persona,
+            profile: snap.profile,
+            agentType: "generic",
+            scope: snap.scope,
+            activeFilePath: snap.activeFilePath,
+            vaultPath: snap.vaultPath,
+            userMessage: snap.userMessage,
+            errorMessage: err.message,
+            contextStrategy: snap.strategy,
+          });
+        }
+        activeRunRef.current = null;
       },
     },
     agentFileTools,
@@ -260,6 +341,22 @@ export function useAgentRun(ui: AgentRunUi) {
   ]);
 
   const handleStop = () => {
+    const snap = activeRunRef.current;
+    if (snap?.profile) {
+      void recordAgentRun({
+        startedAt: snap.startedAt,
+        status: "aborted",
+        persona: snap.persona,
+        profile: snap.profile,
+        agentType: "generic",
+        scope: snap.scope,
+        activeFilePath: snap.activeFilePath,
+        vaultPath: snap.vaultPath,
+        userMessage: snap.userMessage,
+        contextStrategy: snap.strategy,
+      });
+    }
+    activeRunRef.current = null;
     runTokenRef.current += 1;
     abortRef.current?.abort();
     setStreaming(false);

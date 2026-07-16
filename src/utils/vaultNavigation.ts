@@ -117,6 +117,34 @@ export function isExternalHttpUrl(href: string): boolean {
   return /^https?:\/\//i.test(href.trim());
 }
 
+/**
+ * Resolve a markdown `href` to an external http(s) URL when possible.
+ * Handles bare domains (`example.com`, `www.example.com/path`) and scheme-relative URLs.
+ */
+export function resolveExternalHref(href: string): string | null {
+  const trimmed = href.trim();
+  if (!trimmed || trimmed === "#") return null;
+  if (isExternalHttpUrl(trimmed)) return trimmed;
+  if (trimmed.startsWith("//")) return `https:${trimmed}`;
+
+  // Avoid treating vault paths, wikilink names, or fragments as external URLs.
+  if (
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../") ||
+    /\.(md|markdown)$/i.test(trimmed) ||
+    trimmed.includes(" ")
+  ) {
+    return null;
+  }
+
+  if (/^[\w-]+(\.[\w-]+)+([\/?#][^\s]*)?$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+
+  return null;
+}
+
 /** Open http(s) URL in the OS default browser (validated in Rust `open_url`). */
 export function openExternalUrl(raw: string): void {
   const url = raw.trim();
@@ -127,8 +155,9 @@ export function openExternalUrl(raw: string): void {
 /** Open external URL, same-page fragment, vault file, or wikilink name. */
 export function followVaultHref(href: string, opts: FollowVaultHrefOptions): void {
   const trimmed = href.trim();
-  if (isExternalHttpUrl(trimmed)) {
-    openExternalUrl(trimmed);
+  const external = resolveExternalHref(trimmed);
+  if (external) {
+    openExternalUrl(external);
     return;
   }
   if (!trimmed || trimmed === "#") return;

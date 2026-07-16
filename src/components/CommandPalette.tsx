@@ -2,7 +2,15 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
+import { usePersonaStore } from "../store/usePersonaStore";
 import { STATUS_COLORS } from "../constants";
+
+interface PaletteAction {
+  id: string;
+  label: string;
+  hint?: string;
+  run: () => void;
+}
 
 interface Props {
   onClose: () => void;
@@ -14,17 +22,102 @@ export default function CommandPalette({ onClose }: Props) {
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const noteIndex   = useStore((s) => s.noteIndex);
+  const noteIndex = useStore((s) => s.noteIndex);
   const setActiveFile = useStore((s) => s.setActiveFile);
+  const setEditorTab = useStore((s) => s.setEditorTab);
+  const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
+  const setSidebarView = useStore((s) => s.setSidebarView);
+  const openSettings = usePersonaStore((s) => s.openSettings);
 
-  // Unique statuses present in the index (for filter chips)
+  const commandMode = query.startsWith(">");
+
+  const actions: PaletteAction[] = useMemo(
+    () => [
+      {
+        id: "planner",
+        label: "Open Planner",
+        hint: "workspace",
+        run: () => {
+          setEditorTab("planner");
+          onClose();
+        },
+      },
+      {
+        id: "run-log",
+        label: "Open Agent Run Log",
+        hint: "workspace",
+        run: () => {
+          setEditorTab("agent-history");
+          onClose();
+        },
+      },
+      {
+        id: "export",
+        label: "Export…",
+        run: () => {
+          setPendingMenuAction("export-hub");
+          onClose();
+        },
+      },
+      {
+        id: "settings",
+        label: "Open Settings",
+        hint: "⌘,",
+        run: () => {
+          openSettings();
+          onClose();
+        },
+      },
+      {
+        id: "vault-search",
+        label: "Search Vault",
+        hint: "⌘⇧F",
+        run: () => {
+          setSidebarView("search");
+          onClose();
+        },
+      },
+      {
+        id: "source",
+        label: "Switch to Source",
+        run: () => {
+          setEditorTab("source");
+          onClose();
+        },
+      },
+      {
+        id: "visual",
+        label: "Switch to Visual",
+        run: () => {
+          setEditorTab("visual");
+          onClose();
+        },
+      },
+    ],
+    [onClose, openSettings, setEditorTab, setPendingMenuAction, setSidebarView],
+  );
+
+  const actionQuery = commandMode ? query.slice(1).trim() : "";
+  const actionFuse = useMemo(
+    () =>
+      new Fuse(actions, {
+        keys: ["label", "id"],
+        threshold: 0.4,
+      }),
+    [actions],
+  );
+
+  const filteredActions = useMemo(() => {
+    if (!commandMode) return [];
+    if (!actionQuery) return actions;
+    return actionFuse.search(actionQuery).map((r) => r.item);
+  }, [actionQuery, actionFuse, actions, commandMode]);
+
   const availableStatuses = useMemo(
     () => [...new Set(noteIndex.map((n) => n.status).filter((s): s is string => Boolean(s)))],
     [noteIndex],
   );
 
-  // Build a Fuse instance whenever the note index changes.
-  // Search name AND aliases so alias-named notes are discoverable.
   const fuse = useMemo(
     () =>
       new Fuse<NoteMetadata>(noteIndex, {
@@ -36,34 +129,42 @@ export default function CommandPalette({ onClose }: Props) {
   );
 
   const results: NoteMetadata[] = useMemo(() => {
+    if (commandMode) return [];
     let base: NoteMetadata[];
     if (!query.trim()) {
-      base = noteIndex.slice(0, 50); // wider pool so status filter has something to work with
+      base = noteIndex.slice(0, 50);
     } else {
       base = fuse.search(query).map((r) => r.item);
     }
     if (statusFilter) base = base.filter((n) => n.status === statusFilter);
     return base.slice(0, 12);
-  }, [query, fuse, noteIndex, statusFilter]);
+  }, [query, fuse, noteIndex, statusFilter, commandMode]);
 
-  // Reset selection when the result list changes
-  useEffect(() => setSelectedIdx(0), [results]);
+  const listLength = commandMode ? filteredActions.length : results.length;
 
-  // Focus the input on mount
+  useEffect(() => setSelectedIdx(0), [listLength, commandMode, query, statusFilter]);
+
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
   const openFile = async (note: NoteMetadata) => {
     try {
-      const content = await invoke<string>("get_file_content", {
-        path: note.path,
-      });
+      const content = await invoke<string>("get_file_content", { path: note.path });
       setActiveFile(note.path, content);
       onClose();
     } catch (err) {
       console.error("CommandPalette: failed to open file", err);
     }
+  };
+
+  const activateSelection = () => {
+    if (commandMode) {
+      const action = filteredActions[selectedIdx];
+      if (action) action.run();
+      return;
+    }
+    if (results[selectedIdx]) openFile(results[selectedIdx]);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -74,7 +175,7 @@ export default function CommandPalette({ onClose }: Props) {
         break;
       case "ArrowDown":
         e.preventDefault();
-        setSelectedIdx((i) => Math.min(i + 1, results.length - 1));
+        setSelectedIdx((i) => Math.min(i + 1, Math.max(0, listLength - 1)));
         break;
       case "ArrowUp":
         e.preventDefault();
@@ -82,25 +183,21 @@ export default function CommandPalette({ onClose }: Props) {
         break;
       case "Enter":
         e.preventDefault();
-        if (results[selectedIdx]) openFile(results[selectedIdx]);
+        activateSelection();
         break;
     }
   };
 
   return (
-    /* Backdrop */
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 backdrop-blur-sm pt-20"
       onMouseDown={onClose}
     >
-      {/* Panel — viewport-relative max-h keeps the footer visible on short screens */}
       <div
-        className="flex flex-col w-full max-w-lg rounded-xl border border-border bg-surface-raised shadow-2xl overflow-hidden max-h-[min(36rem,calc(100vh-6rem))]"
+        className="flex max-h-[min(36rem,calc(100vh-6rem))] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-border bg-surface-raised shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* Search input */}
         <div className="flex items-center gap-2 border-b border-border px-4">
-          {/* Search icon */}
           <svg
             width="14"
             height="14"
@@ -121,23 +218,25 @@ export default function CommandPalette({ onClose }: Props) {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search notes…"
+            placeholder="Search notes…  (type > for commands)"
             className="flex-1 bg-transparent py-3 text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
             spellCheck={false}
           />
 
-          <kbd className="shrink-0 rounded bg-surface-base px-1.5 py-0.5 text-[10px] text-text-muted font-mono">
+          <kbd className="shrink-0 rounded bg-surface-base px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
             esc
           </kbd>
         </div>
 
-        {/* Status filter chips */}
-        {availableStatuses.length > 0 && (
+        {!commandMode && availableStatuses.length > 0 && (
           <div className="flex flex-wrap gap-1 border-b border-border px-3 py-1.5">
             {availableStatuses.map((s) => (
               <button
                 key={s}
-                onMouseDown={(e) => { e.preventDefault(); setStatusFilter(statusFilter === s ? null : s); }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setStatusFilter(statusFilter === s ? null : s);
+                }}
                 className={`rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors ${
                   statusFilter === s
                     ? (STATUS_COLORS[s] ?? "text-accent bg-accent/15") + " ring-1 ring-current"
@@ -150,21 +249,44 @@ export default function CommandPalette({ onClose }: Props) {
           </div>
         )}
 
-        {/* Results — flex-1 + min-h-0 so the list fills whatever the panel height allows */}
-        {results.length > 0 ? (
-          <ul className="flex-1 min-h-0 overflow-y-auto p-1">
+        {commandMode ? (
+          filteredActions.length > 0 ? (
+            <ul className="min-h-0 flex-1 overflow-y-auto p-1">
+              {filteredActions.map((action, i) => (
+                <li
+                  key={action.id}
+                  onMouseDown={() => action.run()}
+                  onMouseEnter={() => setSelectedIdx(i)}
+                  className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                    i === selectedIdx
+                      ? "bg-accent/20 text-text-primary"
+                      : "text-text-secondary hover:bg-surface-base"
+                  }`}
+                >
+                  <span className="shrink-0 font-mono text-[10px] text-accent">{">"}</span>
+                  <span className="flex-1 truncate">{action.label}</span>
+                  {action.hint && (
+                    <span className="shrink-0 text-[10px] text-text-muted">{action.hint}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="px-4 py-8 text-center text-sm text-text-muted">No commands match.</div>
+          )
+        ) : results.length > 0 ? (
+          <ul className="min-h-0 flex-1 overflow-y-auto p-1">
             {results.map((note, i) => (
               <li
                 key={note.path}
                 onMouseDown={() => openFile(note)}
                 onMouseEnter={() => setSelectedIdx(i)}
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 cursor-pointer text-sm transition-colors ${
+                className={`flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
                   i === selectedIdx
                     ? "bg-accent/20 text-text-primary"
                     : "text-text-secondary hover:bg-surface-base"
                 }`}
               >
-                {/* File icon */}
                 <svg
                   width="12"
                   height="12"
@@ -181,40 +303,35 @@ export default function CommandPalette({ onClose }: Props) {
                 </svg>
                 <span className="flex-1 truncate">{note.name}</span>
                 {note.status && (
-                  <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${STATUS_COLORS[note.status] ?? "text-text-muted bg-surface-overlay"}`}>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium ${STATUS_COLORS[note.status] ?? "text-text-muted bg-surface-overlay"}`}
+                  >
                     {note.status}
                   </span>
-                )}
-                {i === selectedIdx && (
-                  <kbd className="shrink-0 rounded bg-surface-base px-1.5 py-0.5 text-[10px] text-text-muted font-mono">
-                    ↵
-                  </kbd>
                 )}
               </li>
             ))}
           </ul>
         ) : (
           <div className="px-4 py-8 text-center text-sm text-text-muted">
-            {noteIndex.length === 0
-              ? "No vault open."
-              : `No notes match "${query}"`}
+            {noteIndex.length === 0 ? "No vault open." : `No notes match "${query}"`}
           </div>
         )}
 
-        {/* Footer hint */}
         <div className="flex items-center gap-3 border-t border-border px-4 py-2">
           <span className="text-[10px] text-text-muted">
             <kbd className="font-mono">↑↓</kbd> navigate
           </span>
           <span className="text-[10px] text-text-muted">
-            <kbd className="font-mono">↵</kbd> open
+            <kbd className="font-mono">↵</kbd> {commandMode ? "run" : "open"}
           </span>
           <span className="text-[10px] text-text-muted">
-            <kbd className="font-mono">esc</kbd> close
+            <kbd className="font-mono">{">"}</kbd> commands
           </span>
           <span className="ml-auto text-[10px] text-text-muted">
-            {noteIndex.length} note{noteIndex.length !== 1 ? "s" : ""} indexed
-            {statusFilter && <span className="ml-1 text-accent">· {statusFilter}</span>}
+            {commandMode
+              ? `${filteredActions.length} command${filteredActions.length !== 1 ? "s" : ""}`
+              : `${noteIndex.length} note${noteIndex.length !== 1 ? "s" : ""}`}
           </span>
         </div>
       </div>
