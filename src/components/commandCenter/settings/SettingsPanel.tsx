@@ -7,6 +7,7 @@ import { STICKY_COLOR_PRESETS } from "@/utils/stickyNotes";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { BG_PRESETS } from "../../editor/bgPresets";
 import { SETTINGS_NAV } from "../../settings/settingsNav";
+import { JekyllExportSettings } from "../../settings/JekyllExportSettings";
 import { SettingsTab } from "./SettingsTab";
 
 type StoreSettings = ReturnType<typeof usePersonaStore.getState>["settings"];
@@ -100,6 +101,11 @@ export function SettingsPanel({
             setDefaultProviderProfileId={setDefaultProviderProfileId}
             onUpdateSettings={onUpdateSettings}
           />
+        )}
+        {section === "export" && (
+          <SettingsSection title="Export">
+            <JekyllExportSettings settings={settings} onUpdate={onUpdateSettings} />
+          </SettingsSection>
         )}
         {section === "about" && (
           <SettingsSection title="About Metis">

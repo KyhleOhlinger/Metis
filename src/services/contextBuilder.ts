@@ -405,7 +405,7 @@ async function runScout(
     "Return a JSON array of the filenames most relevant to this task.";
 
   try {
-    const raw = await generateCompletion(
+    const { text: raw } = await generateCompletion(
       profile,
       scoutModel,
       SCOUT_SYSTEM_PROMPT,

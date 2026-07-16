@@ -82,9 +82,33 @@ function mapStaticToolCalls(
   }));
 }
 
+export interface LlmRunUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface LlmCompletionMeta {
+  durationMs: number;
+  usage?: LlmRunUsage;
+}
+
+function mapSdkUsage(usage: {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+} | undefined): LlmRunUsage | undefined {
+  if (!usage) return undefined;
+  const promptTokens = usage.inputTokens ?? 0;
+  const completionTokens = usage.outputTokens ?? 0;
+  const totalTokens = usage.totalTokens ?? promptTokens + completionTokens;
+  if (totalTokens <= 0) return undefined;
+  return { promptTokens, completionTokens, totalTokens };
+}
+
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
-  onDone: (fullText: string, toolCalls: ParsedToolCall[]) => void;
+  onDone: (fullText: string, toolCalls: ParsedToolCall[], meta: LlmCompletionMeta) => void;
   onError: (error: Error) => void;
 }
 
@@ -104,6 +128,7 @@ export function streamResponse(
   const userPayload = `${contextBlock}${userMessage}`;
 
   void (async () => {
+    const startedAt = Date.now();
     try {
       const result = streamText({
         model: resolveLanguageModel(profile, persona.model),
@@ -122,7 +147,11 @@ export function streamResponse(
       if (!controller.signal.aborted) {
         const fullText = await result.text;
         const staticCalls = await result.staticToolCalls;
-        callbacks.onDone(fullText, mapStaticToolCalls(staticCalls));
+        const usage = mapSdkUsage(await result.usage);
+        callbacks.onDone(fullText, mapStaticToolCalls(staticCalls), {
+          durationMs: Date.now() - startedAt,
+          usage,
+        });
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -142,15 +171,22 @@ export async function generateCompletion(
   prompt: string,
   maxOutputTokens = 256,
   abortSignal?: AbortSignal,
-): Promise<string> {
-  const { text } = await generateText({
+): Promise<{ text: string; meta: LlmCompletionMeta }> {
+  const startedAt = Date.now();
+  const result = await generateText({
     model: resolveLanguageModel(profile, modelId),
     system,
     prompt,
     maxOutputTokens,
     abortSignal,
   });
-  return text;
+  return {
+    text: result.text,
+    meta: {
+      durationMs: Date.now() - startedAt,
+      usage: mapSdkUsage(result.usage),
+    },
+  };
 }
 
 /** Vision transcription for handwriting OCR. */
@@ -160,8 +196,9 @@ export async function generateVisionCompletion(
   userText: string,
   imageBase64: string,
   mimeType: string,
-): Promise<string> {
-  const { text } = await generateText({
+): Promise<{ text: string; meta: LlmCompletionMeta }> {
+  const startedAt = Date.now();
+  const result = await generateText({
     model: resolveLanguageModel(profile, persona.model),
     system: persona.systemPrompt,
     messages: [
@@ -175,7 +212,13 @@ export async function generateVisionCompletion(
     ],
     maxOutputTokens: 8192,
   });
-  return text.trim();
+  return {
+    text: result.text.trim(),
+    meta: {
+      durationMs: Date.now() - startedAt,
+      usage: mapSdkUsage(result.usage),
+    },
+  };
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────

@@ -10,6 +10,9 @@ import { usePersonaStore } from "./store/usePersonaStore";
 import CommandPalette from "./components/CommandPalette";
 import ConvertVaultModal from "./components/ConvertVaultModal";
 import ExportPdfModal from "./components/ExportPdfModal";
+import ExportHubModal from "./components/ExportHubModal";
+import ConvertToJekyllModal from "./components/ConvertToJekyllModal";
+import ToastHost from "./components/ToastHost";
 import { useStore, VaultData } from "./store/useStore";
 import { useMenuEvents } from "./hooks/useMenuEvents";
 import { LAST_VAULT_KEY } from "./constants";
@@ -97,6 +100,8 @@ export default function App() {
   const refreshVault = useStore((s) => s.refreshVault);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exportPdfOpen, setExportPdfOpen] = useState(false);
+  const [exportHubOpen, setExportHubOpen] = useState(false);
+  const [jekyllExportPath, setJekyllExportPath] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [ccOpen, setCcOpen] = useState(true);
 
@@ -221,8 +226,25 @@ export default function App() {
   }, []);
 
   const openExportPdf = useCallback(() => setExportPdfOpen(true), []);
-
   useMenuEvents({ toggleSidebar, togglePanel, openDailyNote, onExportPdf: openExportPdf, onForeignVault });
+
+  const pendingMenuAction = useStore((s) => s.pendingMenuAction);
+  const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
+
+  useEffect(() => {
+    if (!pendingMenuAction) return;
+    switch (pendingMenuAction) {
+      case "open-palette":
+        setPaletteOpen(true);
+        break;
+      case "export-hub":
+        setExportHubOpen(true);
+        break;
+      default:
+        return;
+    }
+    setPendingMenuAction(null);
+  }, [pendingMenuAction, setPendingMenuAction]);
 
   // Vault restoration — runs whenever vaultPath is null (initial load or HMR).
   //
@@ -352,10 +374,23 @@ export default function App() {
   return (
     <AppErrorBoundary>
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base text-text-primary">
+      <ToastHost />
       <SettingsModal />
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       {exportPdfOpen && vaultPath && (
         <ExportPdfModal onClose={() => setExportPdfOpen(false)} />
+      )}
+      {exportHubOpen && vaultPath && (
+        <ExportHubModal
+          onClose={() => setExportHubOpen(false)}
+          onJekyllExport={(path) => setJekyllExportPath(path)}
+        />
+      )}
+      {jekyllExportPath && (
+        <ConvertToJekyllModal
+          notePath={jekyllExportPath}
+          onClose={() => setJekyllExportPath(null)}
+        />
       )}
 
       {/* Vault conversion prompt — shown when a non-Metis folder is opened */}

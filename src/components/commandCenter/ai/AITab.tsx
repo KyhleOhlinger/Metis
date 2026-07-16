@@ -297,6 +297,14 @@ export function AITab({
         })()}
         <div className="flex items-center gap-1">
           <button
+            type="button"
+            onClick={() => useStore.getState().setEditorTab("agent-history")}
+            title="Open agent run log in main view"
+            className="rounded-full px-2 py-0.5 text-[11px] text-text-muted hover:bg-surface-overlay hover:text-accent transition-colors"
+          >
+            Run log ↗
+          </button>
+          <button
             onClick={onNewPersona}
             title="New persona"
             className="rounded-full px-2 py-0.5 text-[11px] text-text-muted hover:bg-surface-overlay hover:text-text-primary transition-colors"
@@ -589,17 +597,28 @@ export function AITab({
       </div>
 
       {/* ── History ────────────────────────────────────────────────── */}
-      {history.length > 0 && (
-        <div className="shrink-0 border-t border-border">
+      <div className="shrink-0 border-t border-border">
+        <div className="flex items-center justify-between px-3 py-1.5">
           <button
             onClick={() => setShowHistory((v) => !v)}
-            className="flex w-full items-center justify-between px-3 py-1.5 text-[10px] text-text-muted hover:text-text-primary transition-colors"
+            className="flex flex-1 items-center justify-between text-[10px] text-text-muted hover:text-text-primary transition-colors"
           >
-            <span className="font-semibold uppercase tracking-widest">History ({history.length})</span>
+            <span className="font-semibold uppercase tracking-widest">
+              History ({history.length})
+            </span>
             <span>{showHistory ? "▾" : "▸"}</span>
           </button>
-          {showHistory && (
-            <div className="max-h-48 overflow-y-auto px-2 pb-2 space-y-1">
+          <button
+            type="button"
+            onClick={() => useStore.getState().setEditorTab("agent-history")}
+            className="ml-2 shrink-0 text-[10px] text-accent hover:underline"
+            title="Open full run log in main view"
+          >
+            Run log ↗
+          </button>
+        </div>
+        {history.length > 0 && showHistory && (
+          <div className="max-h-48 overflow-y-auto px-2 pb-2 space-y-1">
               {history.slice(0, 10).map((h) => (
                 <button
                   key={h.id}
@@ -624,9 +643,8 @@ export function AITab({
                 Clear history
               </button>
             </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

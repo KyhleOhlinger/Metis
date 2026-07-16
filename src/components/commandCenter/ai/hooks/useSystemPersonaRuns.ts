@@ -13,6 +13,9 @@ import {
 } from "@/systemPersonas/taskManagerContext";
 import { transcribeHandwritingImage } from "@/services/ocrService";
 import {
+  recordAgentRun,
+} from "@/services/agentRunLogService";
+import {
   buildHandwritingNoteMarkdown,
   collectHandwritingImages,
   mimeTypeForImagePath,
@@ -91,6 +94,7 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
   setStatusMsg("");
   setStrategy({ type: "single-file", chars: orphanContext.length });
 
+  const startedAt = Date.now();
   const trigger =
     "Analyse the vault link graph above. Provide your full Librarian report: " +
     "list every orphaned note, suggest specific [[wikilinks]] to fix each one, " +
@@ -103,8 +107,22 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
     profile,
     {
       onChunk: (chunk) => setResponse((prev) => prev + chunk),
-      onDone: (text) => {
+      onDone: (text, _toolCalls, meta) => {
         setStreaming(false);
+        void recordAgentRun({
+          startedAt,
+          status: "success",
+          persona: activePersona,
+          profile,
+          agentType: "librarian",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: trigger,
+          response: text,
+          contextStrategy: { type: "single-file", chars: orphanContext.length },
+          meta,
+        });
         onAddHistory({
           id: `h-${Date.now()}`,
           timestamp: Date.now(),
@@ -117,11 +135,24 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
       onError: (err) => {
         setStreaming(false);
         setError(err.message);
+        void recordAgentRun({
+          startedAt,
+          status: "error",
+          persona: activePersona,
+          profile,
+          agentType: "librarian",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: trigger,
+          errorMessage: err.message,
+          contextStrategy: { type: "single-file", chars: orphanContext.length },
+        });
       },
     },
   );
   abortRef.current = controller;
-}, [activePersona, hasApiKey, streaming, settings, onAddHistory]);
+}, [activePersona, hasApiKey, streaming, settings, onAddHistory, vaultPath]);
 
 // ── Task Manager: vault-wide task scan + todo.md auto-write ────────────────
 const handleTaskScan = useCallback(async () => {
@@ -157,6 +188,7 @@ const handleTaskScan = useCallback(async () => {
   setStatusMsg("");
   setStrategy({ type: "single-file", chars: taskContext.length });
 
+  const startedAt = Date.now();
   const trigger =
     "Using only the incomplete open tasks listed above, produce the complete contents of todo.md. " +
     "Do not include completed/checked items. " +
@@ -170,7 +202,7 @@ const handleTaskScan = useCallback(async () => {
     profile,
     {
       onChunk: (chunk) => setResponse((prev) => prev + chunk),
-      onDone: async (text) => {
+      onDone: async (text, _toolCalls, meta) => {
         setStreaming(false);
         // Auto-write the result to summaries/todo.md using agent_write_note
         if (vaultPath && text.trim()) {
@@ -183,6 +215,20 @@ const handleTaskScan = useCallback(async () => {
             setStatusMsg(`Could not write todo.md: ${String(e)}`);
           }
         }
+        void recordAgentRun({
+          startedAt,
+          status: "success",
+          persona: activePersona,
+          profile,
+          agentType: "task-scan",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: trigger,
+          response: text,
+          contextStrategy: { type: "single-file", chars: taskContext.length },
+          meta,
+        });
         onAddHistory({
           id: `h-${Date.now()}`,
           timestamp: Date.now(),
@@ -195,6 +241,19 @@ const handleTaskScan = useCallback(async () => {
       onError: (err) => {
         setStreaming(false);
         setError(err.message);
+        void recordAgentRun({
+          startedAt,
+          status: "error",
+          persona: activePersona,
+          profile,
+          agentType: "task-scan",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: trigger,
+          errorMessage: err.message,
+          contextStrategy: { type: "single-file", chars: taskContext.length },
+        });
       },
     },
   );
@@ -211,6 +270,7 @@ const handleTaskSync = useCallback(async () => {
   setPendingWrites([]);
   setStatusMsg("Syncing todo.md with source notes…");
   setStreaming(true);
+  const startedAt = Date.now();
 
   const todoPath = `${vaultPath}/summaries/todo.md`;
   const { noteIndex } = useStore.getState();
@@ -258,12 +318,52 @@ const handleTaskSync = useCallback(async () => {
       `- Wrote: summaries/todo.md`,
     );
     setStatusMsg("✓ Vault task sync complete");
+    if (activePersona) {
+      const profile = selectProfileForPersona(
+        { ...usePersonaStore.getState(), settings },
+        activePersona,
+      );
+      if (profile) {
+        void recordAgentRun({
+          startedAt,
+          status: "success",
+          persona: activePersona,
+          profile,
+          agentType: "task-sync",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: "Task sync (todo.md ↔ source notes)",
+          response: `Updated ${updatedNotes} note(s); synced ${tasksByNote.length} task note(s).`,
+        });
+      }
+    }
   } catch (e) {
     setError(`Task sync failed: ${String(e)}`);
+    if (activePersona) {
+      const profile = selectProfileForPersona(
+        { ...usePersonaStore.getState(), settings },
+        activePersona,
+      );
+      if (profile) {
+        void recordAgentRun({
+          startedAt,
+          status: "error",
+          persona: activePersona,
+          profile,
+          agentType: "task-sync",
+          scope: { type: "full-vault" },
+          activeFilePath: null,
+          vaultPath,
+          userMessage: "Task sync (todo.md ↔ source notes)",
+          errorMessage: String(e),
+        });
+      }
+    }
   } finally {
     setStreaming(false);
   }
-  }, [streaming, vaultPath]);
+  }, [streaming, vaultPath, activePersona, settings]);
 
   const runHandwritingOcr = useCallback(
   async (mode: "pending" | "all") => {
@@ -305,9 +405,14 @@ const handleTaskSync = useCallback(async () => {
     setStrategy(null);
     setPendingWrites([]);
     setStreaming(true);
+    const startedAt = Date.now();
+    const ocrTrigger = `Handwriting OCR (${mode}): ${images.length} image(s)`;
 
     const lines: string[] = [];
     const diskWrites: DiskWrite[] = [];
+    let totalDurationMs = 0;
+    let totalPrompt = 0;
+    let totalCompletion = 0;
 
     try {
       for (let i = 0; i < images.length; i++) {
@@ -333,6 +438,14 @@ const handleTaskSync = useCallback(async () => {
         if (!result.ok) {
           lines.push(`✗ ${img.fileName}: ${result.error}`);
           continue;
+        }
+
+        if (result.meta) {
+          totalDurationMs += result.meta.durationMs;
+          if (result.meta.usage) {
+            totalPrompt += result.meta.usage.promptTokens;
+            totalCompletion += result.meta.usage.completionTokens;
+          }
         }
 
         const content = buildHandwritingNoteMarkdown(
@@ -364,11 +477,46 @@ const handleTaskSync = useCallback(async () => {
         timestamp: Date.now(),
         personaId: activePersona.id,
         scope: { type: "specific-folder", folderPath: `${vaultPath}/handwritten` },
-        userMessage: `Handwriting OCR (${mode}): ${images.length} image(s)`,
+        userMessage: ocrTrigger,
         response: lines.join("\n"),
+      });
+      void recordAgentRun({
+        startedAt,
+        status: "success",
+        persona: activePersona,
+        profile,
+        agentType: "handwriting-ocr",
+        scope: { type: "specific-folder", folderPath: `${vaultPath}/handwritten` },
+        activeFilePath: null,
+        vaultPath,
+        userMessage: ocrTrigger,
+        response: lines.join("\n"),
+        meta: {
+          durationMs: totalDurationMs || Date.now() - startedAt,
+          usage:
+            totalPrompt + totalCompletion > 0
+              ? {
+                  promptTokens: totalPrompt,
+                  completionTokens: totalCompletion,
+                  totalTokens: totalPrompt + totalCompletion,
+                }
+              : undefined,
+        },
       });
     } catch (e) {
       setError(`Handwriting OCR failed: ${String(e)}`);
+      void recordAgentRun({
+        startedAt,
+        status: "error",
+        persona: activePersona,
+        profile,
+        agentType: "handwriting-ocr",
+        scope: { type: "specific-folder", folderPath: `${vaultPath}/handwritten` },
+        activeFilePath: null,
+        vaultPath,
+        userMessage: ocrTrigger,
+        errorMessage: String(e),
+      });
     } finally {
       setStreaming(false);
     }

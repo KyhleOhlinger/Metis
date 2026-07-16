@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Kyhle Öhlinger. Licensed under the MIT License.
 
 mod ai_context;
+mod agent_run_log;
 mod conversion;
 mod menu;
 mod search;
@@ -13,6 +14,8 @@ mod types;
 mod vault_fs;
 mod watcher;
 
+use tauri::Manager;
+
 pub use state::{CurrentVault, WatcherState};
 
 pub fn run() {
@@ -24,6 +27,18 @@ pub fn run() {
         .setup(|app| {
             let menu = menu::build_menu(app.handle())?;
             app.set_menu(menu)?;
+
+            if app.get_webview_window("main").is_none() {
+                tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("index.html".into()))
+                    .title("Metis")
+                    .inner_size(1400.0, 900.0)
+                    .min_inner_size(580.0, 480.0)
+                    .resizable(true)
+                    .decorations(true)
+                    .on_navigation(shell::allow_in_app_webview_navigation)
+                    .build()?;
+            }
+
             Ok(())
         })
         .on_menu_event(menu::handle_menu_event)
@@ -40,6 +55,9 @@ pub fn run() {
             settings::save_settings,
             settings::get_app_version,
             settings::get_planner_storage_dir,
+            agent_run_log::load_agent_run_log,
+            agent_run_log::append_agent_run_log,
+            agent_run_log::clear_agent_run_log,
             ai_context::get_file_summaries,
             ai_context::get_files_content,
             ai_context::get_folder_md_contents,

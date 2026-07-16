@@ -221,6 +221,7 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
                 .inner_size(960.0, 720.0)
                 .min_inner_size(600.0, 480.0)
                 .resizable(true)
+                .on_navigation(crate::shell::allow_in_app_webview_navigation)
                 .build();
             }
             return;

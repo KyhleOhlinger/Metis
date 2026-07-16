@@ -21,9 +21,9 @@ import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
 import {
   followVaultHref,
-  isExternalHttpUrl,
   openExternalUrl,
   openNoteByWikilinkNameFromStore,
+  resolveExternalHref,
   revealPlatformLabel,
 } from "@/utils/vaultNavigation";
 import {
@@ -294,7 +294,7 @@ function resolveImageSrc(rawSrc: string, activeFilePath: string, vaultPath: stri
 
 function sourceLinkMenuItems(href: string, fileDir: string, vaultPath: string) {
   const trimmed = href.trim();
-  const label = /^https?:\/\//i.test(trimmed) ? "Open Link" : "Open Note";
+  const label = resolveExternalHref(trimmed) ? "Open Link" : "Open Note";
   return [
     {
       label,
@@ -1153,10 +1153,10 @@ const plannerLinkClickHandler = EditorView.domEventHandlers({
 
     const el = event.target as HTMLElement;
     const collapsedHref = el.closest("[data-md-link-href]")?.getAttribute("data-md-link-href")?.trim();
-    if (collapsedHref && isExternalHttpUrl(collapsedHref)) {
+    if (collapsedHref && resolveExternalHref(collapsedHref)) {
       event.preventDefault();
       event.stopPropagation();
-      openExternalUrl(collapsedHref);
+      openExternalUrl(resolveExternalHref(collapsedHref)!);
       return true;
     }
 
@@ -1173,10 +1173,11 @@ const plannerLinkClickHandler = EditorView.domEventHandlers({
       const end = start + m[0].length;
       if (col < start || col > end) continue;
       const href = m[2].trim();
-      if (!isExternalHttpUrl(href)) return false;
+      const external = resolveExternalHref(href);
+      if (!external) return false;
       event.preventDefault();
       event.stopPropagation();
-      openExternalUrl(href);
+      openExternalUrl(external);
       return true;
     }
 

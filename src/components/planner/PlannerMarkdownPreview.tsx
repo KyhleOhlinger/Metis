@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
+import { useShallow } from "zustand/react/shallow";
+import { useStore } from "../../store/useStore";
 import { parseMarkdownToHtml } from "../../utils/markdownHtml";
-import { isExternalHttpUrl, openExternalUrl } from "../../utils/vaultNavigation";
+import { bindPreviewAnchorHandlers } from "../../utils/previewLinkHandlers";
+import type { PreviewAnchorContext } from "../../utils/previewLinkHandlers";
 
 interface Props {
   content: string;
@@ -24,6 +27,25 @@ export default function PlannerMarkdownPreview({
   onClick,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const ctxRef = useRef<PreviewAnchorContext>({
+    fileDir: "",
+    vaultPath: "",
+  });
+
+  const { vaultPath, noteIndex, setActiveFile } = useStore(
+    useShallow((s) => ({
+      vaultPath: s.vaultPath ?? "",
+      noteIndex: s.noteIndex,
+      setActiveFile: s.setActiveFile,
+    })),
+  );
+
+  ctxRef.current = {
+    fileDir: vaultPath,
+    vaultPath,
+    noteIndex,
+    setActiveFile,
+  };
 
   const html = useMemo(
     () =>
@@ -38,21 +60,7 @@ export default function PlannerMarkdownPreview({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-
-    const onClick = (e: MouseEvent) => {
-      const a = (e.target as HTMLElement).closest("a") as HTMLAnchorElement | null;
-      if (!a || !root.contains(a)) return;
-
-      const href = a.getAttribute("href") ?? "";
-      if (!isExternalHttpUrl(href)) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-      openExternalUrl(href);
-    };
-
-    root.addEventListener("click", onClick, true);
-    return () => root.removeEventListener("click", onClick, true);
+    return bindPreviewAnchorHandlers(root, () => ctxRef.current);
   }, []);
 
   const sizeStyle = fillHeight
@@ -64,7 +72,10 @@ export default function PlannerMarkdownPreview({
       ref={rootRef}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
+      onClick={(e) => {
+        if ((e.target as HTMLElement).closest("a")) return;
+        onClick?.();
+      }}
       onKeyDown={
         onClick
           ? (e) => {

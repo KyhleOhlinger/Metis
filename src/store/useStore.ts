@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { buildBacklinkIndex } from "../utils/linkGraph";
 import { pathsEqual } from "../utils/paths";
 import type { PlannerNavigateTarget } from "./plannerNavigation";
 
@@ -273,9 +274,16 @@ interface MetisState {
   /** Vault-relative default folder for pasted/saved images. */
   defaultImageFolder: string;
 
+  /** Incoming wikilink map: target note path → source note paths. */
+  backlinkIndex: Record<string, string[]>;
+
+  /** Auto-save / manual save feedback for the editor header. */
+  saveStatus: "idle" | "saving" | "saved" | "error";
+  saveError: string | null;
+
   // UI state shared between menu events and components
   /** Which editor tab is active.  Lifted here so the native menu can switch it. */
-  editorTab: "source" | "visual" | "planner";
+  editorTab: "source" | "visual" | "planner" | "agent-history";
   /**
    * A pending action dispatched by the native menu bar.
    * Components watch this via useEffect, execute the action, then clear it by
@@ -293,7 +301,7 @@ interface MetisState {
   plannerNavigateTo: PlannerNavigateTarget | null;
 
   // Actions
-  setEditorTab: (tab: "source" | "visual" | "planner") => void;
+  setEditorTab: (tab: "source" | "visual" | "planner" | "agent-history") => void;
   setPendingMenuAction: (action: string | null) => void;
   setSidebarView: (view: "files" | "search") => void;
   setVault: (data: VaultData) => void;
@@ -314,6 +322,7 @@ interface MetisState {
   clearSelection: () => void;
   setActiveFolderPath: (path: string | null) => void;
   markSaved: () => void;
+  setSaveStatus: (status: MetisState["saveStatus"], error?: string | null) => void;
   clearVault: () => void;
   /** Persist vault-relative default image folder (e.g. `assets`). */
   setDefaultImageFolder: (relativeDir: string) => Promise<void>;
@@ -340,6 +349,9 @@ export const useStore = create<MetisState>((set, get) => ({
   noteIndex: [],
   assetIndex: [],
   defaultImageFolder: "assets",
+  backlinkIndex: {},
+  saveStatus: "idle",
+  saveError: null,
   editorTab: "source",
   pendingMenuAction: null,
   sidebarView: "files",
@@ -364,6 +376,9 @@ export const useStore = create<MetisState>((set, get) => ({
       defaultImageFolder: data.default_image_dir ?? "assets",
       noteIndex,
       assetIndex,
+      backlinkIndex: {},
+      saveStatus: "idle",
+      saveError: null,
       activeFilePath: null,
       activeFileContent: "",
       isDirty: false,
@@ -413,6 +428,7 @@ export const useStore = create<MetisState>((set, get) => ({
     /** One `get_file_contents_batch` IPC per slice (max 100 paths); falls back to per-file reads if the command fails. */
     const BATCH = 100;
     const updatedByPath = new Map(noteIndex.map((n) => [n.path, n]));
+    const contentsByPath = new Map<string, string>();
     for (let i = 0; i < noteIndex.length; i += BATCH) {
       // Abort stale enrichment runs after a vault switch.
       if (get().vaultPath !== runVaultPath) return;
@@ -432,15 +448,24 @@ export const useStore = create<MetisState>((set, get) => ({
 
       contents.forEach((content, j) => {
         const path = slice[j].path;
+        contentsByPath.set(path, content);
         const existing = updatedByPath.get(path);
         if (!existing) return;
         updatedByPath.set(path, applyMeta(existing, parseNoteMeta(content)));
       });
     }
+
+    const backlinkMap = buildBacklinkIndex(noteIndex, contentsByPath, runVaultPath);
+    const backlinkIndex: Record<string, string[]> = {};
+    for (const [path, sources] of backlinkMap) {
+      backlinkIndex[path] = sources;
+    }
+
     set((s) => {
       if (s.vaultPath !== runVaultPath) return s;
       return {
         noteIndex: s.noteIndex.map((n) => updatedByPath.get(n.path) ?? n),
+        backlinkIndex,
       };
     });
   },
@@ -452,8 +477,11 @@ export const useStore = create<MetisState>((set, get) => ({
       activeFilePath: path,
       activeFileContent: content,
       isDirty: false,
-      // If the planner is visible and the user opens a note, return to source mode.
-      editorTab: s.editorTab === "planner" ? "source" : s.editorTab,
+      // If a workspace view is visible and the user opens a note, return to source mode.
+      editorTab:
+        s.editorTab === "planner" || s.editorTab === "agent-history"
+          ? "source"
+          : s.editorTab,
       noteIndex: s.noteIndex.map((n) =>
         n.path === path ? applyMeta(n, meta) : n,
       ),
@@ -468,6 +496,7 @@ export const useStore = create<MetisState>((set, get) => ({
     set((s) => ({
       activeFileContent: content,
       isDirty: true,
+      saveStatus: "idle",
       noteIndex: meta && path
         ? s.noteIndex.map((n) => (n.path === path ? applyMeta(n, meta) : n))
         : s.noteIndex,
@@ -482,7 +511,10 @@ export const useStore = create<MetisState>((set, get) => ({
 
   setActiveFolderPath: (path) => set({ activeFolderPath: path }),
 
-  markSaved: () => set({ isDirty: false }),
+  markSaved: () => set({ isDirty: false, saveStatus: "saved", saveError: null }),
+
+  setSaveStatus: (status, error = null) =>
+    set({ saveStatus: status, saveError: error ?? null }),
 
   setDefaultImageFolder: async (relativeDir) => {
     const { vaultPath } = get();
@@ -520,6 +552,9 @@ export const useStore = create<MetisState>((set, get) => ({
       activeFolderPath: null,
       noteIndex: [],
       assetIndex: [],
+      backlinkIndex: {},
+      saveStatus: "idle",
+      saveError: null,
       pendingMenuAction: null,
       sidebarView: "files",
       editorNavigateTo: null,

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { FoldVertical, UnfoldVertical, Search, Image, Copy, FileDown } from "lucide-react";
+import { FoldVertical, UnfoldVertical, Search, Image, Copy, FileDown, FileOutput } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, FileNode, VaultData } from "../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../store/usePersonaStore";
@@ -10,8 +10,10 @@ import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
 import { collectImagePathsFromMarkdown } from "../utils/noteImages";
 import { exportNotesToPdf } from "../services/pdfExportService";
+import ConvertToJekyllModal from "./ConvertToJekyllModal";
 import { isVaultImageFile } from "../utils/vaultImages";
 import { isPinnedSpaceName } from "../constants/vaultSpaces";
+import { appConfirm, toastError, toastInfo, toastSuccess } from "../store/useToastStore";
 
 // ── Daily Note helper ─────────────────────────────────────────────────────────
 
@@ -206,6 +208,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
   const [isRenaming, setIsRenaming] = useState(false);
   const [creatingInside, setCreatingInside] = useState<"note" | "folder" | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [jekyllModalOpen, setJekyllModalOpen] = useState(false);
 
   const {
     activeFilePath, setActiveFile, isDirty, markSaved,
@@ -253,7 +256,12 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
     setActiveFolderPath(parent || vaultPath);
 
     if (isDirty && activeFilePath) {
-      if (!window.confirm("You have unsaved changes. Discard and switch?")) return;
+      const discard = await appConfirm("You have unsaved changes. Discard and switch?", {
+        title: "Unsaved changes",
+        confirmLabel: "Discard",
+        danger: true,
+      });
+      if (!discard) return;
       markSaved();
     }
 
@@ -325,7 +333,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           try {
             await setDefaultImageFolder(vaultRelativePath);
           } catch (err) {
-            alert(String(err));
+            toastError(String(err));
           }
         },
       });
@@ -336,7 +344,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           try {
             await exportNotesToPdf({ scope: "folder", folderPath: node.path });
           } catch (err) {
-            alert(String(err));
+            toastError(String(err));
           }
         },
       });
@@ -353,7 +361,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       label: "Reveal in Finder",
       onClick: () => {
         invoke("reveal_in_finder", { path: node.path, vaultPath }).catch((e) =>
-          alert(String(e)),
+          toastError(String(e)),
         );
       },
     });
@@ -368,15 +376,25 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
 
     if (isNote) {
       items.push({
+        label: "Export…",
+        icon: <FileDown className="h-3.5 w-3.5" />,
+        onClick: () => useStore.getState().setPendingMenuAction("export-hub"),
+      });
+      items.push({
         label: "Export PDF…",
         icon: <FileDown className="h-3.5 w-3.5" />,
         onClick: async () => {
           try {
             await exportNotesToPdf({ scope: "file", filePath: node.path });
           } catch (err) {
-            alert(String(err));
+            toastError(String(err));
           }
         },
+      });
+      items.push({
+        label: "Convert to Jekyll…",
+        icon: <FileOutput className="h-3.5 w-3.5" />,
+        onClick: () => setJekyllModalOpen(true),
       });
       items.push({
         label: "Copy Images to Folder…",
@@ -391,7 +409,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
               assetIndex,
             );
             if (!imagePaths.length) {
-              alert("No local images found in this note.");
+              toastInfo("No local images found in this note.");
               return;
             }
             const destDir = await invoke<string | null>("pick_folder");
@@ -400,10 +418,10 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
               sourcePaths: imagePaths,
               destDir,
             });
-            alert(`Copied ${copied} image${copied === 1 ? "" : "s"}.`);
+            toastSuccess(`Copied ${copied} image${copied === 1 ? "" : "s"}.`);
             await refreshVault();
           } catch (err) {
-            alert(String(err));
+            toastError(String(err));
           }
         },
       });
@@ -437,7 +455,15 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           : isNote
             ? "note"
             : "file";
-        if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return;
+        if (
+          !(await appConfirm(`Delete this ${label}? This cannot be undone.`, {
+            title: "Delete",
+            confirmLabel: "Delete",
+            danger: true,
+          }))
+        ) {
+          return;
+        }
         try {
           await invoke("delete_path", { path: node.path, vaultPath });
           if (
@@ -453,7 +479,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
             setActiveFolderPath(vaultPath);
           }
           await refreshVault();
-        } catch (err) { alert(String(err)); }
+        } catch (err) { toastError(String(err)); }
       },
     });
 
@@ -475,7 +501,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
         await refreshVault();
         setActiveFolderPath(node.path + "/" + name);
       }
-    } catch (err) { alert(String(err)); }
+    } catch (err) { toastError(String(err)); }
   };
 
   const handleRenameConfirm = async (newName: string) => {
@@ -485,7 +511,7 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
       if (activeFilePath === node.path) useStore.setState({ activeFilePath: newPath });
       if (activeFolderPath === node.path) setActiveFolderPath(newPath);
       await refreshVault();
-    } catch (err) { alert(String(err)); }
+    } catch (err) { toastError(String(err)); }
   };
 
   const paddingLeft = `${(depth + 1) * 12}px`;
@@ -637,6 +663,13 @@ function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTreeNodePro
           y={contextMenu.y}
           items={buildMenu()}
           onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {jekyllModalOpen && (
+        <ConvertToJekyllModal
+          notePath={node.path}
+          onClose={() => setJekyllModalOpen(false)}
         />
       )}
     </div>
@@ -796,7 +829,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
       try {
         await invoke("move_path", { src: drag.srcPath, destDir: destPath, vaultPath });
       } catch (err) {
-        alert(String(err));
+        toastError(String(err));
       } finally {
         // Always re-sync to ensure paths are canonical
         await refreshVault();
@@ -854,7 +887,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
         await invoke<string>("create_folder", { parentPath: root, name });
         await refreshVault();
       }
-    } catch (err) { alert(String(err)); }
+    } catch (err) { toastError(String(err)); }
   };
 
   // ── Collapsed state — icon strip ────────────────────────────────────────────

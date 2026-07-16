@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, type FileNode } from "@/store/useStore";
+import { usePersonaStore } from "@/store/usePersonaStore";
+import { toastError } from "@/store/useToastStore";
 import { listVaultFolderOptions } from "@/utils/noteImages";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { KV, Section } from "../shared/ui";
@@ -29,6 +31,7 @@ export function InfoTab({
       setDefaultImageFolder: s.setDefaultImageFolder,
     })),
   );
+  const settings = usePersonaStore((s) => s.settings);
   const [plannerStorageDir, setPlannerStorageDir] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export function InfoTab({
                   try {
                     await setDefaultImageFolder(e.target.value);
                   } catch (err) {
-                    alert(String(err));
+                    toastError(String(err));
                   }
                 }}
                 className="mt-1 w-full rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
@@ -79,6 +82,25 @@ export function InfoTab({
             </div>
           )}
         </Section>
+        {vaultPath && (
+          <Section title="Export">
+            <KV
+              label="Jekyll blog"
+              value={settings.jekyllBlogRoot?.split("/").pop() ?? "Not set"}
+              mono
+            />
+            <button
+              type="button"
+              onClick={() => usePersonaStore.getState().openSettings("export")}
+              className="mt-2 text-[10px] text-accent hover:underline"
+            >
+              Configure export settings (⌘,)
+            </button>
+            <p className="mt-1 text-[9px] text-text-muted">
+              Right-click a note or use Export… from the command palette ({">"} export).
+            </p>
+          </Section>
+        )}
         <Section title="Planner">
           <KV label="Path" value={plannerStorageDir ?? "—"} mono />
         </Section>

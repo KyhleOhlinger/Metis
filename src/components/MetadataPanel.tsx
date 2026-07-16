@@ -21,6 +21,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
+import { backlinkLabels } from "../utils/linkGraph";
 import { STATUS_COLORS } from "../constants";
 
 // ── Smart-field constants ─────────────────────────────────────────────────────
@@ -167,10 +168,21 @@ interface Props {
   onLinkClick?: (name: string) => void;
 }
 
+function metadataPanelDefaultOpen(): boolean {
+  try {
+    const v = localStorage.getItem("metis_metadata_open");
+    if (v === "false") return false;
+    if (v === "true") return true;
+  } catch {
+    /* ignore */
+  }
+  return true;
+}
+
 export default function MetadataPanel({ content, filePath, onContentChange, onLinkClick }: Props) {
-  const [open, setOpen] = useState(false);
-  const { refreshVault, vaultPath } = useStore(
-    useShallow((s) => ({ refreshVault: s.refreshVault, vaultPath: s.vaultPath })),
+  const [open, setOpen] = useState(metadataPanelDefaultOpen);
+  const { refreshVault, vaultPath, backlinkIndex } = useStore(
+    useShallow((s) => ({ refreshVault: s.refreshVault, vaultPath: s.vaultPath, backlinkIndex: s.backlinkIndex })),
   );
 
   // Auto-derive parent folder from the file path (read-only — not written to frontmatter).
@@ -186,6 +198,12 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
   const currentFileName = filePath ? filePath.split("/").pop() ?? "" : "";
   const parsed = useMemo(() => parseFrontmatter(content), [content]);
   const body   = useMemo(() => parseBodyMeta(content, parsed.bodyStart), [content, parsed.bodyStart]);
+
+  const backlinkPaths = useMemo(
+    () => (filePath ? backlinkIndex[filePath] ?? [] : []),
+    [backlinkIndex, filePath],
+  );
+  const backlinkNames = useMemo(() => backlinkLabels(backlinkPaths), [backlinkPaths]);
 
   // ── File rename ──────────────────────────────────────────────────────────────
   const [editingName, setEditingName] = useState(false);
@@ -335,6 +353,7 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
   const collapsedHint = [
     tags.length > 0 && `${tags.length} tag${tags.length !== 1 ? "s" : ""}`,
     body.links.length > 0 && `${body.links.length} link${body.links.length !== 1 ? "s" : ""}`,
+    backlinkNames.length > 0 && `${backlinkNames.length} backlink${backlinkNames.length !== 1 ? "s" : ""}`,
     genericFields.length > 0 && `${genericFields.length} field${genericFields.length !== 1 ? "s" : ""}`,
   ].filter(Boolean).join(" · ");
 
@@ -344,7 +363,17 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
 
       {/* ── Toggle bar ─────────────────────────────────────────────────────── */}
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => {
+            const next = !v;
+            try {
+              localStorage.setItem("metis_metadata_open", String(next));
+            } catch {
+              /* ignore */
+            }
+            return next;
+          });
+        }}
         className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left transition-colors hover:bg-surface-overlay"
       >
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -629,6 +658,23 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
                   <button key={link} onClick={() => onLinkClick?.(link)} title={`Open [[${link}]]`}
                     className="rounded border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary hover:text-accent hover:border-accent transition-colors">
                     [[{link}]]
+                  </button>
+                ))}
+              </div>
+            </Row>
+          )}
+
+          {backlinkNames.length > 0 && (
+            <Row label="Backlinks">
+              <div className="flex flex-wrap gap-1">
+                {backlinkNames.map((name, i) => (
+                  <button
+                    key={backlinkPaths[i]}
+                    onClick={() => onLinkClick?.(name)}
+                    title={`Open [[${name}]]`}
+                    className="rounded border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary hover:text-accent hover:border-accent transition-colors"
+                  >
+                    [[{name}]]
                   </button>
                 ))}
               </div>

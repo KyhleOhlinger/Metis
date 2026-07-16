@@ -9,6 +9,7 @@ import {
   describeLlmError,
   generateVisionCompletion,
   scrubSecretsFromMessage,
+  type LlmCompletionMeta,
 } from "./llmService";
 
 const OCR_USER_PROMPT =
@@ -23,7 +24,7 @@ export async function transcribeHandwritingImage(
   imageBase64: string,
   mimeType: string,
   imageFileName: string,
-): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; text: string; meta: LlmCompletionMeta } | { ok: false; error: string }> {
   if (!profile.apiKey?.trim()) {
     return { ok: false, error: "No API key configured for this provider." };
   }
@@ -31,7 +32,7 @@ export async function transcribeHandwritingImage(
   const userText = `${OCR_USER_PROMPT}\n\nImage file: ${imageFileName}`;
 
   try {
-    const text = await generateVisionCompletion(
+    const { text, meta } = await generateVisionCompletion(
       persona,
       profile,
       userText,
@@ -39,7 +40,7 @@ export async function transcribeHandwritingImage(
       mimeType,
     );
     if (!text) return { ok: false, error: "Empty transcription from the model." };
-    return { ok: true, text };
+    return { ok: true, text, meta };
   } catch (err) {
     const msg = describeLlmError(err);
     const hint =

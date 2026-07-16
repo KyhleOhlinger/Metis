@@ -144,6 +144,7 @@ export type SettingsSectionId =
   | "hotkeys"
   | "ai"
   | "personas"
+  | "export"
   | "about";
 
 export interface Settings {
@@ -179,6 +180,18 @@ export interface Settings {
   editorBgPresetId?: string;
   /** Defaults applied when inserting sticky notes from the toolbar or slash menu. */
   stickyDefaults?: StickyNoteDefaults;
+  /** Absolute path to the Jekyll/Chirpy blog repository (e.g. `*.github.io`). */
+  jekyllBlogRoot?: string;
+  /** Chirpy `author` frontmatter field. */
+  jekyllAuthor?: string;
+  /** Default Chirpy `categories` when the note has no `tags`. */
+  jekyllDefaultCategories?: string[];
+  /** Subfolder under `assets/img/` for copied images. */
+  jekyllImageSubfolder?: string;
+  /** Blog site URL for wikilink → post URL conversion. */
+  jekyllSiteUrl?: string;
+  /** Chirpy `description` boilerplate for exported posts. */
+  jekyllDescription?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -197,6 +210,12 @@ export const DEFAULT_SETTINGS: Settings = {
     color: "amber",
     includeWrapBlock: false,
   },
+  jekyllAuthor: "kyhle",
+  jekyllDefaultCategories: ["Technical"],
+  jekyllImageSubfolder: "Metis",
+  jekyllSiteUrl: "https://ohlinger.co",
+  jekyllDescription:
+    "Hi all, My name is Kyhle Öhlinger and this blog post forms part of my personal blog. If you enjoy any of the posts, feel free to reach out and let me know :) ",
 };
 
 // ── Default personas shipped with the app ────────────────────────────────────

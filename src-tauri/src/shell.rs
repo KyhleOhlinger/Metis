@@ -7,6 +7,26 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
+// ── Webview navigation guard ─────────────────────────────────────────────────
+
+/// Allow only in-app asset URLs inside Metis webviews; open http(s) in the OS browser.
+pub fn allow_in_app_webview_navigation(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" | "asset" | "blob" | "data" => true,
+        "http" | "https" => {
+            #[cfg(debug_assertions)]
+            {
+                if matches!(url.host_str(), Some("localhost") | Some("127.0.0.1")) {
+                    return true;
+                }
+            }
+            let _ = open::that(url.as_str());
+            false
+        }
+        _ => false,
+    }
+}
+
 // ── Native folder picker ──────────────────────────────────────────────────────
 
 /// Open a native folder-picker dialog parented to the **calling window**.
@@ -209,6 +229,7 @@ pub fn open_vault_window(
         .inner_size(1100.0, 780.0)
         .min_inner_size(580.0, 480.0)
         .resizable(true)
+        .on_navigation(allow_in_app_webview_navigation)
         .build()
         .map_err(|e| format!("Failed to open new vault window: {e}"))?;
 
