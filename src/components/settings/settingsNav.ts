@@ -2,6 +2,7 @@ import type { SettingsSectionId } from "@/types/persona";
 
 export const SETTINGS_NAV: { id: SettingsSectionId; label: string }[] = [
   { id: "general", label: "General" },
+  { id: "planner", label: "Planner" },
   { id: "editor", label: "Editor" },
   { id: "sticky", label: "Sticky notes" },
   { id: "hotkeys", label: "Hotkeys" },

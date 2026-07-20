@@ -54,6 +54,8 @@ pub(crate) fn write_vault_meta(vault: &Path) -> Result<(), String> {
         created_at_unix: ts,
         metis_version: env!("CARGO_PKG_VERSION").into(),
         default_image_dir: default_image_dir_str(),
+        planner_mode: None,
+        planner_setup_required: false,
     };
 
     let json = serde_json::to_string_pretty(&meta)
@@ -78,6 +80,8 @@ pub(crate) fn read_vault_meta(vault: &Path) -> Result<VaultMeta, String> {
             created_at_unix: 0,
             metis_version: env!("CARGO_PKG_VERSION").into(),
             default_image_dir: default_image_dir_str(),
+            planner_mode: None,
+            planner_setup_required: false,
         });
     }
     let raw = fs::read_to_string(&meta_path)

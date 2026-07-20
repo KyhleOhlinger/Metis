@@ -22,7 +22,7 @@ use tauri::Manager;
 // This means you can configure test keys freely in dev without any risk of
 // them appearing when you run `tauri build`.
 
-fn app_data_dir_for_build(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn app_data_dir_for_build(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     let base = app_handle
         .path()
         .app_data_dir()
@@ -45,14 +45,6 @@ fn app_data_file(app_handle: &tauri::AppHandle, name: &str) -> Result<PathBuf, S
 #[tauri::command]
 pub fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").into()
-}
-
-/// App profile directory where the webview persists planner data (`localStorage`).
-#[tauri::command]
-pub fn get_planner_storage_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
-    Ok(app_data_dir_for_build(&app_handle)?
-        .to_string_lossy()
-        .into_owned())
 }
 
 #[tauri::command]

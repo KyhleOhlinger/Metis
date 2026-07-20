@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { DEFAULT_SETTINGS } from "@/types/persona";
 import {
   convertNoteToJekyll,
   type JekyllConvertResult,
@@ -31,15 +30,12 @@ function textToBase64(text: string): string {
 function jekyllSettings() {
   const s = usePersonaStore.getState().settings;
   return {
-    blogRoot: s.jekyllBlogRoot ?? "",
-    author: s.jekyllAuthor ?? DEFAULT_SETTINGS.jekyllAuthor ?? "kyhle",
-    categories: s.jekyllDefaultCategories ?? DEFAULT_SETTINGS.jekyllDefaultCategories ?? ["Technical"],
-    imageSubfolder: s.jekyllImageSubfolder ?? DEFAULT_SETTINGS.jekyllImageSubfolder ?? "Metis",
-    siteUrl: s.jekyllSiteUrl ?? DEFAULT_SETTINGS.jekyllSiteUrl ?? "https://ohlinger.co",
-    description:
-      s.jekyllDescription ??
-      DEFAULT_SETTINGS.jekyllDescription ??
-      "Hi all, My name is Kyhle Öhlinger and this blog post forms part of my personal blog. If you enjoy any of the posts, feel free to reach out and let me know :) ",
+    blogRoot: s.jekyllBlogRoot?.trim() ?? "",
+    author: s.jekyllAuthor?.trim() ?? "",
+    categories: s.jekyllDefaultCategories ?? [],
+    imageSubfolder: s.jekyllImageSubfolder?.trim() ?? "",
+    siteUrl: s.jekyllSiteUrl?.trim() ?? "",
+    description: s.jekyllDescription?.trim() ?? "",
   };
 }
 
@@ -112,7 +108,9 @@ export async function exportNoteToJekyll(input: JekyllExportInput): Promise<stri
 
   if (converted.imageCopies.length > 0) {
     const sub = (input.imageSubfolder ?? settings.imageSubfolder).replace(/^\/+|\/+$/g, "");
-    const imageDest = normalizePosixPath(`${blogRoot}/assets/img/${sub}`);
+    const imageDest = sub
+      ? normalizePosixPath(`${blogRoot}/assets/img/${sub}`)
+      : normalizePosixPath(`${blogRoot}/assets/img`);
     await invoke<number>("copy_files_to_folder", {
       sourcePaths: converted.imageCopies.map((img) => img.sourceAbsPath),
       destDir: imageDest,

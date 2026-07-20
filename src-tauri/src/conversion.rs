@@ -1,10 +1,11 @@
 use crate::security::reject_untrusted_webview;
-use crate::types::{ConvertProgress, default_image_dir_str};
+use crate::types::{ConvertProgress};
 use crate::security::{canon_vault, safe_resolve};
 use crate::state::CurrentVault;
 use crate::types::VaultData;
 use crate::vault_fs::{
-    build_file_tree, collect_md_files, read_vault_meta, enrich_frontmatter, ensure_default_vault_dirs, write_vault_meta,
+    build_file_tree, collect_md_files, read_vault_meta, enrich_frontmatter, ensure_default_vault_dirs,
+    write_vault_meta, write_vault_meta_full,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -87,6 +88,10 @@ pub fn convert_vault_to_metis(
     // ── Step 1: Write vault marker ────────────────────────────────────────────
     emit("Writing vault marker…", current);
     write_vault_meta(&root)?;
+    if let Ok(mut meta) = read_vault_meta(&root) {
+        meta.planner_setup_required = true;
+        write_vault_meta_full(&root, &meta)?;
+    }
     current += 1;
 
     // ── Step 2: Create default folder structure ───────────────────────────────
@@ -123,13 +128,14 @@ pub fn convert_vault_to_metis(
         .insert(window.label().to_string(), root.to_string_lossy().to_string());
 
     let files = build_file_tree(&root)?;
+    let vault_meta = read_vault_meta(&root)?;
     Ok(VaultData {
         path: root.to_string_lossy().to_string(),
         files,
         is_metis_vault: true,
         vault_hint: None,
-        default_image_dir: read_vault_meta(&root)
-            .map(|m| m.default_image_dir)
-            .unwrap_or_else(|_| default_image_dir_str()),
+        default_image_dir: vault_meta.default_image_dir.clone(),
+        planner_mode: vault_meta.planner_mode,
+        planner_setup_required: vault_meta.planner_setup_required,
     })
 }

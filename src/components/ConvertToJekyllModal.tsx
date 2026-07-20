@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileOutput, FolderOpen, X } from "lucide-react";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { DEFAULT_SETTINGS } from "@/types/persona";
 import {
   exportNoteToJekyll,
   loadNoteContentForJekyll,
@@ -25,15 +24,12 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
   const [date, setDate] = useState("");
   const [categoriesText, setCategoriesText] = useState("");
   const [blogRoot, setBlogRoot] = useState(settings.jekyllBlogRoot ?? "");
-  const [imageSubfolder, setImageSubfolder] = useState(
-    settings.jekyllImageSubfolder ?? DEFAULT_SETTINGS.jekyllImageSubfolder ?? "Metis",
-  );
+  const [imageSubfolder, setImageSubfolder] = useState(settings.jekyllImageSubfolder ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
-  const defaultCategories =
-    settings.jekyllDefaultCategories ?? DEFAULT_SETTINGS.jekyllDefaultCategories ?? ["Technical"];
+  const defaultCategories = settings.jekyllDefaultCategories ?? [];
 
   useEffect(() => {
     let cancelled = false;
@@ -215,7 +211,7 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
               <input
                 value={imageSubfolder}
                 onChange={(e) => setImageSubfolder(e.target.value)}
-                placeholder="Metis"
+                placeholder="exports"
                 className="mt-1 w-full rounded border border-border bg-surface-overlay px-2 py-1.5 font-mono text-xs text-text-primary"
               />
             </Field>
@@ -224,7 +220,7 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
                 <input
                   value={blogRoot}
                   onChange={(e) => setBlogRoot(e.target.value)}
-                  placeholder="…/KyhleOhlinger.github.io"
+                  placeholder="/path/to/your-blog.github.io"
                   className="min-w-0 flex-1 rounded border border-border bg-surface-overlay px-2 py-1.5 font-mono text-[10px] text-text-primary"
                 />
                 <button

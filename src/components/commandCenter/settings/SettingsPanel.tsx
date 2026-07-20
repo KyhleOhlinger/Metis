@@ -8,6 +8,7 @@ import metisIconUrl from "@/assets/metis_icon.png";
 import { BG_PRESETS } from "../../editor/bgPresets";
 import { SETTINGS_NAV } from "../../settings/settingsNav";
 import { JekyllExportSettings } from "../../settings/JekyllExportSettings";
+import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { SettingsTab } from "./SettingsTab";
 
 type StoreSettings = ReturnType<typeof usePersonaStore.getState>["settings"];
@@ -65,6 +66,11 @@ export function SettingsPanel({
         {section === "general" && (
           <SettingsSection title="General">
             <GeneralSettingsSection settings={settings} onUpdate={onUpdateSettings} />
+          </SettingsSection>
+        )}
+        {section === "planner" && (
+          <SettingsSection title="Planner">
+            <PlannerSettingsSection />
           </SettingsSection>
         )}
         {section === "editor" && (

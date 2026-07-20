@@ -9,6 +9,8 @@ import SettingsModal from "./components/settings/SettingsModal";
 import { usePersonaStore } from "./store/usePersonaStore";
 import CommandPalette from "./components/CommandPalette";
 import ConvertVaultModal from "./components/ConvertVaultModal";
+import PlannerSetupModal from "./components/PlannerSetupModal";
+import PlannerRestoreModal from "./components/PlannerRestoreModal";
 import ExportPdfModal from "./components/ExportPdfModal";
 import ExportHubModal from "./components/ExportHubModal";
 import ConvertToJekyllModal from "./components/ConvertToJekyllModal";
@@ -16,6 +18,12 @@ import ToastHost from "./components/ToastHost";
 import { useStore, VaultData } from "./store/useStore";
 import { useMenuEvents } from "./hooks/useMenuEvents";
 import { LAST_VAULT_KEY } from "./constants";
+import {
+  checkPlannerRestore,
+  flushPlannerSaves,
+  syncSharedMirror,
+} from "./planner/plannerPersistence";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
 // Catches any React render errors and shows a human-readable message instead of
@@ -98,6 +106,13 @@ export default function App() {
   const vaultPath    = useStore((s) => s.vaultPath);
   const isMetisVault = useStore((s) => s.isMetisVault);
   const refreshVault = useStore((s) => s.refreshVault);
+  const plannerSetupModalOpen = useStore((s) => s.plannerSetupModalOpen);
+  const setPlannerSetupModalOpen = useStore((s) => s.setPlannerSetupModalOpen);
+  const plannerMode = useStore((s) => s.plannerMode);
+  const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
+  const plannerReloadKey = useStore((s) => s.plannerReloadKey);
+  const setPlannerRestoreOffer = useStore((s) => s.setPlannerRestoreOffer);
+  const bumpPlannerReload = useStore((s) => s.bumpPlannerReload);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exportPdfOpen, setExportPdfOpen] = useState(false);
   const [exportHubOpen, setExportHubOpen] = useState(false);
@@ -371,6 +386,76 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.
+  useEffect(() => {
+    if (!vaultPath || plannerMode !== "shared" || plannerSetupRequired) return;
+    void flushPlannerSaves()
+      .then(() => syncSharedMirror(vaultPath))
+      .catch(console.error);
+  }, [vaultPath, plannerMode, plannerSetupRequired]);
+
+  // Offer restore when shared planner is empty but vault has a backup mirror.
+  useEffect(() => {
+    if (!vaultPath || plannerMode !== "shared" || plannerSetupRequired) {
+      setPlannerRestoreOffer(false);
+      return;
+    }
+    let cancelled = false;
+    void checkPlannerRestore(vaultPath)
+      .then((check) => {
+        if (!cancelled && check.offer_restore) setPlannerRestoreOffer(true);
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultPath, plannerMode, plannerSetupRequired, plannerReloadKey, setPlannerRestoreOffer]);
+
+  // Flush pending planner writes before window close.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let closing = false;
+
+    const flushWithTimeout = (ms: number) =>
+      Promise.race([
+        flushPlannerSaves(),
+        new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      ]);
+
+    void getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        if (closing) return;
+        event.preventDefault();
+        closing = true;
+        try {
+          await flushWithTimeout(3000);
+        } catch (err) {
+          console.error("[planner] flush on close failed", err);
+        } finally {
+          unlisten?.();
+          unlisten = undefined;
+          try {
+            await getCurrentWindow().destroy();
+          } catch (err) {
+            console.error("[window] destroy failed, falling back to close", err);
+            try {
+              await getCurrentWindow().close();
+            } catch (closeErr) {
+              console.error("[window] close failed", closeErr);
+            }
+          }
+        }
+      })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(console.error);
+
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
   return (
     <AppErrorBoundary>
     <div className="flex h-screen w-screen overflow-hidden bg-surface-base text-text-primary">
@@ -401,6 +486,19 @@ export default function App() {
           onDismiss={() => setConvertPrompt(null)}
         />
       )}
+
+      {plannerSetupModalOpen && vaultPath && (
+        <PlannerSetupModal
+          onComplete={() => {
+            setPlannerSetupModalOpen(false);
+            bumpPlannerReload();
+            useStore.getState().setEditorTab("planner");
+          }}
+          onDismiss={() => setPlannerSetupModalOpen(false)}
+        />
+      )}
+
+      <PlannerRestoreModal />
 
       {/* ── Pane 1 — Files sidebar ───────────────────────────── */}
       {/*

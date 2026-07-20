@@ -4,6 +4,11 @@ import Toolbar from "./Toolbar";
 import PlannerMarkdownCell from "./planner/PlannerMarkdownCell";
 import ReviewsPlannerGrid from "./planner/ReviewsPlannerGrid";
 import { useStore } from "@/store/useStore";
+import {
+  initPlannerPersistence,
+  resetPlannerPersistence,
+} from "@/planner/plannerPersistence";
+import { PlannerSyncIndicator } from "@/components/planner/PlannerSyncIndicator";
 
 import {
   type PlannerTab,
@@ -74,19 +79,26 @@ import {
   applyTemplatesToFutureRange,
   removeTemplateFutureOccurrences,
   applyTrackerOverrides,
+  defaultReviewsState,
 } from "@/planner/plannerStorage";
 
 
 export default function DailyTaskGrid() {
   const today = useMemo(() => startOfDay(new Date()), []);
+  const vaultPath = useStore((s) => s.vaultPath);
+  const plannerMode = useStore((s) => s.plannerMode);
+  const plannerReloadKey = useStore((s) => s.plannerReloadKey);
+  const [plannerReady, setPlannerReady] = useState(false);
+  const [plannerInitError, setPlannerInitError] = useState<string | null>(null);
+  const [hydrationComplete, setHydrationComplete] = useState(false);
   const [tab, setTab] = useState<PlannerTab>("daily");
   const [anchorWeek, setAnchorWeek] = useState(() => startOfWeekMonday(new Date()));
-  const [manifest, setManifest] = useState<TaskManifest>(() => loadManifest());
-  const [templates, setTemplates] = useState<PlanTemplate[]>(() => loadTemplates());
-  const [layoutTemplates, setLayoutTemplates] = useState<PlannerLayoutTemplates>(() => loadLayoutTemplates());
-  const [monthlyPromptDraft, setMonthlyPromptDraft] = useState(
-    () => loadLayoutTemplates().monthlyPrompts.join("\n"),
+  const [manifest, setManifest] = useState<TaskManifest>({});
+  const [templates, setTemplates] = useState<PlanTemplate[]>([]);
+  const [layoutTemplates, setLayoutTemplates] = useState<PlannerLayoutTemplates>(
+    () => DEFAULT_LAYOUT_TEMPLATES,
   );
+  const [monthlyPromptDraft, setMonthlyPromptDraft] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [templateCadence, setTemplateCadence] = useState<TemplateCadence>("daily");
   const [templateIntervalDaysInput, setTemplateIntervalDaysInput] = useState("14");
@@ -115,13 +127,59 @@ export default function DailyTaskGrid() {
     action: "disable" | "delete";
     cutoffDate: string;
   } | null>(null);
-  const [goalSections, setGoalSections] = useState<GoalSection[]>(() => loadGoals());
-  const [reviewsState, setReviewsState] = useState<ReviewsTableState>(() => loadReviews());
+  const [goalSections, setGoalSections] = useState<GoalSection[]>([]);
+  const [reviewsState, setReviewsState] = useState<ReviewsTableState>(() => defaultReviewsState());
   const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
   const [activePlannerFieldKey, setActivePlannerFieldKey] = useState<string | null>(null);
   const dailyGridShellRef = useRef<HTMLDivElement>(null);
   const plannerNavigateTo = useStore((s) => s.plannerNavigateTo);
   const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
+
+  useEffect(() => {
+    if (!vaultPath) {
+      setPlannerReady(false);
+      setPlannerInitError(null);
+      setHydrationComplete(false);
+      return;
+    }
+    let cancelled = false;
+    setPlannerReady(false);
+    setPlannerInitError(null);
+    setHydrationComplete(false);
+    void (async () => {
+      try {
+        await initPlannerPersistence(vaultPath, plannerMode);
+        if (cancelled) return;
+        const layout = loadLayoutTemplates();
+        setManifest(loadManifest());
+        setTemplates(loadTemplates());
+        setLayoutTemplates(layout);
+        setMonthlyPromptDraft(layout.monthlyPrompts.join("\n"));
+        setGoalSections(loadGoals());
+        setReviewsState(loadReviews());
+        setPlannerReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        setPlannerInitError(message || "Could not load planner data.");
+        setPlannerReady(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      void resetPlannerPersistence();
+    };
+  }, [vaultPath, plannerMode, plannerReloadKey]);
+
+  useEffect(() => {
+    if (!plannerReady) {
+      setHydrationComplete(false);
+      return;
+    }
+    const id = requestAnimationFrame(() => setHydrationComplete(true));
+    return () => cancelAnimationFrame(id);
+  }, [plannerReady, vaultPath, plannerMode, plannerReloadKey]);
+
   const visibleWeeks = useMemo(
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
     [anchorWeek],
@@ -173,8 +231,9 @@ export default function DailyTaskGrid() {
   const importRegions = HOLIDAY_REGIONS[importCountry] ?? [];
 
   useEffect(() => {
+    if (!hydrationComplete) return;
     saveTemplates(templates);
-  }, [templates]);
+  }, [templates, hydrationComplete]);
 
   useEffect(() => {
     if (!plannerNavigateTo) return;
@@ -213,16 +272,19 @@ export default function DailyTaskGrid() {
   }, [plannerNavigateTo, clearPlannerNavigateTo]);
 
   useEffect(() => {
+    if (!hydrationComplete) return;
     saveLayoutTemplates(layoutTemplates);
-  }, [layoutTemplates]);
+  }, [layoutTemplates, hydrationComplete]);
 
   useEffect(() => {
+    if (!hydrationComplete) return;
     saveGoals(goalSections);
-  }, [goalSections]);
+  }, [goalSections, hydrationComplete]);
 
   useEffect(() => {
+    if (!hydrationComplete) return;
     saveReviews(reviewsState);
-  }, [reviewsState]);
+  }, [reviewsState, hydrationComplete]);
 
   useEffect(() => {
     if (importRegion === "ALL") return;
@@ -673,11 +735,29 @@ export default function DailyTaskGrid() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      {!plannerReady ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-xs text-text-muted">
+          {plannerInitError ? (
+            <>
+              <p className="text-red-400">Could not load planner</p>
+              <p className="max-w-md text-[10px]">{plannerInitError}</p>
+            </>
+          ) : (
+            <p>Loading planner…</p>
+          )}
+        </div>
+      ) : (
+      <>
       <div className="shrink-0 border-b border-border px-3 py-2">
-        <p className="text-[11px] font-semibold text-text-primary">Daily Task View</p>
-        <p className="mt-0.5 text-[10px] text-text-muted">
-          Weekly planning/logging and review workspace (auto-saved to local storage JSON).
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold text-text-primary">Daily Task View</p>
+            <p className="mt-0.5 text-[10px] text-text-muted">
+              Weekly planning/logging and review workspace (auto-saved to JSON on disk).
+            </p>
+          </div>
+          <PlannerSyncIndicator compact />
+        </div>
         <div className="mt-2 flex items-center gap-1.5">
           {([
             ["daily", "Daily Log"],
@@ -1327,8 +1407,7 @@ export default function DailyTaskGrid() {
                 <p className="text-[11px] font-semibold text-text-primary">Reviews</p>
                 <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
                   Same grid pattern as Daily Log: <code className="text-[9px]">gap-1.5</code> gutters, purple rounded column and
-                  row headers, and card-style markdown cells (
-                  <code className="text-[9px]">metis_planner_reviews_v1</code>).
+                  row headers, and card-style markdown cells (saved in <code className="text-[9px]">reviews.json</code>).
                 </p>
               </div>
               <button
@@ -1843,6 +1922,8 @@ export default function DailyTaskGrid() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 }

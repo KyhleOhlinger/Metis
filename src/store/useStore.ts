@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { buildBacklinkIndex } from "../utils/linkGraph";
 import { pathsEqual } from "../utils/paths";
 import type { PlannerNavigateTarget } from "./plannerNavigation";
+import type { PlannerStorageMode } from "../planner/plannerPersistence";
+import { resetPlannerPersistence } from "../planner/plannerPersistence";
 
 /**
  * UI components should subscribe with **selectors** or `useShallow` from `zustand/react/shallow`
@@ -25,6 +27,10 @@ export interface VaultData {
   vault_hint?: string; // "obsidian" | "markdown" — only present for non-Metis vaults
   /** Vault-relative folder for pasted/saved images (default `assets`). */
   default_image_dir?: string;
+  /** `shared` (profile-wide) or `vault` (per-vault). */
+  planner_mode?: string | null;
+  /** When true, prompt for planner storage on first planner open. */
+  planner_setup_required?: boolean;
 }
 
 /**
@@ -274,12 +280,22 @@ interface MetisState {
   /** Vault-relative default folder for pasted/saved images. */
   defaultImageFolder: string;
 
+  plannerMode: PlannerStorageMode;
+  plannerSetupRequired: boolean;
+  plannerReloadKey: number;
+  plannerSetupModalOpen: boolean;
+  plannerRestoreOffer: boolean;
+
   /** Incoming wikilink map: target note path → source note paths. */
   backlinkIndex: Record<string, string[]>;
 
   /** Auto-save / manual save feedback for the editor header. */
   saveStatus: "idle" | "saving" | "saved" | "error";
   saveError: string | null;
+
+  /** Planner disk write / vault backup sync feedback. */
+  plannerSyncStatus: "idle" | "pending" | "saving" | "syncing" | "saved" | "error";
+  plannerSyncError: string | null;
 
   // UI state shared between menu events and components
   /** Which editor tab is active.  Lifted here so the native menu can switch it. */
@@ -302,6 +318,11 @@ interface MetisState {
 
   // Actions
   setEditorTab: (tab: "source" | "visual" | "planner" | "agent-history") => void;
+  openPlannerTab: () => void;
+  setPlannerSetupModalOpen: (open: boolean) => void;
+  setPlannerRestoreOffer: (offer: boolean) => void;
+  setPlannerConfig: (mode: PlannerStorageMode, setupRequired: boolean) => void;
+  bumpPlannerReload: () => void;
   setPendingMenuAction: (action: string | null) => void;
   setSidebarView: (view: "files" | "search") => void;
   setVault: (data: VaultData) => void;
@@ -323,6 +344,10 @@ interface MetisState {
   setActiveFolderPath: (path: string | null) => void;
   markSaved: () => void;
   setSaveStatus: (status: MetisState["saveStatus"], error?: string | null) => void;
+  setPlannerSyncStatus: (
+    status: MetisState["plannerSyncStatus"],
+    error?: string | null,
+  ) => void;
   clearVault: () => void;
   /** Persist vault-relative default image folder (e.g. `assets`). */
   setDefaultImageFolder: (relativeDir: string) => Promise<void>;
@@ -349,9 +374,16 @@ export const useStore = create<MetisState>((set, get) => ({
   noteIndex: [],
   assetIndex: [],
   defaultImageFolder: "assets",
+  plannerMode: "shared",
+  plannerSetupRequired: false,
+  plannerReloadKey: 0,
+  plannerSetupModalOpen: false,
+  plannerRestoreOffer: false,
   backlinkIndex: {},
   saveStatus: "idle",
   saveError: null,
+  plannerSyncStatus: "idle",
+  plannerSyncError: null,
   editorTab: "source",
   pendingMenuAction: null,
   sidebarView: "files",
@@ -359,6 +391,25 @@ export const useStore = create<MetisState>((set, get) => ({
   plannerNavigateTo: null,
 
   setEditorTab: (tab) => set({ editorTab: tab }),
+
+  openPlannerTab: () => {
+    const { vaultPath, isMetisVault, plannerSetupRequired } = get();
+    if (!vaultPath) return;
+    if (isMetisVault && plannerSetupRequired) {
+      set({ plannerSetupModalOpen: true });
+      return;
+    }
+    set({ editorTab: "planner" });
+  },
+
+  setPlannerSetupModalOpen: (open) => set({ plannerSetupModalOpen: open }),
+
+  setPlannerRestoreOffer: (offer) => set({ plannerRestoreOffer: offer }),
+
+  setPlannerConfig: (mode, setupRequired) =>
+    set({ plannerMode: mode, plannerSetupRequired: setupRequired }),
+
+  bumpPlannerReload: () => set((s) => ({ plannerReloadKey: s.plannerReloadKey + 1 })),
 
   setPendingMenuAction: (action) => set({ pendingMenuAction: action }),
 
@@ -374,6 +425,10 @@ export const useStore = create<MetisState>((set, get) => ({
       isMetisVault: data.is_metis_vault,
       files: data.files,
       defaultImageFolder: data.default_image_dir ?? "assets",
+      plannerMode: data.planner_mode === "vault" ? "vault" : "shared",
+      plannerSetupRequired: data.planner_setup_required === true,
+      plannerReloadKey: get().plannerReloadKey + 1,
+      plannerRestoreOffer: false,
       noteIndex,
       assetIndex,
       backlinkIndex: {},
@@ -413,6 +468,8 @@ export const useStore = create<MetisState>((set, get) => ({
         files: data.files,
         isMetisVault: data.is_metis_vault,
         defaultImageFolder: data.default_image_dir ?? "assets",
+        plannerMode: data.planner_mode === "vault" ? "vault" : "shared",
+        plannerSetupRequired: data.planner_setup_required === true,
         noteIndex: merged,
         assetIndex: flattenAssets(data.files),
       });
@@ -516,6 +573,9 @@ export const useStore = create<MetisState>((set, get) => ({
   setSaveStatus: (status, error = null) =>
     set({ saveStatus: status, saveError: error ?? null }),
 
+  setPlannerSyncStatus: (status, error = null) =>
+    set({ plannerSyncStatus: status, plannerSyncError: error ?? null }),
+
   setDefaultImageFolder: async (relativeDir) => {
     const { vaultPath } = get();
     if (!vaultPath) return;
@@ -531,17 +591,29 @@ export const useStore = create<MetisState>((set, get) => ({
 
   clearEditorNavigateTo: () => set({ editorNavigateTo: null }),
 
-  navigatePlannerTo: (target) =>
-    set({ plannerNavigateTo: target, editorTab: "planner" }),
+  navigatePlannerTo: (target) => {
+    const { vaultPath, isMetisVault, plannerSetupRequired } = get();
+    if (vaultPath && isMetisVault && plannerSetupRequired) {
+      set({ plannerNavigateTo: target, plannerSetupModalOpen: true });
+      return;
+    }
+    set({ plannerNavigateTo: target, editorTab: "planner" });
+  },
 
   clearPlannerNavigateTo: () => set({ plannerNavigateTo: null }),
 
-  clearVault: () =>
+  clearVault: () => {
+    resetPlannerPersistence();
     set({
       vaultPath: null,
       isMetisVault: false,
       files: [],
       defaultImageFolder: "assets",
+      plannerMode: "shared",
+      plannerSetupRequired: false,
+      plannerReloadKey: 0,
+      plannerSetupModalOpen: false,
+      plannerRestoreOffer: false,
       activeFilePath: null,
       activeFileContent: "",
       isDirty: false,
@@ -555,9 +627,12 @@ export const useStore = create<MetisState>((set, get) => ({
       backlinkIndex: {},
       saveStatus: "idle",
       saveError: null,
+      plannerSyncStatus: "idle",
+      plannerSyncError: null,
       pendingMenuAction: null,
       sidebarView: "files",
       editorNavigateTo: null,
       plannerNavigateTo: null,
-    }),
+    });
+  },
 }));

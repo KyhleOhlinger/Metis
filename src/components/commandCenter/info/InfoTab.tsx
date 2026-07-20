@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { invoke } from "@tauri-apps/api/core";
 import { useStore, type FileNode } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { toastError } from "@/store/useToastStore";
 import { listVaultFolderOptions } from "@/utils/noteImages";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { KV, Section } from "../shared/ui";
+import { PlannerInfoSection } from "./PlannerInfoSection";
 
 export function InfoTab({
   vaultPath,
@@ -25,20 +25,13 @@ export function InfoTab({
   lineCount: number;
   charCount: number;
 }) {
+  const settings = usePersonaStore((s) => s.settings);
   const { defaultImageFolder, setDefaultImageFolder } = useStore(
     useShallow((s) => ({
       defaultImageFolder: s.defaultImageFolder,
       setDefaultImageFolder: s.setDefaultImageFolder,
     })),
   );
-  const settings = usePersonaStore((s) => s.settings);
-  const [plannerStorageDir, setPlannerStorageDir] = useState<string | null>(null);
-
-  useEffect(() => {
-    invoke<string>("get_planner_storage_dir")
-      .then(setPlannerStorageDir)
-      .catch(() => setPlannerStorageDir(null));
-  }, []);
 
   const imageFolderOptions = useMemo(() => {
     if (!vaultPath) return [];
@@ -51,7 +44,6 @@ export function InfoTab({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Scrollable metadata — content-sized; remaining height centers the icon below */}
       <div className="min-h-0 shrink overflow-y-auto p-3 space-y-3" data-cc-scroll-region>
         <Section title="Vault">
           <KV label="Path" value={vaultPath ?? "—"} mono />
@@ -101,9 +93,7 @@ export function InfoTab({
             </p>
           </Section>
         )}
-        <Section title="Planner">
-          <KV label="Path" value={plannerStorageDir ?? "—"} mono />
-        </Section>
+        <PlannerInfoSection />
         <Section title="Active Note">
           <KV label="File" value={activeFilePath ? (activeFilePath.split("/").pop() ?? "—") : "—"} mono />
           <KV
@@ -133,7 +123,6 @@ export function InfoTab({
         </div>
       </div>
 
-      {/* Icon floats centered in the remaining panel space */}
       <div className="flex flex-1 min-h-[96px] items-center justify-center px-3 py-4">
         <img
           src={metisIconUrl}
@@ -142,7 +131,6 @@ export function InfoTab({
         />
       </div>
 
-      {/* Copyright — pinned to bottom-right, outside the scroll area */}
       <div className="shrink-0 border-t border-border px-3 py-2 flex justify-end">
         <p className="text-[10px] text-text-muted/50 select-none">
           © 2026 Kyhle Öhlinger — MIT License
