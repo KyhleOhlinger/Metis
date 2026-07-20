@@ -11,6 +11,38 @@ import type {
 } from "../types/persona";
 import { DEFAULT_SETTINGS } from "../types/persona";
 
+/** Shipped Jekyll export defaults removed in v0.9.x — strip on load so settings stay blank. */
+const LEGACY_JEKYLL_SHIPPED_AUTHOR = "kyhle";
+const LEGACY_JEKYLL_SHIPPED_CATEGORIES = ["Technical"];
+const LEGACY_JEKYLL_SHIPPED_IMAGE_SUBFOLDER = "Metis";
+const LEGACY_JEKYLL_SHIPPED_SITE_URL = "https://ohlinger.co";
+const LEGACY_JEKYLL_SHIPPED_DESCRIPTION =
+  "Hi all, My name is Kyhle Öhlinger and this blog post forms part of my personal blog. If you enjoy any of the posts, feel free to reach out and let me know :) ";
+
+function categoriesMatch(a: string[] | undefined, b: string[]): boolean {
+  return Array.isArray(a) && a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function stripShippedJekyllDefaults(saved: Partial<Settings>): Partial<Settings> {
+  const out: Partial<Settings> = { ...saved };
+  if (out.jekyllAuthor === LEGACY_JEKYLL_SHIPPED_AUTHOR) delete out.jekyllAuthor;
+  if (categoriesMatch(out.jekyllDefaultCategories, LEGACY_JEKYLL_SHIPPED_CATEGORIES)) {
+    delete out.jekyllDefaultCategories;
+  }
+  if (out.jekyllImageSubfolder === LEGACY_JEKYLL_SHIPPED_IMAGE_SUBFOLDER) {
+    delete out.jekyllImageSubfolder;
+  }
+  if (out.jekyllSiteUrl === LEGACY_JEKYLL_SHIPPED_SITE_URL) delete out.jekyllSiteUrl;
+  if (out.jekyllDescription === LEGACY_JEKYLL_SHIPPED_DESCRIPTION) {
+    delete out.jekyllDescription;
+  }
+  const root = out.jekyllBlogRoot?.trim();
+  if (root && /KyhleOhlinger\.github\.io/i.test(root)) {
+    delete out.jekyllBlogRoot;
+  }
+  return out;
+}
+
 export const PRESET_OPENAI = "preset-openai";
 export const PRESET_GEMINI = "preset-gemini";
 export const PRESET_GROQ = "preset-groq";
@@ -196,7 +228,8 @@ type LegacySettings = Settings & {
 
 /** Upgrade settings.json from the old fixed four-provider map. */
 export function migrateSettings(saved: Partial<LegacySettings>): Settings {
-  let profiles = mergeProviderProfiles(saved.providerProfiles);
+  const cleaned = stripShippedJekyllDefaults(saved);
+  let profiles = mergeProviderProfiles(cleaned.providerProfiles);
 
   const legacy = saved.providers;
   if (legacy && typeof legacy === "object") {
@@ -216,7 +249,7 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
   }
 
   let defaultProviderProfileId =
-    saved.defaultProviderProfileId ??
+    cleaned.defaultProviderProfileId ??
     (saved.defaultProvider ? LEGACY_TO_PRESET[saved.defaultProvider] : null) ??
     DEFAULT_SETTINGS.defaultProviderProfileId;
 
@@ -227,7 +260,7 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
     defaultProviderProfileId = profiles[0]?.id ?? PRESET_OPENAI;
   }
 
-  let spellcheckEnabled = saved.spellcheckEnabled;
+  let spellcheckEnabled = cleaned.spellcheckEnabled;
   if (spellcheckEnabled === undefined) {
     try {
       spellcheckEnabled = localStorage.getItem("metis_spellcheck") === "true";
@@ -239,17 +272,17 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
 
   return {
     ...DEFAULT_SETTINGS,
-    ...saved,
+    ...cleaned,
     providerProfiles: profiles,
     defaultProviderProfileId,
     allowedAiHosts: collectAllowedAiHosts(profiles),
-    quickActions: saved.quickActions?.length
-      ? saved.quickActions
+    quickActions: cleaned.quickActions?.length
+      ? cleaned.quickActions
       : DEFAULT_SETTINGS.quickActions,
     spellcheckEnabled,
-    editorBgPresetId: saved.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
+    editorBgPresetId: cleaned.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
     stickyDefaults: (() => {
-      const raw = saved.stickyDefaults ?? {};
+      const raw = cleaned.stickyDefaults ?? {};
       const legacy = raw as { wrap?: boolean; includeWrapBlock?: boolean };
       const includeWrapBlock =
         legacy.includeWrapBlock !== undefined

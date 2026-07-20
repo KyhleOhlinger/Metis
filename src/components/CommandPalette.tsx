@@ -24,6 +24,7 @@ export default function CommandPalette({ onClose }: Props) {
 
   const noteIndex = useStore((s) => s.noteIndex);
   const setActiveFile = useStore((s) => s.setActiveFile);
+  const openPlannerTab = useStore((s) => s.openPlannerTab);
   const setEditorTab = useStore((s) => s.setEditorTab);
   const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
   const setSidebarView = useStore((s) => s.setSidebarView);
@@ -38,7 +39,7 @@ export default function CommandPalette({ onClose }: Props) {
         label: "Open Planner",
         hint: "workspace",
         run: () => {
-          setEditorTab("planner");
+          openPlannerTab();
           onClose();
         },
       },
@@ -94,7 +95,7 @@ export default function CommandPalette({ onClose }: Props) {
         },
       },
     ],
-    [onClose, openSettings, setEditorTab, setPendingMenuAction, setSidebarView],
+    [onClose, openSettings, openPlannerTab, setEditorTab, setPendingMenuAction, setSidebarView],
   );
 
   const actionQuery = commandMode ? query.slice(1).trim() : "";

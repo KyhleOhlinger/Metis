@@ -139,6 +139,7 @@ export interface StickyNoteDefaults {
 
 export type SettingsSectionId =
   | "general"
+  | "planner"
   | "editor"
   | "sticky"
   | "hotkeys"
@@ -210,12 +211,6 @@ export const DEFAULT_SETTINGS: Settings = {
     color: "amber",
     includeWrapBlock: false,
   },
-  jekyllAuthor: "kyhle",
-  jekyllDefaultCategories: ["Technical"],
-  jekyllImageSubfolder: "Metis",
-  jekyllSiteUrl: "https://ohlinger.co",
-  jekyllDescription:
-    "Hi all, My name is Kyhle Öhlinger and this blog post forms part of my personal blog. If you enjoy any of the posts, feel free to reach out and let me know :) ",
 };
 
 // ── Default personas shipped with the app ────────────────────────────────────

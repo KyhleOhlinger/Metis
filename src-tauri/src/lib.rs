@@ -3,6 +3,7 @@
 mod ai_context;
 mod agent_run_log;
 mod conversion;
+mod planner;
 mod menu;
 mod search;
 mod security;
@@ -54,7 +55,19 @@ pub fn run() {
             settings::load_settings,
             settings::save_settings,
             settings::get_app_version,
-            settings::get_planner_storage_dir,
+            planner::get_planner_storage_dir,
+            planner::planner_get_config,
+            planner::planner_set_vault_mode,
+            planner::planner_load_file,
+            planner::planner_save_file,
+            planner::planner_save_files,
+            planner::planner_import_bundle,
+            planner::planner_copy_vault_to_shared,
+            planner::planner_copy_shared_to_vault,
+            planner::planner_sync_shared_mirror,
+            planner::planner_get_mirror_status,
+            planner::planner_check_restore,
+            planner::planner_restore_shared_from_vault,
             agent_run_log::load_agent_run_log,
             agent_run_log::append_agent_run_log,
             agent_run_log::clear_agent_run_log,

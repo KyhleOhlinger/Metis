@@ -1,4 +1,10 @@
-const STORAGE_KEY = "metis_planner_field_heights_v1";
+import {
+  readPlannerRaw,
+  schedulePlannerSave,
+  type PlannerFileKey,
+} from "./plannerPersistence";
+
+const FIELD_HEIGHTS_FILE: PlannerFileKey = "field-heights.json";
 
 const MIN_PX = 48;
 const MAX_PX = 720;
@@ -9,7 +15,7 @@ function clampHeight(px: number): number {
 
 function readAll(): Record<string, number> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readPlannerRaw(FIELD_HEIGHTS_FILE);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const out: Record<string, number> = {};
@@ -32,9 +38,5 @@ export function getPlannerFieldHeight(fieldId: string, defaultPx: number): numbe
 
 export function setPlannerFieldHeight(fieldId: string, heightPx: number): void {
   const next = { ...readAll(), [fieldId]: clampHeight(heightPx) };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // Quota or private mode — ignore
-  }
+  schedulePlannerSave(FIELD_HEIGHTS_FILE, JSON.stringify(next));
 }

@@ -690,7 +690,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
     refreshVault, setActiveFolderPath, setActiveFile,
     pendingMenuAction, setPendingMenuAction,
     sidebarView, setSidebarView,
-    editorTab, setEditorTab,
+    editorTab, openPlannerTab,
   } = useStore(
     useShallow((s) => ({
       vaultPath: s.vaultPath,
@@ -706,7 +706,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
       sidebarView: s.sidebarView,
       setSidebarView: s.setSidebarView,
       editorTab: s.editorTab,
-      setEditorTab: s.setEditorTab,
+      openPlannerTab: s.openPlannerTab,
     })),
   );
 
@@ -957,7 +957,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
           {vaultPath && (
             <CollapsedBtn
               title="Open Planner"
-              onClick={() => setEditorTab("planner")}
+              onClick={() => openPlannerTab()}
               className={
                 editorTab === "planner"
                   ? "bg-accent text-white shadow-sm shadow-accent/40 ring-1 ring-accent/60"
@@ -1150,7 +1150,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault }: SidebarPro
         <div className="border-t border-border px-3 py-1.5">
           {vaultPath && (
             <button
-              onClick={() => setEditorTab("planner")}
+              onClick={() => openPlannerTab()}
               className={[
                 "mb-1.5 w-full rounded border px-2 py-1 text-[10px] font-semibold transition-colors",
                 editorTab === "planner"

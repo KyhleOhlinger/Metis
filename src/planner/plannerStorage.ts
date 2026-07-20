@@ -1,4 +1,6 @@
-/** Planner types, localStorage persistence, and pure manifest helpers. */
+/** Planner types, disk persistence, and pure manifest helpers. */
+
+import { readPlannerRaw, schedulePlannerSave, type PlannerFileKey } from "./plannerPersistence";
 
 export type DayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 export type TaskStatus = "work" | "holiday" | "sick" | "pto" | "personal" | "offsite";
@@ -100,11 +102,11 @@ export type PlannerLayoutTemplates = {
   monthlyPrompts: string[];
 };
 
-const STORAGE_KEY = "metis_daily_task_view_v1";
-const TEMPLATE_STORAGE_KEY = "metis_daily_task_templates_v1";
-const LAYOUT_TEMPLATE_STORAGE_KEY = "metis_planner_layout_templates_v1";
-const GOALS_STORAGE_KEY = "metis_planner_goals_v1";
-const REVIEWS_STORAGE_KEY = "metis_planner_reviews_v1";
+const MANIFEST_FILE = "manifest.json" as const;
+const TEMPLATE_FILE = "templates.json" as const;
+const LAYOUT_TEMPLATE_FILE = "layout-templates.json" as const;
+const GOALS_FILE = "goals.json" as const;
+const REVIEWS_FILE = "reviews.json" as const;
 
 export type GoalSection = {
   id: string;
@@ -221,20 +223,12 @@ export const SPECIAL_LABELS: Record<Exclude<TaskStatus, "work">, string> = {
 export const PLANNER_PURPLE_HEADER =
   "flex min-h-[2.5rem] items-center justify-center rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white";
 
-export function debounceLocalStorage(key: string, value: unknown, delayMs = 350) {
-  const store = debounceLocalStorage as typeof debounceLocalStorage & {
-    _timers?: Map<string, ReturnType<typeof setTimeout>>;
-  };
-  if (!store._timers) store._timers = new Map();
-  const prev = store._timers.get(key);
-  if (prev) clearTimeout(prev);
-  store._timers.set(
-    key,
-    setTimeout(() => {
-      localStorage.setItem(key, JSON.stringify(value));
-      store._timers?.delete(key);
-    }, delayMs),
-  );
+export function debouncePlannerSave(fileKey: PlannerFileKey, value: unknown, delayMs = 350) {
+  schedulePlannerSave(fileKey, JSON.stringify(value), delayMs);
+}
+
+export function savePlannerJsonNow(fileKey: PlannerFileKey, value: unknown) {
+  schedulePlannerSave(fileKey, JSON.stringify(value), 0);
 }
 
 export function makeMonthlyTemplateContent(prompts: string[] = MONTHLY_PROMPTS): string {
@@ -261,7 +255,7 @@ export function makeEmptyTracker(): TrackerData {
 
 export function loadManifest(): TaskManifest {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = readPlannerRaw(MANIFEST_FILE);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const normalized: TaskManifest = {};
@@ -369,7 +363,7 @@ export function loadManifest(): TaskManifest {
 }
 
 export function saveManifest(manifest: TaskManifest) {
-  debounceLocalStorage(STORAGE_KEY, manifest);
+  debouncePlannerSave(MANIFEST_FILE, manifest);
 }
 
 export function isDayName(value: unknown): value is DayName {
@@ -382,7 +376,7 @@ export function jsDayFromDayName(day: DayName): number {
 
 export function loadTemplates(): PlanTemplate[] {
   try {
-    const raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+    const raw = readPlannerRaw(TEMPLATE_FILE);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
@@ -417,12 +411,12 @@ export function loadTemplates(): PlanTemplate[] {
 }
 
 export function saveTemplates(templates: PlanTemplate[]) {
-  localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates, null, 2));
+  savePlannerJsonNow(TEMPLATE_FILE, templates);
 }
 
 export function loadLayoutTemplates(): PlannerLayoutTemplates {
   try {
-    const raw = localStorage.getItem(LAYOUT_TEMPLATE_STORAGE_KEY);
+    const raw = readPlannerRaw(LAYOUT_TEMPLATE_FILE);
     if (!raw) return DEFAULT_LAYOUT_TEMPLATES;
     const parsed = JSON.parse(raw) as Partial<PlannerLayoutTemplates>;
     const monthlyPrompts = Array.isArray(parsed.monthlyPrompts)
@@ -447,7 +441,7 @@ export function loadLayoutTemplates(): PlannerLayoutTemplates {
 }
 
 export function saveLayoutTemplates(layout: PlannerLayoutTemplates) {
-  localStorage.setItem(LAYOUT_TEMPLATE_STORAGE_KEY, JSON.stringify(layout, null, 2));
+  savePlannerJsonNow(LAYOUT_TEMPLATE_FILE, layout);
 }
 
 export function startOfWeekMonday(d: Date): Date {
@@ -671,7 +665,7 @@ export function defaultGoalSections(): GoalSection[] {
 
 export function loadGoals(): GoalSection[] {
   try {
-    const raw = localStorage.getItem(GOALS_STORAGE_KEY);
+    const raw = readPlannerRaw(GOALS_FILE);
     if (!raw) return defaultGoalSections();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return defaultGoalSections();
@@ -693,7 +687,7 @@ export function loadGoals(): GoalSection[] {
 }
 
 export function saveGoals(sections: GoalSection[]) {
-  debounceLocalStorage(GOALS_STORAGE_KEY, sections);
+  debouncePlannerSave(GOALS_FILE, sections);
 }
 
 export function normalizeReviewHeaders(raw: unknown): [string, string, string, string, string] {
@@ -731,7 +725,7 @@ export function defaultReviewsState(): ReviewsTableState {
 
 export function loadReviews(): ReviewsTableState {
   try {
-    const raw = localStorage.getItem(REVIEWS_STORAGE_KEY);
+    const raw = readPlannerRaw(REVIEWS_FILE);
     if (!raw) return defaultReviewsState();
     const parsed = JSON.parse(raw) as { headers?: unknown; rows?: unknown };
     const headers = normalizeReviewHeaders(parsed.headers);
@@ -749,7 +743,7 @@ export function loadReviews(): ReviewsTableState {
 }
 
 export function saveReviews(state: ReviewsTableState) {
-  debounceLocalStorage(REVIEWS_STORAGE_KEY, state);
+  debouncePlannerSave(REVIEWS_FILE, state);
 }
 
 export function isTrackerActive(status: TrackerStatus): boolean {

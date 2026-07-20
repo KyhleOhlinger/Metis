@@ -26,6 +26,12 @@ pub struct VaultData {
     /// Vault-relative folder for pasted/saved images (default `assets`).
     #[serde(default = "default_image_dir_str")]
     pub default_image_dir: String,
+    /// `shared` (profile-wide) or `vault` (per-vault). Absent = shared.
+    #[serde(default)]
+    pub planner_mode: Option<String>,
+    /// Prompt for planner storage mode on first planner open.
+    #[serde(default)]
+    pub planner_setup_required: bool,
 }
 
 /// Persisted in `.metis/vault.json` to identify a Metis vault.
@@ -37,6 +43,10 @@ pub struct VaultMeta {
     pub metis_version: String,
     #[serde(default = "default_image_dir_str")]
     pub default_image_dir: String,
+    #[serde(default)]
+    pub planner_mode: Option<String>,
+    #[serde(default)]
+    pub planner_setup_required: bool,
 }
 
 pub fn default_image_dir_str() -> String {

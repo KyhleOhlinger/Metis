@@ -1,6 +1,6 @@
 use super::meta::{
     build_file_tree, detect_vault_hint, ensure_default_vault_dirs, is_allowed_ext,
-    read_vault_meta, validate_relative_vault_dir, write_vault_meta,
+    read_vault_meta, validate_relative_vault_dir, write_vault_meta, write_vault_meta_full,
 };
 use crate::security::{canon_vault, normalize_path, reject_untrusted_webview, safe_resolve};
 use crate::state::CurrentVault;
@@ -70,12 +70,27 @@ pub fn open_vault(
     let default_image_dir = read_vault_meta(&root)
         .map(|m| m.default_image_dir)
         .unwrap_or_else(|_| default_image_dir_str());
+    let vault_meta = read_vault_meta(&root).unwrap_or_else(|_| VaultMeta {
+        version: "1".into(),
+        name: root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("Vault")
+            .to_string(),
+        created_at_unix: 0,
+        metis_version: env!("CARGO_PKG_VERSION").into(),
+        default_image_dir: default_image_dir_str(),
+        planner_mode: None,
+        planner_setup_required: false,
+    });
     Ok(VaultData {
         path,
         files,
         is_metis_vault,
         vault_hint,
         default_image_dir,
+        planner_mode: vault_meta.planner_mode,
+        planner_setup_required: vault_meta.planner_setup_required,
     })
 }
 
@@ -365,6 +380,10 @@ pub fn create_vault(
     // vault on every subsequent open.  Failure is non-fatal — the vault works
     // normally; the user would just see the conversion prompt next time.
     let _ = write_vault_meta(&vault);
+    if let Ok(mut meta) = read_vault_meta(&vault) {
+        meta.planner_setup_required = true;
+        let _ = write_vault_meta_full(&vault, &meta);
+    }
 
     let vault_path_str = vault.to_string_lossy().to_string();
 
@@ -373,12 +392,23 @@ pub fn create_vault(
     vault_state.0.lock().unwrap().insert(window.label().to_string(), vault_path_str.clone());
 
     let files = build_file_tree(&vault).unwrap_or_default();
+    let vault_meta = read_vault_meta(&vault).unwrap_or_else(|_| VaultMeta {
+        version: "1".into(),
+        name: name.clone(),
+        created_at_unix: 0,
+        metis_version: env!("CARGO_PKG_VERSION").into(),
+        default_image_dir: default_image_dir_str(),
+        planner_mode: None,
+        planner_setup_required: true,
+    });
     Ok(VaultData {
         path: vault_path_str,
         files,
         is_metis_vault: true,
         vault_hint: None,
         default_image_dir: default_image_dir_str(),
+        planner_mode: vault_meta.planner_mode,
+        planner_setup_required: vault_meta.planner_setup_required,
     })
 }
 

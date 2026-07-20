@@ -1,4 +1,3 @@
-import { DEFAULT_SETTINGS } from "@/types/persona";
 import type { Settings } from "@/types/persona";
 import { pickJekyllBlogRoot } from "@/services/jekyllExportService";
 
@@ -17,7 +16,8 @@ export function JekyllExportSettings({
       <p className="text-xs leading-relaxed text-text-secondary">
         Defaults for sidebar or export hub Convert to Jekyll….
         Posts are written to <code className="text-[10px]">_posts/</code> with images under{" "}
-        <code className="text-[10px]">assets/img/</code>.
+        <code className="text-[10px]">assets/img/</code>. Leave fields blank until you configure
+        your blog.
       </p>
 
       <div>
@@ -28,7 +28,7 @@ export function JekyllExportSettings({
           <input
             value={settings.jekyllBlogRoot ?? ""}
             onChange={(e) => onUpdate({ jekyllBlogRoot: e.target.value })}
-            placeholder="…/KyhleOhlinger.github.io"
+            placeholder="/path/to/your-blog.github.io"
             className={`${inputCls} min-w-0 flex-1 font-mono text-[10px]`}
           />
           <button
@@ -50,8 +50,9 @@ export function JekyllExportSettings({
             Author
           </label>
           <input
-            value={settings.jekyllAuthor ?? DEFAULT_SETTINGS.jekyllAuthor ?? "kyhle"}
+            value={settings.jekyllAuthor ?? ""}
             onChange={(e) => onUpdate({ jekyllAuthor: e.target.value })}
+            placeholder="your-username"
             className={inputCls}
           />
         </div>
@@ -60,8 +61,9 @@ export function JekyllExportSettings({
             Image subfolder
           </label>
           <input
-            value={settings.jekyllImageSubfolder ?? DEFAULT_SETTINGS.jekyllImageSubfolder ?? "Metis"}
+            value={settings.jekyllImageSubfolder ?? ""}
             onChange={(e) => onUpdate({ jekyllImageSubfolder: e.target.value })}
+            placeholder="exports"
             className={`${inputCls} font-mono`}
           />
         </div>
@@ -72,7 +74,7 @@ export function JekyllExportSettings({
           Default categories
         </label>
         <input
-          value={(settings.jekyllDefaultCategories ?? DEFAULT_SETTINGS.jekyllDefaultCategories ?? ["Technical"]).join(", ")}
+          value={(settings.jekyllDefaultCategories ?? []).join(", ")}
           onChange={(e) =>
             onUpdate({
               jekyllDefaultCategories: e.target.value
@@ -81,6 +83,7 @@ export function JekyllExportSettings({
                 .filter(Boolean),
             })
           }
+          placeholder="e.g. Technical, Notes"
           className={inputCls}
         />
       </div>
@@ -90,8 +93,9 @@ export function JekyllExportSettings({
           Site URL (wikilinks)
         </label>
         <input
-          value={settings.jekyllSiteUrl ?? DEFAULT_SETTINGS.jekyllSiteUrl ?? "https://ohlinger.co"}
+          value={settings.jekyllSiteUrl ?? ""}
           onChange={(e) => onUpdate({ jekyllSiteUrl: e.target.value })}
+          placeholder="https://example.com"
           className={`${inputCls} font-mono`}
         />
       </div>
@@ -101,12 +105,9 @@ export function JekyllExportSettings({
           Description boilerplate
         </label>
         <textarea
-          value={
-            settings.jekyllDescription ??
-            DEFAULT_SETTINGS.jekyllDescription ??
-            ""
-          }
+          value={settings.jekyllDescription ?? ""}
           onChange={(e) => onUpdate({ jekyllDescription: e.target.value })}
+          placeholder="Optional default description for exported posts"
           rows={3}
           className={`${inputCls} resize-y`}
         />
