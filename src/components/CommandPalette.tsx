@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { STATUS_COLORS } from "../constants";
+import { toastError } from "../store/useToastStore";
 
 interface PaletteAction {
   id: string;
@@ -155,7 +156,7 @@ export default function CommandPalette({ onClose }: Props) {
       setActiveFile(note.path, content);
       onClose();
     } catch (err) {
-      console.error("CommandPalette: failed to open file", err);
+      toastError(`Could not open note: ${String(err)}`);
     }
   };
 

@@ -1,5 +1,4 @@
 import { useMemo, useEffect, useRef, useDeferredValue } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useShallow } from "zustand/react/shallow";
 import { useStore } from "../store/useStore";
 import type { NoteMetadata } from "../store/useStore";
@@ -18,6 +17,7 @@ import {
   normalizeWikilinkTarget,
   openNoteByWikilinkName,
   revealPlatformLabel,
+  revealInFinder,
   resolveExternalHref,
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
@@ -248,11 +248,7 @@ export default function MarkdownPreview({
           openDomContextMenu(e.clientX, e.clientY, [
             {
               label: ctx.revealLabel,
-              onClick: () => {
-                invoke("reveal_in_finder", { path: absPath, vaultPath: ctx.vaultPath }).catch(
-                  console.error,
-                );
-              },
+              onClick: () => revealInFinder(absPath, ctx.vaultPath),
             },
           ]);
         }

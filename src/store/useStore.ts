@@ -1,229 +1,27 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { buildBacklinkIndex } from "../utils/linkGraph";
-import { pathsEqual } from "../utils/paths";
+import { formatError } from "../utils/formatError";
+import { toastError } from "./useToastStore";
 import type { PlannerNavigateTarget } from "./plannerNavigation";
 import type { PlannerStorageMode } from "../planner/plannerPersistence";
 import { resetPlannerPersistence } from "../planner/plannerPersistence";
+import {
+  applyNoteMeta,
+  flattenAssets,
+  flattenNotes,
+  parseNoteMeta,
+} from "./noteIndexUtils";
+import type {
+  AssetMetadata,
+  DiskWrite,
+  EditorNavigateTarget,
+  FileNode,
+  NoteMetadata,
+  VaultData,
+} from "./vaultTypes";
 
-/**
- * UI components should subscribe with **selectors** or `useShallow` from `zustand/react/shallow`
- * when reading multiple fields — avoid `useStore()` with no arguments (re-renders on *any* slice change).
- * Use `useStore.getState()` inside callbacks/effects when a subscription is not needed.
- */
-
-export interface FileNode {
-  name: string;
-  /** Absolute path on the local filesystem */
-  path: string;
-  is_dir: boolean;
-  children?: FileNode[];
-}
-
-export interface VaultData {
-  path: string;
-  files: FileNode[];
-  is_metis_vault: boolean;
-  vault_hint?: string; // "obsidian" | "markdown" — only present for non-Metis vaults
-  /** Vault-relative folder for pasted/saved images (default `assets`). */
-  default_image_dir?: string;
-  /** `shared` (profile-wide) or `vault` (per-vault). */
-  planner_mode?: string | null;
-  /** When true, prompt for planner storage on first planner open. */
-  planner_setup_required?: boolean;
-}
-
-/**
- * Lightweight metadata for a single note, cached in memory.
- * Avoids re-scanning the vault on every `[[` keystroke.
- * Fields beyond name/path are populated lazily: on vault open (enrichNoteIndex)
- * and whenever a note is opened in the editor (setActiveFile).
- */
-export interface NoteMetadata {
-  /** Display name — filename stem without the .md extension */
-  name: string;
-  /** Absolute path on disk */
-  path: string;
-  /** YAML `aliases:` list — searched by wikilink autocomplete */
-  aliases?: string[];
-  /** YAML `status:` field — e.g. draft | in-progress | review | done */
-  status?: string;
-  /** YAML `date:` field — ISO date string (YYYY-MM-DD) */
-  date?: string;
-  /** YAML `parent:` field — canonical name of the parent note */
-  parent?: string;
-  /** YAML `related:` list — names of related notes */
-  related?: string[];
-}
-
-/**
- * Lightweight metadata for a non-markdown vault asset (image, PDF, etc.).
- * Used for Obsidian-compatible ![[image.png]] wikilink resolution:
- * Obsidian searches the entire vault by filename, not just the vault root.
- */
-export interface AssetMetadata {
-  /** Filename with extension, e.g. "photo.jpg" */
-  name: string;
-  /** Absolute path on disk */
-  path: string;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Extract well-known frontmatter fields from note content for the metadata
- * index.  Handles both inline lists (`[a, b]`) and YAML block lists (`- item`).
- * Strips surrounding quotes and [[wikilink]] brackets from values.
- */
-function parseNoteMeta(content: string): Pick<NoteMetadata, "aliases" | "status" | "date" | "parent" | "related"> {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (!match) return {};
-
-  const yaml = match[1];
-  const raw: Record<string, string | string[]> = {};
-  let currentKey = "";
-  let currentItems: string[] = [];
-  let inList = false;
-
-  const flush = () => {
-    if (currentKey && inList) raw[currentKey] = currentItems;
-    currentKey = "";
-    currentItems = [];
-    inList = false;
-  };
-
-  const clean = (s: string) =>
-    s.trim().replace(/^['"]|['"]$/g, "").replace(/^\[\[|\]\]$/g, "").trim();
-
-  for (const line of yaml.split(/\r?\n/)) {
-    const listMatch = line.match(/^\s+-\s+(.*)/);
-    const kvMatch   = line.match(/^([\w][\w-]*):\s*(.*)/);
-
-    if (listMatch && inList) {
-      currentItems.push(clean(listMatch[1]));
-    } else if (kvMatch) {
-      flush();
-      const [, key, rawVal] = kvMatch;
-      const val = rawVal.trim();
-      currentKey = key;
-      if (val === "" || val === "[]") {
-        inList = true;
-      } else if (val.startsWith("[") && val.endsWith("]")) {
-        raw[key] = val.slice(1, -1).split(",").map(clean).filter(Boolean);
-        currentKey = "";
-      } else {
-        raw[key] = clean(val);
-        currentKey = "";
-      }
-    } else {
-      flush();
-    }
-  }
-  flush();
-
-  const out: ReturnType<typeof parseNoteMeta> = {};
-  if (typeof raw.status === "string" && raw.status) out.status = raw.status;
-  if (typeof raw.date   === "string" && raw.date)   out.date   = raw.date;
-  if (typeof raw.parent === "string" && raw.parent) out.parent = raw.parent;
-  if (Array.isArray(raw.aliases)  && raw.aliases.length)  out.aliases  = raw.aliases  as string[];
-  if (Array.isArray(raw.related)  && raw.related.length)  out.related  = raw.related  as string[];
-  return out;
-}
-
-/**
- * Merge freshly-parsed metadata into an existing NoteMetadata entry.
- * Explicitly clears smart fields that are absent from the new parse result so
- * that removing a field (e.g. clearing status) is immediately reflected rather
- * than leaving a stale value from the previous spread.
- */
-function applyMeta(existing: NoteMetadata, fresh: ReturnType<typeof parseNoteMeta>): NoteMetadata {
-  return {
-    ...existing,
-    // Reset every smart field to undefined first, then overlay the fresh values.
-    status:  undefined,
-    date:    undefined,
-    aliases: undefined,
-    parent:  undefined,
-    related: undefined,
-    ...fresh,
-  };
-}
-
-/** Recursively collect every .md file in the file tree into a flat list. */
-function flattenNotes(nodes: FileNode[]): NoteMetadata[] {
-  const result: NoteMetadata[] = [];
-  function walk(ns: FileNode[]) {
-    for (const n of ns) {
-      if (!n.is_dir && n.name.endsWith(".md")) {
-        result.push({ name: n.name.replace(/\.md$/, ""), path: n.path });
-      }
-      if (n.children) walk(n.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
-
-/**
- * Recursively collect every non-directory, non-.md file (images, PDFs, etc.)
- * into a flat asset index.  This mirrors Obsidian's vault-wide attachment
- * resolution: `![[image.png]]` finds the file anywhere in the vault.
- */
-function flattenAssets(nodes: FileNode[]): AssetMetadata[] {
-  const result: AssetMetadata[] = [];
-  function walk(ns: FileNode[]) {
-    for (const n of ns) {
-      if (!n.is_dir && !n.name.endsWith(".md")) {
-        result.push({ name: n.name, path: n.path });
-      }
-      if (n.children) walk(n.children);
-    }
-  }
-  walk(nodes);
-  return result;
-}
-
-/** One file written on disk by AI tasks or batch sync operations. */
-export type DiskWrite = { path: string; content?: string };
-
-/** Pending scroll/selection target for search results and similar deep links. */
-export type EditorNavigateTarget = {
-  path: string;
-  offset: number;
-  matchEnd?: number;
-};
-
-/**
- * Refresh the vault tree and push new content into the open editor / visual
- * preview when a written file is currently active. Optionally open a different
- * path (e.g. agent-created note) without requiring a manual sidebar click.
- */
-export async function syncUiAfterDiskWrites(
-  writes: DiskWrite[],
-  options?: { openPath?: string },
-): Promise<void> {
-  const { activeFilePath, setActiveFile, refreshVault } = useStore.getState();
-  await refreshVault();
-
-  const openPath = options?.openPath;
-  if (openPath) {
-    const match = writes.find((w) => pathsEqual(w.path, openPath));
-    const content =
-      match?.content ??
-      (await invoke<string>("get_file_content", { path: openPath }));
-    setActiveFile(openPath, content);
-    return;
-  }
-
-  if (!activeFilePath) return;
-  const activeWrite = writes.find((w) => pathsEqual(w.path, activeFilePath));
-  if (!activeWrite) return;
-
-  const content =
-    activeWrite.content ??
-    (await invoke<string>("get_file_content", { path: activeFilePath }));
-  setActiveFile(activeFilePath, content);
-}
+export type { AssetMetadata, DiskWrite, EditorNavigateTarget, FileNode, NoteMetadata, VaultData };
 
 // ── State interface ───────────────────────────────────────────────────────────
 
@@ -474,7 +272,7 @@ export const useStore = create<MetisState>((set, get) => ({
         assetIndex: flattenAssets(data.files),
       });
     } catch (err) {
-      console.error("Failed to refresh vault:", err);
+      toastError(`Could not refresh vault: ${formatError(err)}`);
     }
   },
 
@@ -508,7 +306,7 @@ export const useStore = create<MetisState>((set, get) => ({
         contentsByPath.set(path, content);
         const existing = updatedByPath.get(path);
         if (!existing) return;
-        updatedByPath.set(path, applyMeta(existing, parseNoteMeta(content)));
+        updatedByPath.set(path, applyNoteMeta(existing, parseNoteMeta(content)));
       });
     }
 
@@ -540,7 +338,7 @@ export const useStore = create<MetisState>((set, get) => ({
           ? "source"
           : s.editorTab,
       noteIndex: s.noteIndex.map((n) =>
-        n.path === path ? applyMeta(n, meta) : n,
+        n.path === path ? applyNoteMeta(n, meta) : n,
       ),
     }));
   },
@@ -555,7 +353,7 @@ export const useStore = create<MetisState>((set, get) => ({
       isDirty: true,
       saveStatus: "idle",
       noteIndex: meta && path
-        ? s.noteIndex.map((n) => (n.path === path ? applyMeta(n, meta) : n))
+        ? s.noteIndex.map((n) => (n.path === path ? applyNoteMeta(n, meta) : n))
         : s.noteIndex,
     }));
   },

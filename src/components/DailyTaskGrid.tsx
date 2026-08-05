@@ -1,1928 +1,261 @@
-import { Fragment, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
-import Toolbar from "./Toolbar";
-import PlannerMarkdownCell from "./planner/PlannerMarkdownCell";
-import ReviewsPlannerGrid from "./planner/ReviewsPlannerGrid";
+import PlannerChrome from "./planner/PlannerChrome";
+import PlannerDailyTab from "./planner/PlannerDailyTab";
+import PlannerGoalsTab from "./planner/PlannerGoalsTab";
+import PlannerMonthlyTab from "./planner/PlannerMonthlyTab";
+import PlannerReviewsTab from "./planner/PlannerReviewsTab";
+import PlannerTemplatesTab from "./planner/PlannerTemplatesTab";
+import PlannerTrackerTab from "./planner/PlannerTrackerTab";
+import PlannerWeeklyTab from "./planner/PlannerWeeklyTab";
 import { useStore } from "@/store/useStore";
-import {
-  initPlannerPersistence,
-  resetPlannerPersistence,
-} from "@/planner/plannerPersistence";
-import { PlannerSyncIndicator } from "@/components/planner/PlannerSyncIndicator";
-
-import {
-  type PlannerTab,
-  type DayName,
-  type DayEntry,
-  type TaskStatus,
-  type TemplateCadence,
-  type TrackerStatus,
-  type PlanTemplate,
-  type PlannerLayoutTemplates,
-  type GoalSection,
-  type ReviewTableRow,
-  type ReviewsTableState,
-  type PublicHolidayEntry,
-  type PtoEntry,
-  type ConferenceEntry,
-  type OfficeTripEntry,
-  type TrackerData,
-  type TaskManifest,
-  DAY_NAMES,
-  HOLIDAY_COUNTRIES,
-  HOLIDAY_REGIONS,
-  PLANNER_PURPLE_HEADER,
-  SPECIAL_LABELS,
-  TEMPLATE_FUTURE_HORIZON_DAYS,
-  DEFAULT_LAYOUT_TEMPLATES,
-  WEEKLY_TEMPLATE,
-  MONTHLY_PROMPTS,
-  loadManifest,
-  saveManifest,
-  loadTemplates,
-  saveTemplates,
-  loadLayoutTemplates,
-  saveLayoutTemplates,
-  loadGoals,
-  saveGoals,
-  loadReviews,
-  saveReviews,
-  startOfWeekMonday,
-  addDays,
-  startOfDay,
-  monthName,
-  weekKey,
-  parseDailyExpandedFocus,
-  weekHeader,
-  parseWeekStartFromKey,
-  resolveWeeklyViewMonth,
-  mondaysInCalendarMonth,
-  toIsoDate,
-  parseIsoDateLocal,
-  lastFridayOfMonth,
-  monthStart,
-  getYearEntry,
-  getTracker,
-  monthEntryFor,
-  dayDate,
-  dayNameFromDate,
-  recurrenceLabel,
-  matchingTemplatesForDate,
-  makeRowId,
-  makeMonthlyTemplateContent,
-  isLongWeekendHoliday,
-  getEntry,
-  setEntry,
-  setWeeklyReview,
-  setMonthlyReview,
-  makeEmptyMonthEntry,
-  applyTemplatesToFutureRange,
-  removeTemplateFutureOccurrences,
-  applyTrackerOverrides,
-  defaultReviewsState,
-} from "@/planner/plannerStorage";
-
+import { usePlanTemplates } from "@/planner/usePlanTemplates";
+import { usePlannerBootstrap } from "@/planner/usePlannerBootstrap";
+import { usePlannerManifest } from "@/planner/usePlannerManifest";
+import { usePlannerTracker } from "@/planner/usePlannerTracker";
+import { usePlannerGoals } from "@/planner/usePlannerGoals";
+import { usePlannerReviews } from "@/planner/usePlannerReviews";
+import { useDailyGridLayout } from "@/planner/useDailyGridLayout";
+import { usePlannerNavigation } from "@/planner/usePlannerNavigation";
+import { type PlannerTab, addDays, startOfDay, startOfWeekMonday } from "@/planner/plannerStorage";
 
 export default function DailyTaskGrid() {
   const today = useMemo(() => startOfDay(new Date()), []);
   const vaultPath = useStore((s) => s.vaultPath);
   const plannerMode = useStore((s) => s.plannerMode);
   const plannerReloadKey = useStore((s) => s.plannerReloadKey);
-  const [plannerReady, setPlannerReady] = useState(false);
-  const [plannerInitError, setPlannerInitError] = useState<string | null>(null);
-  const [hydrationComplete, setHydrationComplete] = useState(false);
-  const [tab, setTab] = useState<PlannerTab>("daily");
-  const [anchorWeek, setAnchorWeek] = useState(() => startOfWeekMonday(new Date()));
-  const [manifest, setManifest] = useState<TaskManifest>({});
-  const [templates, setTemplates] = useState<PlanTemplate[]>([]);
-  const [layoutTemplates, setLayoutTemplates] = useState<PlannerLayoutTemplates>(
-    () => DEFAULT_LAYOUT_TEMPLATES,
-  );
-  const [monthlyPromptDraft, setMonthlyPromptDraft] = useState("");
-  const [templateName, setTemplateName] = useState("");
-  const [templateCadence, setTemplateCadence] = useState<TemplateCadence>("daily");
-  const [templateIntervalDaysInput, setTemplateIntervalDaysInput] = useState("14");
-  const [templateStartDate, setTemplateStartDate] = useState(() => toIsoDate(today));
-  const [templateContent, setTemplateContent] = useState("- ");
-  const [templateRecurrenceDay, setTemplateRecurrenceDay] = useState<DayName>("Monday");
-  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
-  const [editTemplateName, setEditTemplateName] = useState("");
-  const [editTemplateCadence, setEditTemplateCadence] = useState<TemplateCadence>("daily");
-  const [editTemplateIntervalDaysInput, setEditTemplateIntervalDaysInput] = useState("14");
-  const [editTemplateStartDate, setEditTemplateStartDate] = useState(() => toIsoDate(today));
-  const [editTemplateContent, setEditTemplateContent] = useState("");
-  const [editTemplateRecurrenceDay, setEditTemplateRecurrenceDay] = useState<DayName>("Monday");
-  const [trackerFocus, setTrackerFocus] = useState<{
-    type: "holiday" | "pto" | "conference" | "trip";
-    id: string;
-  } | null>(null);
-  const plannerToolbarViewRef = useRef<EditorView | null>(null);
-  const plannerScrollRef = useRef<HTMLDivElement>(null);
-  const [importCountry, setImportCountry] = useState("CA");
-  const [importRegion, setImportRegion] = useState("ALL");
-  const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
-  const [importStatus, setImportStatus] = useState("");
-  const [pendingTemplateAction, setPendingTemplateAction] = useState<{
-    templateId: string;
-    action: "disable" | "delete";
-    cutoffDate: string;
-  } | null>(null);
-  const [goalSections, setGoalSections] = useState<GoalSection[]>([]);
-  const [reviewsState, setReviewsState] = useState<ReviewsTableState>(() => defaultReviewsState());
-  const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
-  const [activePlannerFieldKey, setActivePlannerFieldKey] = useState<string | null>(null);
-  const dailyGridShellRef = useRef<HTMLDivElement>(null);
   const plannerNavigateTo = useStore((s) => s.plannerNavigateTo);
   const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
 
-  useEffect(() => {
-    if (!vaultPath) {
-      setPlannerReady(false);
-      setPlannerInitError(null);
-      setHydrationComplete(false);
-      return;
-    }
-    let cancelled = false;
-    setPlannerReady(false);
-    setPlannerInitError(null);
-    setHydrationComplete(false);
-    void (async () => {
-      try {
-        await initPlannerPersistence(vaultPath, plannerMode);
-        if (cancelled) return;
-        const layout = loadLayoutTemplates();
-        setManifest(loadManifest());
-        setTemplates(loadTemplates());
-        setLayoutTemplates(layout);
-        setMonthlyPromptDraft(layout.monthlyPrompts.join("\n"));
-        setGoalSections(loadGoals());
-        setReviewsState(loadReviews());
-        setPlannerReady(true);
-      } catch (err) {
-        if (cancelled) return;
-        const message = err instanceof Error ? err.message : String(err);
-        setPlannerInitError(message || "Could not load planner data.");
-        setPlannerReady(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      void resetPlannerPersistence();
-    };
-  }, [vaultPath, plannerMode, plannerReloadKey]);
+  const [tab, setTab] = useState<PlannerTab>("daily");
+  const [anchorWeek, setAnchorWeek] = useState(() => startOfWeekMonday(new Date()));
+  const [dailyExpandedCellKey, setDailyExpandedCellKey] = useState<string | null>(null);
+  const [activePlannerFieldKey, setActivePlannerFieldKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!plannerReady) {
-      setHydrationComplete(false);
-      return;
-    }
-    const id = requestAnimationFrame(() => setHydrationComplete(true));
-    return () => cancelAnimationFrame(id);
-  }, [plannerReady, vaultPath, plannerMode, plannerReloadKey]);
+  const plannerToolbarViewRef = useRef<EditorView | null>(null);
+  const plannerScrollRef = useRef<HTMLDivElement>(null);
+  const dailyGridShellRef = useRef<HTMLDivElement>(null);
+
+  const bootstrap = usePlannerBootstrap(vaultPath, plannerMode, plannerReloadKey);
+  const manifestApi = usePlannerManifest(bootstrap.manifest, bootstrap.setManifest, anchorWeek, today);
+  const trackerApi = usePlannerTracker(bootstrap.manifest, bootstrap.setManifest);
+  const goalsApi = usePlannerGoals(bootstrap.goalSections, bootstrap.setGoalSections, bootstrap.hydrationComplete);
+  const reviewsApi = usePlannerReviews(
+    bootstrap.reviewsState,
+    bootstrap.setReviewsState,
+    bootstrap.hydrationComplete,
+  );
 
   const visibleWeeks = useMemo(
     () => [0, 1, 2, 3].map((i) => addDays(anchorWeek, i * 7)),
     [anchorWeek],
   );
-  const weeklyViewMonth = useMemo(() => resolveWeeklyViewMonth(anchorWeek), [anchorWeek]);
-  const reviewWeeks = useMemo(() => {
-    const year = weeklyViewMonth.getFullYear();
-    const monthIndex = weeklyViewMonth.getMonth();
-    const monthLabel = monthName(weeklyViewMonth);
-    const monthEntry = getYearEntry(manifest, String(year))[monthLabel] ?? makeEmptyMonthEntry();
 
-    const dedup = new Map<string, Date>();
-    for (const monday of mondaysInCalendarMonth(year, monthIndex)) {
-      dedup.set(weekKey(monday), monday);
-    }
-    // Preserve stored rows whose keys still belong to this calendar month.
-    for (const wk of Object.keys(monthEntry.weekly_reviews)) {
-      if (dedup.has(wk)) continue;
-      const parsed = parseWeekStartFromKey(year, monthIndex, wk);
-      if (parsed && parsed.getMonth() === monthIndex && parsed.getFullYear() === year) {
-        dedup.set(wk, parsed);
-      }
-    }
-    return [...dedup.entries()]
-      .sort((a, b) => a[1].getTime() - b[1].getTime())
-      .map(([wk, monday]) => ({ wk, monday }));
-  }, [manifest, weeklyViewMonth]);
-  const monthlyReviewYear = anchorWeek.getFullYear();
-  const monthlyReviewMonths = useMemo(
-    () => Array.from({ length: 12 }, (_, i) => monthStart(monthlyReviewYear, i)),
-    [monthlyReviewYear],
-  );
-  const todayWeekStart = useMemo(() => startOfWeekMonday(today), [today]);
-  const todayMonthStart = useMemo(() => monthStart(today.getFullYear(), today.getMonth()), [today]);
-  const tracker = useMemo(() => getTracker(manifest), [manifest]);
-  const ptoRemaining = useMemo(
-    () =>
-      Math.max(
-        0,
-        tracker.pto_stats.total_allocation -
-          tracker.pto.reduce((sum, row) => sum + Math.max(0, Number(row.daysTaken) || 0), 0),
-      ),
-    [tracker],
-  );
-  const showDateNav = tab === "daily" || tab === "weekly" || tab === "monthly";
-  const prevLabel = tab === "monthly" ? "Previous Year" : tab === "weekly" ? "Previous Month" : "Previous Week";
-  const nextLabel = tab === "monthly" ? "Next Year" : tab === "weekly" ? "Next Month" : "Next Week";
-  const midLabel = tab === "monthly" ? "This Year" : tab === "weekly" ? "This Month" : "Today";
-  const importRegions = HOLIDAY_REGIONS[importCountry] ?? [];
+  const planTemplates = usePlanTemplates({
+    plannerReady: bootstrap.plannerReady,
+    plannerReloadKey,
+    hydrationComplete: bootstrap.hydrationComplete,
+    today,
+    manifest: bootstrap.manifest,
+    setManifest: bootstrap.setManifest,
+    visibleWeeks,
+  });
 
-  useEffect(() => {
-    if (!hydrationComplete) return;
-    saveTemplates(templates);
-  }, [templates, hydrationComplete]);
+  const dailyGridLayout = useDailyGridLayout(dailyExpandedCellKey, visibleWeeks);
 
-  useEffect(() => {
-    if (!plannerNavigateTo) return;
-    const target = plannerNavigateTo;
-
-    if (target.kind === "daily") {
-      const d = parseIsoDateLocal(target.dateIso);
-      if (d) {
-        const monday = startOfWeekMonday(d);
-        setTab("daily");
-        setAnchorWeek(monday);
-        const day = dayNameFromDate(d);
-        if (day) {
-          setDailyExpandedCellKey(`${weekKey(monday)}_${day}`);
-        } else {
-          setDailyExpandedCellKey(null);
-        }
-      }
-    } else if (target.kind === "weekly") {
-      const d = parseIsoDateLocal(target.dateIso);
-      if (d) {
-        setTab("weekly");
-        setAnchorWeek(startOfWeekMonday(d));
-      }
-    } else if (target.kind === "monthly") {
-      setTab("monthly");
-      setAnchorWeek(startOfWeekMonday(monthStart(target.year, target.monthIndex)));
-      requestAnimationFrame(() => {
-        const el = plannerScrollRef.current;
-        const row = el?.querySelector<HTMLElement>(`[data-monthly-row="${target.monthIndex}"]`);
-        row?.scrollIntoView({ block: "start" });
-      });
-    }
-
-    clearPlannerNavigateTo();
-  }, [plannerNavigateTo, clearPlannerNavigateTo]);
-
-  useEffect(() => {
-    if (!hydrationComplete) return;
-    saveLayoutTemplates(layoutTemplates);
-  }, [layoutTemplates, hydrationComplete]);
-
-  useEffect(() => {
-    if (!hydrationComplete) return;
-    saveGoals(goalSections);
-  }, [goalSections, hydrationComplete]);
-
-  useEffect(() => {
-    if (!hydrationComplete) return;
-    saveReviews(reviewsState);
-  }, [reviewsState, hydrationComplete]);
-
-  useEffect(() => {
-    if (importRegion === "ALL") return;
-    const allowed = new Set((HOLIDAY_REGIONS[importCountry] ?? []).map((region) => region.code));
-    if (!allowed.has(importRegion)) setImportRegion("ALL");
-  }, [importCountry, importRegion]);
-
-  useEffect(() => {
-    const el = plannerScrollRef.current;
-    if (!el || (tab === "daily" && dailyExpandedCellKey)) return;
-    requestAnimationFrame(() => {
-      if (tab === "monthly") {
-        const now = new Date();
-        const targetMonth =
-          monthlyReviewYear === now.getFullYear() ? now.getMonth() : 0;
-        const row = el.querySelector<HTMLElement>(`[data-monthly-row="${targetMonth}"]`);
-        if (row) {
-          row.scrollIntoView({ block: "start" });
-          return;
-        }
-      }
-      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
-    });
-  }, [tab, dailyExpandedCellKey, monthlyReviewYear]);
-
-  useEffect(() => {
-    if (tab !== "daily") setDailyExpandedCellKey(null);
-    setActivePlannerFieldKey(null);
-  }, [tab]);
-
-  useEffect(() => {
-    setDailyExpandedCellKey(null);
-  }, [anchorWeek]);
-
-  const dailyExpandedParsed = useMemo(() => parseDailyExpandedFocus(dailyExpandedCellKey), [dailyExpandedCellKey]);
-  const dailyGridWeightedWeekIdx = useMemo(() => {
-    if (!dailyExpandedParsed) return -1;
-    return visibleWeeks.findIndex((m) => weekKey(m) === dailyExpandedParsed.wk);
-  }, [dailyExpandedParsed, visibleWeeks]);
-  const dailyGridWeightedDayIdx = useMemo(
-    () => (dailyExpandedParsed ? DAY_NAMES.indexOf(dailyExpandedParsed.day) : -1),
-    [dailyExpandedParsed],
-  );
-  const dailyGridWeighted =
-    dailyExpandedParsed !== null && dailyGridWeightedWeekIdx >= 0 && dailyGridWeightedDayIdx >= 0;
-
-  const dailyGridTemplateColumns =
-    dailyGridWeighted && dailyGridWeightedWeekIdx >= 0
-      ? `110px ${[0, 1, 2, 3]
-          .map((i) => (i === dailyGridWeightedWeekIdx ? "minmax(0, 4fr)" : "minmax(0, 1fr)"))
-          .join(" ")}`
-      : `110px repeat(4, minmax(210px, 1fr))`;
-
-  const dailyGridTemplateRows =
-    dailyGridWeighted && dailyGridWeightedDayIdx >= 0
-      ? `auto ${[0, 1, 2, 3, 4]
-          .map((i) => (i === dailyGridWeightedDayIdx ? "minmax(0, 3fr)" : "minmax(0, 1fr)"))
-          .join(" ")}`
-      : undefined;
-
-  const isOnOrAfterToday = (date: Date) => startOfDay(date).getTime() >= today.getTime();
-  const useWeeklyTemplateForDate = (monday: Date) => monday.getTime() >= todayWeekStart.getTime();
-  const useMonthlyTemplateForDate = (monthDate: Date) => monthStart(monthDate.getFullYear(), monthDate.getMonth()).getTime() >= todayMonthStart.getTime();
-
-  const updateLayoutTemplates = (patch: Partial<PlannerLayoutTemplates>) => {
-    setLayoutTemplates((prev) => ({ ...prev, ...patch }));
-  };
-
-  const updateEntry = (monday: Date, day: DayName, next: DayEntry) => {
-    setManifest((prev) => {
-      const updated = setEntry(prev, monday, day, next);
-      saveManifest(updated);
-      return updated;
-    });
-  };
-
-  const updateWeeklyReview = (monday: Date, content: string) => {
-    setManifest((prev) => {
-      const updated = setWeeklyReview(prev, monday, content);
-      saveManifest(updated);
-      return updated;
-    });
-  };
-
-  const updateMonthlyReview = (monday: Date, content: string) => {
-    const monthLastFriday = lastFridayOfMonth(monday);
-    setManifest((prev) => {
-      const updated = setMonthlyReview(prev, monday, { content }, toIsoDate(monthLastFriday));
-      saveManifest(updated);
-      return updated;
-    });
-  };
-
-  const updateMonthlyAchievements = (monday: Date, achievements: string) => {
-    const monthLastFriday = lastFridayOfMonth(monday);
-    setManifest((prev) => {
-      const updated = setMonthlyReview(prev, monday, { achievements }, toIsoDate(monthLastFriday));
-      saveManifest(updated);
-      return updated;
-    });
-  };
-
-  const updateGoalSection = (id: string, patch: Partial<Pick<GoalSection, "title" | "content">>) => {
-    setGoalSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-  };
-  const addGoalSection = () => {
-    setGoalSections((prev) => [...prev, { id: makeRowId(), title: "New goal section", content: "" }]);
-  };
-  const removeGoalSection = (id: string) => {
-    setGoalSections((prev) => prev.filter((s) => s.id !== id));
-  };
-
-  const updateReviewHeader = (index: number, value: string) => {
-    setReviewsState((prev) => {
-      if (index < 0 || index > 4) return prev;
-      const headers = [...prev.headers] as [string, string, string, string, string];
-      headers[index] = value;
-      return { ...prev, headers };
-    });
-  };
-
-  const updateReviewRow = (id: string, patch: Partial<Omit<ReviewTableRow, "id">>) => {
-    setReviewsState((prev) => ({
-      ...prev,
-      rows: prev.rows.map((r) => (r.id === id ? { ...r, ...patch } : r)),
-    }));
-  };
-
-  const addReviewRow = () => {
-    setReviewsState((prev) => ({
-      ...prev,
-      rows: [
-        ...prev.rows,
-        {
-          id: makeRowId(),
-          cycleLabel: "Review period",
-          managerStrengths: "",
-          managerOpportunity: "",
-          personalStrengths: "",
-          personalOpportunity: "",
-        },
-      ],
-    }));
-  };
-
-  const removeReviewRow = (id: string) => {
-    setReviewsState((prev) => ({ ...prev, rows: prev.rows.filter((r) => r.id !== id) }));
-  };
-
-  const updateTracker = (updater: (current: TrackerData) => TrackerData) => {
-    setManifest((prev) => {
-      const next = updater(getTracker(prev));
-      const updated: TaskManifest = {
-        ...prev,
-        tracker: next,
-      };
-      saveManifest(updated);
-      return updated;
-    });
-  };
-
-  const importPublicHolidays = async () => {
-    const year = Number(importYear);
-    if (!Number.isFinite(year) || year < 1970 || year > 2100) {
-      setImportStatus("Enter a valid year.");
-      return;
-    }
-    setImportStatus("Importing public holidays…");
-    try {
-      const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${importCountry}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = (await res.json()) as Array<{
-        date: string;
-        localName: string;
-        name: string;
-        global?: boolean;
-        counties?: string[] | null;
-      }>;
-      updateTracker((current) => {
-        const scopedRows = rows.filter((r) => {
-          if (importRegion === "ALL") return true;
-          if (r.global) return true;
-          return Array.isArray(r.counties) && r.counties.includes(importRegion);
-        });
-        const nextPublicHolidays = [...current.public_holidays];
-        const dateToRowIndex = new Map<string, number>();
-        for (let i = 0; i < nextPublicHolidays.length; i += 1) {
-          if (!dateToRowIndex.has(nextPublicHolidays[i].date)) {
-            dateToRowIndex.set(nextPublicHolidays[i].date, i);
-          }
-        }
-
-        let importedCount = 0;
-        let mergedCount = 0;
-        const importSource = importRegion === "ALL" ? `${importCountry}-${year}` : `${importCountry}-${importRegion}-${year}`;
-        for (const row of scopedRows) {
-          const importedName = row.localName || row.name || "Holiday";
-          const existingIndex = dateToRowIndex.get(row.date);
-          if (existingIndex === undefined) {
-            nextPublicHolidays.push({
-              id: makeRowId(),
-              name: importedName,
-              date: row.date,
-              status: "Coming Up",
-              notes: `Imported (${importSource})`,
-            });
-            dateToRowIndex.set(row.date, nextPublicHolidays.length - 1);
-            importedCount += 1;
-            continue;
-          }
-          const existing = nextPublicHolidays[existingIndex];
-          const notesChunk = `Imported ${importedName} (${importSource})`;
-          const existingNotes = existing.notes ?? "";
-          const alreadyNoted = existingNotes.includes(notesChunk);
-          nextPublicHolidays[existingIndex] = {
-            ...existing,
-            notes: alreadyNoted
-              ? existingNotes
-              : [existingNotes, notesChunk].filter(Boolean).join(" | "),
-          };
-          mergedCount += 1;
-        }
-        setImportStatus(
-          `Imported ${importedCount} new holiday${importedCount === 1 ? "" : "s"}; merged ${mergedCount} existing date${mergedCount === 1 ? "" : "s"}.`,
-        );
-        return {
-          ...current,
-          public_holidays: nextPublicHolidays,
-        };
-      });
-    } catch (e) {
-      setImportStatus(`Import failed: ${String(e)}`);
-    }
-  };
-
-  const addTemplate = () => {
-    const normalizedContent = templateContent.trim();
-    if (!normalizedContent) return;
-    const intervalDays = Math.max(1, Math.floor(Number(templateIntervalDaysInput) || 1));
-    const next: PlanTemplate = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      name: templateName.trim() || `Template ${templates.length + 1}`,
-      cadence: templateCadence,
-      intervalDays,
-      startDate: templateStartDate,
-      content: normalizedContent,
-      enabled: true,
-      recurrenceDay: templateRecurrenceDay,
-    };
-    setTemplates((prev) => [...prev, next]);
-    setTemplateName("");
-    setTemplateContent("- ");
-    setTemplateIntervalDaysInput("14");
-  };
-
-  const toggleTemplate = (id: string) => {
-    const target = templates.find((t) => t.id === id);
-    if (!target) return;
-    if (!target.enabled) {
-      setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, enabled: true } : t)));
-      return;
-    }
-    setPendingTemplateAction({
-      templateId: id,
-      action: "disable",
-      cutoffDate: toIsoDate(today),
-    });
-  };
-
-  const deleteTemplate = (id: string) => {
-    setPendingTemplateAction({
-      templateId: id,
-      action: "delete",
-      cutoffDate: toIsoDate(today),
-    });
-  };
-
-  const startEditTemplate = (template: PlanTemplate) => {
-    setEditingTemplateId(template.id);
-    setEditTemplateName(template.name);
-    setEditTemplateCadence(template.cadence);
-    setEditTemplateIntervalDaysInput(String(template.intervalDays));
-    setEditTemplateStartDate(template.startDate);
-    setEditTemplateContent(template.content);
-    setEditTemplateRecurrenceDay(template.recurrenceDay);
-  };
-
-  const cancelEditTemplate = () => {
-    setEditingTemplateId(null);
-  };
-
-  const cancelTemplateAction = () => {
-    setPendingTemplateAction(null);
-  };
-
-  const confirmTemplateAction = () => {
-    if (!pendingTemplateAction) return;
-    const cutoff = parseIsoDateLocal(pendingTemplateAction.cutoffDate);
-    if (!cutoff) return;
-    if (pendingTemplateAction.action === "disable") {
-      const updatedTemplates = templates.map((t) =>
-        t.id === pendingTemplateAction.templateId ? { ...t, enabled: false } : t,
-      );
-      const pruned = removeTemplateFutureOccurrences(
-        manifest,
-        pendingTemplateAction.templateId,
-        cutoff,
-        templates,
-        updatedTemplates,
-      );
-      if (pruned.changed) {
-        saveManifest(pruned.manifest);
-        setManifest(pruned.manifest);
-      }
-      setTemplates(updatedTemplates);
-      setPendingTemplateAction(null);
-      return;
-    }
-
-    const updatedTemplates = templates.filter((t) => t.id !== pendingTemplateAction.templateId);
-    const pruned = removeTemplateFutureOccurrences(
-      manifest,
-      pendingTemplateAction.templateId,
-      cutoff,
-      templates,
-      updatedTemplates,
-    );
-    if (pruned.changed) {
-      saveManifest(pruned.manifest);
-      setManifest(pruned.manifest);
-    }
-    setTemplates(updatedTemplates);
-    if (editingTemplateId === pendingTemplateAction.templateId) {
-      setEditingTemplateId(null);
-    }
-    setPendingTemplateAction(null);
-  };
-
-  const saveTemplateEdits = () => {
-    if (!editingTemplateId) return;
-    const normalizedContent = editTemplateContent.trim();
-    if (!normalizedContent) return;
-    const intervalDays = Math.max(1, Math.floor(Number(editTemplateIntervalDaysInput) || 1));
-    setTemplates((prev) =>
-      prev.map((t) =>
-        t.id === editingTemplateId
-          ? {
-              ...t,
-              name: editTemplateName.trim() || t.name,
-              cadence: editTemplateCadence,
-              intervalDays,
-              startDate: editTemplateStartDate,
-              content: normalizedContent,
-              recurrenceDay: editTemplateRecurrenceDay,
-            }
-          : t,
-      ),
-    );
-    setEditingTemplateId(null);
-  };
-
-  const updateHoliday = (id: string, patch: Partial<PublicHolidayEntry>) => {
-    updateTracker((current) => ({
-      ...current,
-      public_holidays: current.public_holidays.map((row) => (row.id === id ? { ...row, ...patch } : row)),
-    }));
-  };
-
-  const updatePto = (id: string, patch: Partial<PtoEntry>) => {
-    updateTracker((current) => ({
-      ...current,
-      pto: current.pto.map((row) => (row.id === id ? { ...row, ...patch } : row)),
-    }));
-  };
-
-  const updateConference = (id: string, patch: Partial<ConferenceEntry>) => {
-    updateTracker((current) => ({
-      ...current,
-      conferences: current.conferences.map((row) => (row.id === id ? { ...row, ...patch } : row)),
-    }));
-  };
-
-  const updateTrip = (id: string, patch: Partial<OfficeTripEntry>) => {
-    updateTracker((current) => ({
-      ...current,
-      office_trips: current.office_trips.map((row) => (row.id === id ? { ...row, ...patch } : row)),
-    }));
-  };
-
-  const applyMonthlyPromptTemplate = () => {
-    const prompts = monthlyPromptDraft
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-    if (!prompts.length) return;
-    updateLayoutTemplates({ monthlyPrompts: prompts });
-  };
-
-  useEffect(() => {
-    setManifest((prev) => {
-      const result = applyTemplatesToFutureRange(prev, templates, today, TEMPLATE_FUTURE_HORIZON_DAYS);
-      if (!result.changed) return prev;
-      saveManifest(result.manifest);
-      return result.manifest;
-    });
-  }, [templates, today]);
-
-  useEffect(() => {
-    // Also keep newly navigated weeks in sync without waiting for template edits.
-    if (!templates.some((t) => t.enabled)) return;
-    setManifest((prev) => {
-      let updated = prev;
-      let changed = false;
-      for (const monday of visibleWeeks) {
-        for (const day of DAY_NAMES) {
-          const current = getEntry(updated, monday, day);
-          if (current.status !== "work") continue;
-          if ((current.planned ?? "").trim() !== "") continue;
-          const targetDate = dayDate(monday, day);
-          const matches = matchingTemplatesForDate(targetDate, templates);
-          if (!matches.length) continue;
-          const autoPlan = matches.map((t) => t.content.trim()).join("\n");
-          updated = setEntry(updated, monday, day, {
-            ...current,
-            planned: autoPlan,
-            status: "work",
-            label: undefined,
-            plannedAutoGenerated: true,
-            plannedTemplateIds: matches.map((t) => t.id),
-          });
-          changed = true;
-        }
-      }
-      if (!changed) return prev;
-      saveManifest(updated);
-      return updated;
-    });
-  }, [templates, visibleWeeks]);
-
-  useEffect(() => {
-    setManifest((prev) => {
-      const result = applyTrackerOverrides(prev);
-      if (!result.changed) return prev;
-      saveManifest(result.manifest);
-      return result.manifest;
-    });
-  }, [tracker]);
+  usePlannerNavigation({
+    plannerNavigateTo,
+    clearPlannerNavigateTo,
+    plannerScrollRef,
+    tab,
+    setTab,
+    anchorWeek,
+    setAnchorWeek,
+    dailyExpandedCellKey,
+    setDailyExpandedCellKey,
+    setActivePlannerFieldKey,
+    monthlyReviewYear: manifestApi.monthlyReviewYear,
+  });
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      {!plannerReady ? (
+      {!bootstrap.plannerReady ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 text-center text-xs text-text-muted">
-          {plannerInitError ? (
+          {bootstrap.plannerInitError ? (
             <>
               <p className="text-red-400">Could not load planner</p>
-              <p className="max-w-md text-[10px]">{plannerInitError}</p>
+              <p className="max-w-md text-[10px]">{bootstrap.plannerInitError}</p>
             </>
           ) : (
             <p>Loading planner…</p>
           )}
         </div>
       ) : (
-      <>
-      <div className="shrink-0 border-b border-border px-3 py-2">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-[11px] font-semibold text-text-primary">Daily Task View</p>
-            <p className="mt-0.5 text-[10px] text-text-muted">
-              Weekly planning/logging and review workspace (auto-saved to JSON on disk).
-            </p>
-          </div>
-          <PlannerSyncIndicator compact />
-        </div>
-        <div className="mt-2 flex items-center gap-1.5">
-          {([
-            ["daily", "Daily Log"],
-            ["weekly", "Weekly Review"],
-            ["monthly", "Monthly Review"],
-            ["reviews", "Reviews"],
-            ["goals", "Goals"],
-            ["templates", "Templates"],
-            ["tracker", "PTO & Events"],
-          ] as const).map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={[
-                "rounded border px-2.5 py-1 text-[10px] font-medium transition-colors",
-                tab === id
-                  ? "border-accent/40 bg-accent/20 text-accent"
-                  : "border-border bg-surface-overlay text-text-secondary hover:text-text-primary",
-              ].join(" ")}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {showDateNav && (
-          <div className="mt-2 flex items-center gap-1.5">
-            <button
-              onClick={() =>
-                setAnchorWeek((w) =>
-                  tab === "monthly"
-                    ? startOfWeekMonday(new Date(w.getFullYear() - 1, w.getMonth(), w.getDate()))
-                    : tab === "weekly"
-                    ? startOfWeekMonday(new Date(w.getFullYear(), w.getMonth() - 1, w.getDate()))
-                    : addDays(w, -7),
-                )
-              }
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-            >
-              {prevLabel}
-            </button>
-            <button
-              onClick={() =>
-                setAnchorWeek(
-                  tab === "monthly"
-                    ? startOfWeekMonday(new Date(new Date().getFullYear(), 0, 1))
-                    : tab === "weekly"
-                    ? startOfWeekMonday(new Date(new Date().getFullYear(), new Date().getMonth(), 1))
-                    : startOfWeekMonday(new Date()),
-                )
-              }
-              className="rounded border border-accent/30 bg-accent/15 px-2 py-1 text-[10px] text-accent"
-            >
-              {midLabel}
-            </button>
-            <button
-              onClick={() =>
-                setAnchorWeek((w) =>
-                  tab === "monthly"
-                    ? startOfWeekMonday(new Date(w.getFullYear() + 1, w.getMonth(), w.getDate()))
-                    : tab === "weekly"
-                    ? startOfWeekMonday(new Date(w.getFullYear(), w.getMonth() + 1, w.getDate()))
-                    : addDays(w, 7),
-                )
-              }
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-            >
-              {nextLabel}
-            </button>
-          </div>
-        )}
-        {(tab === "weekly" ||
-          tab === "monthly" ||
-          tab === "templates" ||
-          tab === "goals" ||
-          tab === "reviews" ||
-          tab === "daily") && (
-          <div className="mt-2 min-w-0 border-t border-border pt-2" data-metis-planner-toolbar>
-            <Toolbar
-              viewRef={plannerToolbarViewRef}
-              spellcheck={false}
-              onToggleSpellcheck={() => {}}
-            />
-          </div>
-        )}
-      </div>
+        <>
+          <PlannerChrome
+            tab={tab}
+            onTabChange={setTab}
+            onAnchorWeekChange={setAnchorWeek}
+            toolbarViewRef={plannerToolbarViewRef}
+          />
 
-      <div
-        ref={plannerScrollRef}
-        className={[
-          "min-h-0 flex-1 overflow-auto p-3",
-          tab === "daily" && dailyExpandedCellKey ? "flex flex-col" : "",
-        ].join(" ")}
-      >
-        {tab === "daily" && (
           <div
-            ref={dailyGridShellRef}
+            ref={plannerScrollRef}
             className={[
-              "grid min-w-[980px] gap-1.5",
-              dailyGridWeighted ? "min-h-0 flex-1" : "",
+              "min-h-0 flex-1 overflow-auto p-3",
+              tab === "daily" && dailyExpandedCellKey ? "flex flex-col" : "",
             ].join(" ")}
-            style={{
-              gridTemplateColumns: dailyGridTemplateColumns,
-              ...(dailyGridTemplateRows ? { gridTemplateRows: dailyGridTemplateRows } : {}),
-            }}
           >
-            <div style={{ gridColumn: 1, gridRow: 1 }} aria-hidden />
-            {visibleWeeks.map((monday, wi) => (
-              <div
-                key={`hdr-${monday.toISOString()}`}
-                style={{ gridColumn: wi + 2, gridRow: 1 }}
-                className={PLANNER_PURPLE_HEADER}
-              >
-                {weekHeader(monday)}
-              </div>
-            ))}
-
-            {DAY_NAMES.map((day, di) => (
-              <Fragment key={day}>
-                <div
-                  style={{ gridColumn: 1, gridRow: di + 2 }}
-                  className={PLANNER_PURPLE_HEADER}
-                >
-                  {day}
-                </div>
-                {visibleWeeks.map((monday, wi) => {
-                  const cell = getEntry(manifest, monday, day);
-                  const isSpecial = cell.status !== "work";
-                  const trackerControlled = Boolean(cell.trackerSourceType && cell.trackerSourceId);
-                  const cellDate = dayDate(monday, day);
-                  const isTodayCell =
-                    startOfDay(cellDate).getTime() === today.getTime() && !isSpecial;
-                  const cellFocusKey = `${weekKey(monday)}_${day}`;
-                  const dailyExpanded = !isSpecial && dailyExpandedCellKey === cellFocusKey;
-                  const workBlocksWrapClass = dailyExpanded
-                    ? "flex min-h-0 flex-1 flex-col gap-2"
-                    : "space-y-2";
-                  const workLabelWrapClass = dailyExpanded
-                    ? "flex min-h-0 flex-1 flex-col text-[10px] font-semibold text-text-secondary"
-                    : "block text-[10px] font-semibold text-text-secondary";
-                  const dailyCmMinH = 64;
-                  const dailyEditDefaultH = dailyExpanded ? 200 : dailyCmMinH;
-                  const useTemplateLabels = isOnOrAfterToday(cellDate);
-                  const plannedLabel = useTemplateLabels
-                    ? layoutTemplates.dailyPrimaryLabel
-                    : DEFAULT_LAYOUT_TEMPLATES.dailyPrimaryLabel;
-                  const didEnabled = useTemplateLabels
-                    ? layoutTemplates.dailySecondaryEnabled
-                    : true;
-                  const didLabel = useTemplateLabels
-                    ? layoutTemplates.dailySecondaryLabel
-                    : DEFAULT_LAYOUT_TEMPLATES.dailySecondaryLabel;
-                  const specialBlockClass = dailyGridWeighted
-                    ? "flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto py-2 text-center text-[12px] font-semibold text-green-400"
-                    : "flex h-[158px] items-center justify-center text-center text-[12px] font-semibold text-green-400";
-
-                  return (
-                    <div
-                      key={`${monday.toISOString()}-${day}`}
-                      style={{ gridColumn: wi + 2, gridRow: di + 2 }}
-                      className={[
-                        "rounded-md border border-border bg-surface-overlay/30 p-2",
-                        dailyGridWeighted ? "flex min-h-0 h-full flex-col overflow-hidden" : "",
-                        isTodayCell ? "ring-1 ring-accent/35" : "",
-                        dailyExpanded ? "ring-2 ring-accent/55" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(" ")}
-                      onBlur={(e) => {
-                        if (isSpecial) return;
-                        const rt = e.relatedTarget as Node | null;
-                        if (rt && e.currentTarget.contains(rt)) return;
-                        startTransition(() => {
-                          setDailyExpandedCellKey((cur) => (cur === cellFocusKey ? null : cur));
-                        });
-                      }}
-                    >
-                      {cell.officeTripBanner && (
-                        <div className="mb-2 shrink-0 rounded border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-200">
-                          <div className="font-semibold">{cell.officeTripBanner}</div>
-                          {cell.officeTripEventId && (
-                            <button
-                              onClick={() => {
-                                setTab("tracker");
-                                setTrackerFocus({
-                                  type: "trip",
-                                  id: cell.officeTripEventId!,
-                                });
-                              }}
-                              className="mt-1 underline underline-offset-2 text-sky-200"
-                            >
-                              Edit Event
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <div className="mb-2 shrink-0">
-                        <select
-                          value={cell.status}
-                          disabled={trackerControlled}
-                          onChange={(e) => {
-                            const nextStatus = e.target.value as TaskStatus;
-                            updateEntry(monday, day, {
-                              ...cell,
-                              status: nextStatus,
-                              label: nextStatus === "work" ? undefined : SPECIAL_LABELS[nextStatus],
-                            });
-                          }}
-                          className="w-full rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-secondary"
-                        >
-                          <option value="work">Work</option>
-                          <option value="holiday">Public Holiday</option>
-                          <option value="sick">Sick Day</option>
-                          <option value="pto">PTO</option>
-                          <option value="personal">Personal</option>
-                          <option value="offsite">Off-site / Conference</option>
-                        </select>
-                      </div>
-
-                      {isSpecial ? (
-                        <div className={specialBlockClass}>
-                          <div>
-                            <div>{cell.label ?? SPECIAL_LABELS[cell.status as Exclude<TaskStatus, "work">]}</div>
-                            {trackerControlled && (
-                              <button
-                                onClick={() => {
-                                  setTab("tracker");
-                                  setTrackerFocus({
-                                    type: cell.trackerSourceType!,
-                                    id: cell.trackerSourceId!,
-                                  });
-                                }}
-                                className="mt-2 text-[10px] underline underline-offset-2 text-accent"
-                              >
-                                Edit Event
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className={[workBlocksWrapClass, dailyGridWeighted ? "min-h-0 flex-1" : ""].filter(Boolean).join(" ")}>
-                          <label className={workLabelWrapClass}>
-                            {plannedLabel}:
-                            <div className="mt-1 min-h-0">
-                              <PlannerMarkdownCell
-                                value={cell.planned ?? ""}
-                                onChange={(next) =>
-                                  updateEntry(monday, day, {
-                                    ...cell,
-                                    planned: next,
-                                    status: "work",
-                                    label: undefined,
-                                    plannedAutoGenerated: false,
-                                    plannedTemplateIds: undefined,
-                                  })
-                                }
-                                editing={dailyExpanded}
-                                onRequestEdit={() =>
-                                  startTransition(() => setDailyExpandedCellKey(cellFocusKey))
-                                }
-                                resizeStorageKey={`${cellFocusKey}-planned`}
-                                defaultEditHeightPx={dailyEditDefaultH}
-                                minHeightPx={dailyCmMinH}
-                                fontSizePx={10}
-                                fillHeight={dailyGridWeighted && !dailyExpanded}
-                                toolbarViewRef={plannerToolbarViewRef}
-                                onEditorFocus={() =>
-                                  startTransition(() => setDailyExpandedCellKey(cellFocusKey))
-                                }
-                              />
-                            </div>
-                          </label>
-                          {didEnabled && (
-                            <label className={workLabelWrapClass}>
-                              {didLabel}:
-                              <div className="mt-1 min-h-0">
-                                <PlannerMarkdownCell
-                                  value={cell.did ?? ""}
-                                  onChange={(next) =>
-                                    updateEntry(monday, day, {
-                                      ...cell,
-                                      did: next,
-                                      status: "work",
-                                      label: undefined,
-                                    })
-                                  }
-                                  editing={dailyExpanded}
-                                  onRequestEdit={() =>
-                                    startTransition(() => setDailyExpandedCellKey(cellFocusKey))
-                                  }
-                                  resizeStorageKey={`${cellFocusKey}-did`}
-                                  defaultEditHeightPx={dailyEditDefaultH}
-                                  minHeightPx={dailyCmMinH}
-                                  fontSizePx={10}
-                                  fillHeight={dailyGridWeighted && !dailyExpanded}
-                                  toolbarViewRef={plannerToolbarViewRef}
-                                  onEditorFocus={() =>
-                                    startTransition(() => setDailyExpandedCellKey(cellFocusKey))
-                                  }
-                                />
-                              </div>
-                            </label>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </Fragment>
-            ))}
-          </div>
-        )}
-
-        {tab === "templates" && (
-          <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-            <p className="text-[11px] font-semibold text-text-primary">Template Cadence</p>
-            <p className="mt-0.5 text-[10px] text-text-muted">
-              Auto-populates empty "What do I want to do" entries by cadence.
-            </p>
-            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_140px_140px_140px_140px]">
-              <input
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="Template name (optional)"
-                className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
+            {tab === "daily" && (
+              <PlannerDailyTab
+                shellRef={dailyGridShellRef}
+                visibleWeeks={visibleWeeks}
+                manifest={bootstrap.manifest}
+                today={today}
+                layoutTemplates={bootstrap.layoutTemplates}
+                dailyExpandedCellKey={dailyExpandedCellKey}
+                onDailyExpandedCellKeyChange={setDailyExpandedCellKey}
+                dailyGridWeighted={dailyGridLayout.dailyGridWeighted}
+                dailyGridTemplateColumns={dailyGridLayout.dailyGridTemplateColumns}
+                dailyGridTemplateRows={dailyGridLayout.dailyGridTemplateRows}
+                onUpdateEntry={manifestApi.updateEntry}
+                onNavigateToTracker={(focus) => {
+                  setTab("tracker");
+                  trackerApi.setTrackerFocus(focus);
+                }}
+                isOnOrAfterToday={manifestApi.isOnOrAfterToday}
+                toolbarViewRef={plannerToolbarViewRef}
               />
-              <select
-                value={templateCadence}
-                onChange={(e) => setTemplateCadence(e.target.value as TemplateCadence)}
-                className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-              >
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-                <option value="monthly">Monthly</option>
-                <option value="interval">Interval (days)</option>
-              </select>
-              <input
-                type="date"
-                value={templateStartDate}
-                onChange={(e) => setTemplateStartDate(e.target.value)}
-                className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
+            )}
+
+            {tab === "templates" && (
+              <PlannerTemplatesTab
+                templates={planTemplates.templates}
+                templateName={planTemplates.templateName}
+                setTemplateName={planTemplates.setTemplateName}
+                templateCadence={planTemplates.templateCadence}
+                setTemplateCadence={planTemplates.setTemplateCadence}
+                templateIntervalDaysInput={planTemplates.templateIntervalDaysInput}
+                setTemplateIntervalDaysInput={planTemplates.setTemplateIntervalDaysInput}
+                templateStartDate={planTemplates.templateStartDate}
+                setTemplateStartDate={planTemplates.setTemplateStartDate}
+                templateContent={planTemplates.templateContent}
+                setTemplateContent={planTemplates.setTemplateContent}
+                templateRecurrenceDay={planTemplates.templateRecurrenceDay}
+                setTemplateRecurrenceDay={planTemplates.setTemplateRecurrenceDay}
+                editingTemplateId={planTemplates.editingTemplateId}
+                editTemplateName={planTemplates.editTemplateName}
+                setEditTemplateName={planTemplates.setEditTemplateName}
+                editTemplateCadence={planTemplates.editTemplateCadence}
+                setEditTemplateCadence={planTemplates.setEditTemplateCadence}
+                editTemplateIntervalDaysInput={planTemplates.editTemplateIntervalDaysInput}
+                setEditTemplateIntervalDaysInput={planTemplates.setEditTemplateIntervalDaysInput}
+                editTemplateStartDate={planTemplates.editTemplateStartDate}
+                setEditTemplateStartDate={planTemplates.setEditTemplateStartDate}
+                editTemplateContent={planTemplates.editTemplateContent}
+                setEditTemplateContent={planTemplates.setEditTemplateContent}
+                editTemplateRecurrenceDay={planTemplates.editTemplateRecurrenceDay}
+                setEditTemplateRecurrenceDay={planTemplates.setEditTemplateRecurrenceDay}
+                pendingTemplateAction={planTemplates.pendingTemplateAction}
+                setPendingTemplateAction={planTemplates.setPendingTemplateAction}
+                onAddTemplate={planTemplates.addTemplate}
+                onToggleTemplate={planTemplates.toggleTemplate}
+                onDeleteTemplate={planTemplates.deleteTemplate}
+                onStartEditTemplate={planTemplates.startEditTemplate}
+                onCancelEditTemplate={planTemplates.cancelEditTemplate}
+                onCancelTemplateAction={planTemplates.cancelTemplateAction}
+                onConfirmTemplateAction={planTemplates.confirmTemplateAction}
+                onSaveTemplateEdits={planTemplates.saveTemplateEdits}
+                layoutTemplates={bootstrap.layoutTemplates}
+                onUpdateLayoutTemplates={bootstrap.updateLayoutTemplates}
+                monthlyPromptDraft={bootstrap.monthlyPromptDraft}
+                setMonthlyPromptDraft={bootstrap.setMonthlyPromptDraft}
+                onApplyMonthlyPromptTemplate={bootstrap.applyMonthlyPromptTemplate}
+                activeFieldKey={activePlannerFieldKey}
+                onActivateField={setActivePlannerFieldKey}
+                toolbarViewRef={plannerToolbarViewRef}
               />
-              <input
-                type="number"
-                min={1}
-                value={templateIntervalDaysInput}
-                disabled={templateCadence !== "interval"}
-                onChange={(e) => setTemplateIntervalDaysInput(e.target.value)}
-                className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
+            )}
+
+            {tab === "reviews" && (
+              <PlannerReviewsTab
+                reviewsState={bootstrap.reviewsState}
+                onAddRow={reviewsApi.addReviewRow}
+                onHeaderChange={reviewsApi.updateReviewHeader}
+                onRowPatch={reviewsApi.updateReviewRow}
+                onRemoveRow={reviewsApi.removeReviewRow}
+                activeFieldKey={activePlannerFieldKey}
+                onActivateField={setActivePlannerFieldKey}
+                toolbarViewRef={plannerToolbarViewRef}
               />
-              <select
-                value={templateRecurrenceDay}
-                disabled={templateCadence === "daily"}
-                onChange={(e) => setTemplateRecurrenceDay(e.target.value as DayName)}
-                className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-              >
-                {DAY_NAMES.map((day) => (
-                  <option key={day} value={day}>
-                    {day}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="mt-2 flex items-start gap-2">
-              <div className="min-h-[64px] flex-1">
-                <PlannerMarkdownCell
-                  fieldKey="template-new"
-                  activeFieldKey={activePlannerFieldKey}
-                  onActivateField={setActivePlannerFieldKey}
-                  value={templateContent}
-                  onChange={setTemplateContent}
-                  minHeightPx={64}
-                  toolbarViewRef={plannerToolbarViewRef}
-                />
-              </div>
-              <button
-                onClick={addTemplate}
-                className="rounded border border-accent/40 bg-accent/20 px-3 py-1.5 text-[10px] font-semibold text-accent"
-              >
-                Add Template
-              </button>
-            </div>
-            {templates.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {templates.map((t) => (
-                  <div
-                    key={t.id}
-                    className="flex items-center justify-between rounded border border-border bg-surface-raised px-2 py-1 text-[10px]"
-                  >
-                    <span className="truncate text-text-secondary">
-                      {t.name} · {recurrenceLabel(t)}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => startEditTemplate(t)}
-                        className="rounded border border-border px-1.5 py-0.5 text-text-secondary hover:text-text-primary"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => toggleTemplate(t.id)}
-                        className="rounded border border-border px-1.5 py-0.5 text-text-secondary hover:text-text-primary"
-                      >
-                        {t.enabled ? "Disable" : "Enable"}
-                      </button>
-                      <button
-                        onClick={() => deleteTemplate(t.id)}
-                        className="rounded border border-red-400/40 px-1.5 py-0.5 text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
             )}
-            {pendingTemplateAction && (
-              <div className="mt-2 rounded border border-border bg-surface-raised p-2">
-                <p className="text-[10px] font-semibold text-text-primary">
-                  {pendingTemplateAction.action === "disable" ? "Disable Template" : "Delete Template"}
-                </p>
-                <p className="mt-1 text-[10px] text-text-secondary">
-                  Choose the final day this template remains active. All auto-generated occurrences after that date will be removed.
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={pendingTemplateAction.cutoffDate}
-                    onChange={(e) =>
-                      setPendingTemplateAction((prev) =>
-                        prev ? { ...prev, cutoffDate: e.target.value } : prev,
-                      )
-                    }
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-                  />
-                  <button
-                    onClick={confirmTemplateAction}
-                    className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={cancelTemplateAction}
-                    className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+
+            {tab === "goals" && (
+              <PlannerGoalsTab
+                goalSections={bootstrap.goalSections}
+                onAddSection={goalsApi.addGoalSection}
+                onUpdateSection={goalsApi.updateGoalSection}
+                onRemoveSection={goalsApi.removeGoalSection}
+                activeFieldKey={activePlannerFieldKey}
+                onActivateField={setActivePlannerFieldKey}
+                toolbarViewRef={plannerToolbarViewRef}
+              />
             )}
-            {editingTemplateId && (
-              <div className="mt-2 rounded border border-border bg-surface-raised p-2">
-                <p className="text-[10px] font-semibold text-text-primary">Edit Template</p>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_140px_140px_140px_140px]">
-                  <input
-                    value={editTemplateName}
-                    onChange={(e) => setEditTemplateName(e.target.value)}
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-                  />
-                  <select
-                    value={editTemplateCadence}
-                    onChange={(e) => setEditTemplateCadence(e.target.value as TemplateCadence)}
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-                  >
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                    <option value="interval">Interval (days)</option>
-                  </select>
-                  <input
-                    type="date"
-                    value={editTemplateStartDate}
-                    onChange={(e) => setEditTemplateStartDate(e.target.value)}
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={editTemplateIntervalDaysInput}
-                    disabled={editTemplateCadence !== "interval"}
-                    onChange={(e) => setEditTemplateIntervalDaysInput(e.target.value)}
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-                  />
-                  <select
-                    value={editTemplateRecurrenceDay}
-                    disabled={editTemplateCadence === "daily"}
-                    onChange={(e) => setEditTemplateRecurrenceDay(e.target.value as DayName)}
-                    className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-                  >
-                    {DAY_NAMES.map((day) => (
-                      <option key={day} value={day}>
-                        {day}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="mt-2 min-h-[64px] w-full">
-                  <PlannerMarkdownCell
-                    fieldKey={`template-edit-${editingTemplateId}`}
-                    activeFieldKey={activePlannerFieldKey}
-                    onActivateField={setActivePlannerFieldKey}
-                    value={editTemplateContent}
-                    onChange={setEditTemplateContent}
-                    minHeightPx={64}
-                    toolbarViewRef={plannerToolbarViewRef}
-                  />
-                </div>
-                <div className="mt-2 flex items-center gap-1.5">
-                  <button
-                    onClick={saveTemplateEdits}
-                    className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={cancelEditTemplate}
-                    className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+
+            {tab === "tracker" && (
+              <PlannerTrackerTab
+                tracker={trackerApi.tracker}
+                ptoRemaining={trackerApi.ptoRemaining}
+                trackerFocus={trackerApi.trackerFocus}
+                today={today}
+                importCountry={trackerApi.importCountry}
+                setImportCountry={trackerApi.setImportCountry}
+                importRegion={trackerApi.importRegion}
+                setImportRegion={trackerApi.setImportRegion}
+                importYear={trackerApi.importYear}
+                setImportYear={trackerApi.setImportYear}
+                importStatus={trackerApi.importStatus}
+                importRegions={trackerApi.importRegions}
+                onImportHolidays={trackerApi.importPublicHolidays}
+                updateTracker={trackerApi.updateTracker}
+                updateHoliday={trackerApi.updateHoliday}
+                updatePto={trackerApi.updatePto}
+                updateConference={trackerApi.updateConference}
+                updateTrip={trackerApi.updateTrip}
+              />
             )}
-            <div className="mt-3 rounded-md border border-border bg-surface-raised p-2">
-              <p className="text-[11px] font-semibold text-text-primary">
-                Review & Block Templates (applies from today onward)
-              </p>
-              <p className="mt-0.5 text-[10px] text-text-muted">
-                Past entries keep their original structure; future/current dates use these labels and defaults.
-              </p>
 
-              <div className="mt-2 rounded border border-border bg-surface-overlay/60 p-2">
-                <p className="text-[10px] font-semibold text-text-primary">Daily Log Blocks</p>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="text-[10px] text-text-secondary">
-                    Primary block label
-                    <input
-                      value={layoutTemplates.dailyPrimaryLabel}
-                      onChange={(e) => updateLayoutTemplates({ dailyPrimaryLabel: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                    />
-                  </label>
-                  <label className="text-[10px] text-text-secondary">
-                    Secondary block label
-                    <input
-                      value={layoutTemplates.dailySecondaryLabel}
-                      disabled={!layoutTemplates.dailySecondaryEnabled}
-                      onChange={(e) => updateLayoutTemplates({ dailySecondaryLabel: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-                    />
-                  </label>
-                </div>
-                <label className="mt-2 flex items-center gap-1.5 text-[10px] text-text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={layoutTemplates.dailySecondaryEnabled}
-                    onChange={(e) => updateLayoutTemplates({ dailySecondaryEnabled: e.target.checked })}
-                  />
-                  Show secondary daily block
-                </label>
-              </div>
+            {tab === "weekly" && (
+              <PlannerWeeklyTab
+                manifest={bootstrap.manifest}
+                weeklyViewMonth={manifestApi.weeklyViewMonth}
+                reviewWeeks={manifestApi.reviewWeeks}
+                layoutTemplates={bootstrap.layoutTemplates}
+                useWeeklyTemplateForDate={manifestApi.useWeeklyTemplateForDate}
+                useMonthlyTemplateForDate={manifestApi.useMonthlyTemplateForDate}
+                onUpdateWeeklyReview={manifestApi.updateWeeklyReview}
+                activeFieldKey={activePlannerFieldKey}
+                onActivateField={setActivePlannerFieldKey}
+                toolbarViewRef={plannerToolbarViewRef}
+              />
+            )}
 
-              <div className="mt-2 rounded border border-border bg-surface-overlay/60 p-2">
-                <p className="text-[10px] font-semibold text-text-primary">Weekly Review Blocks</p>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="text-[10px] text-text-secondary">
-                    Left header label
-                    <input
-                      value={layoutTemplates.weeklyLeftHeader}
-                      onChange={(e) => updateLayoutTemplates({ weeklyLeftHeader: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                    />
-                  </label>
-                  <label className="text-[10px] text-text-secondary">
-                    Right header label
-                    <input
-                      value={layoutTemplates.weeklyRightHeader}
-                      onChange={(e) => updateLayoutTemplates({ weeklyRightHeader: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                    />
-                  </label>
-                </div>
-                <label className="mt-2 block text-[10px] text-text-secondary">
-                  Default weekly review content
-                  <div className="mt-1 min-h-[80px]">
-                    <PlannerMarkdownCell
-                      fieldKey="weekly-default-layout"
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={layoutTemplates.weeklyDefaultContent}
-                      onChange={(v) => updateLayoutTemplates({ weeklyDefaultContent: v })}
-                      minHeightPx={80}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                </label>
-              </div>
-
-              <div className="mt-2 rounded border border-border bg-surface-overlay/60 p-2">
-                <p className="text-[10px] font-semibold text-text-primary">Monthly Review Blocks</p>
-                <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="text-[10px] text-text-secondary">
-                    Left header suffix
-                    <input
-                      value={layoutTemplates.monthlyLeftHeader}
-                      onChange={(e) => updateLayoutTemplates({ monthlyLeftHeader: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                    />
-                  </label>
-                  <label className="text-[10px] text-text-secondary">
-                    Right header label
-                    <input
-                      value={layoutTemplates.monthlyRightHeader}
-                      onChange={(e) => updateLayoutTemplates({ monthlyRightHeader: e.target.value })}
-                      className="mt-1 w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                    />
-                  </label>
-                </div>
-                <label className="mt-2 block text-[10px] text-text-secondary">
-                  Monthly prompts (one per line)
-                  <div className="mt-1 min-h-[96px]">
-                    <PlannerMarkdownCell
-                      fieldKey="monthly-prompts-draft"
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={monthlyPromptDraft}
-                      onChange={setMonthlyPromptDraft}
-                      minHeightPx={96}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                </label>
-                <button
-                  onClick={applyMonthlyPromptTemplate}
-                  className="mt-2 rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-                >
-                  Apply Monthly Prompts
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "reviews" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-semibold text-text-primary">Reviews</p>
-                <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
-                  Same grid pattern as Daily Log: <code className="text-[9px]">gap-1.5</code> gutters, purple rounded column and
-                  row headers, and card-style markdown cells (saved in <code className="text-[9px]">reviews.json</code>).
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={addReviewRow}
-                className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-              >
-                Add row
-              </button>
-            </div>
-            <ReviewsPlannerGrid
-              headers={reviewsState.headers}
-              rows={reviewsState.rows}
-              onHeaderChange={updateReviewHeader}
-              onRowPatch={updateReviewRow}
-              onRemoveRow={removeReviewRow}
-              toolbarViewRef={plannerToolbarViewRef}
-              activeFieldKey={activePlannerFieldKey}
-              onActivateField={setActivePlannerFieldKey}
-            />
-          </div>
-        )}
-
-        {tab === "goals" && (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-semibold text-text-primary">Goals</p>
-                <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
-                  Create sections with editable titles and notes. Stored locally in this browser.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={addGoalSection}
-                className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-              >
-                Add goal section
-              </button>
-            </div>
-            {goalSections.length === 0 ? (
-              <p className="text-[10px] text-text-muted">No sections yet. Use Add goal section to create one.</p>
-            ) : (
-              goalSections.map((section) => (
-                <div key={section.id} className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <input
-                      value={section.title}
-                      onChange={(e) => updateGoalSection(section.id, { title: e.target.value })}
-                      className="min-w-[12rem] flex-1 rounded border border-border bg-surface-raised px-2 py-1 text-[11px] font-semibold text-text-primary"
-                      aria-label="Goal section title"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeGoalSection(section.id)}
-                      className="shrink-0 rounded border border-border px-2 py-1 text-[10px] text-red-300 hover:text-red-200"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                  <div className="mt-2">
-                    <PlannerMarkdownCell
-                      fieldKey={`goal-${section.id}`}
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={section.content}
-                      onChange={(next) => updateGoalSection(section.id, { content: next })}
-                      minHeightPx={140}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                </div>
-              ))
+            {tab === "monthly" && (
+              <PlannerMonthlyTab
+                manifest={bootstrap.manifest}
+                monthlyReviewYear={manifestApi.monthlyReviewYear}
+                monthlyReviewMonths={manifestApi.monthlyReviewMonths}
+                layoutTemplates={bootstrap.layoutTemplates}
+                useMonthlyTemplateForDate={manifestApi.useMonthlyTemplateForDate}
+                onUpdateMonthlyReview={manifestApi.updateMonthlyReview}
+                onUpdateMonthlyAchievements={manifestApi.updateMonthlyAchievements}
+                activeFieldKey={activePlannerFieldKey}
+                onActivateField={setActivePlannerFieldKey}
+                toolbarViewRef={plannerToolbarViewRef}
+              />
             )}
           </div>
-        )}
-
-        {tab === "tracker" && (
-          <div className="space-y-3">
-            <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
-              <p className="text-[11px] font-semibold text-text-primary">PTO Counter</p>
-              <div className="mt-2 flex items-center gap-3 text-[11px]">
-                <label className="text-text-secondary">
-                  Total Allocation
-                  <input
-                    type="number"
-                    min={0}
-                    value={tracker.pto_stats.total_allocation}
-                    onChange={(e) =>
-                      updateTracker((current) => ({
-                        ...current,
-                        pto_stats: {
-                          total_allocation: Math.max(0, Number(e.target.value) || 0),
-                        },
-                      }))
-                    }
-                    className="ml-2 w-20 rounded border border-border bg-surface-raised px-2 py-1 text-[11px] text-text-primary"
-                  />
-                </label>
-                <span className="font-semibold text-text-primary">PTO Remaining: {ptoRemaining}</span>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-text-primary">Public Holidays</p>
-                <div className="flex items-center gap-1.5">
-                  <select
-                    value={importCountry}
-                    onChange={(e) => setImportCountry(e.target.value)}
-                    className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                  >
-                    {HOLIDAY_COUNTRIES.map((country) => (
-                      <option key={country.code} value={country.code}>
-                        {country.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={importRegion}
-                    onChange={(e) => setImportRegion(e.target.value)}
-                    className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                  >
-                    <option value="ALL">All Provinces / States</option>
-                    {importRegions.map((region) => (
-                      <option key={region.code} value={region.code}>
-                        {region.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="number"
-                    min={1970}
-                    max={2100}
-                    value={importYear}
-                    onChange={(e) => setImportYear(e.target.value)}
-                    className="w-20 rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-                  />
-                  <button
-                    onClick={importPublicHolidays}
-                    className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
-                  >
-                    Import by Country
-                  </button>
-                  <button
-                    onClick={() =>
-                      updateTracker((current) => ({
-                        ...current,
-                        public_holidays: [
-                          ...current.public_holidays,
-                          {
-                            id: makeRowId(),
-                            name: "",
-                            date: toIsoDate(today),
-                            status: "Coming Up",
-                            notes: "",
-                          },
-                        ],
-                      }))
-                    }
-                    className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                  >
-                    Add Row
-                  </button>
-                </div>
-              </div>
-              {importStatus && <p className="text-[10px] text-text-muted">{importStatus}</p>}
-              <div className="overflow-auto rounded-md border border-border">
-                <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
-                    <tr>
-                      <th className="px-2 py-1 text-left">Holiday Name</th>
-                      <th className="px-2 py-1 text-left">Date</th>
-                      <th className="px-2 py-1 text-left">Day</th>
-                      <th className="px-2 py-1 text-left">Status</th>
-                      <th className="px-2 py-1 text-left">Notes</th>
-                      <th className="px-2 py-1 text-left" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracker.public_holidays.map((row) => (
-                      <tr
-                        key={row.id}
-                        className={trackerFocus?.type === "holiday" && trackerFocus.id === row.id ? "bg-accent/10" : ""}
-                      >
-                        <td className="px-2 py-1">
-                          <div className="flex items-center gap-1.5">
-                            <input value={row.name} onChange={(e) => updateHoliday(row.id, { name: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" />
-                            {isLongWeekendHoliday(row.date) && (
-                              <span className="shrink-0 rounded border border-violet-400/40 bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
-                                Long Weekend
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-2 py-1"><input type="date" value={row.date} onChange={(e) => updateHoliday(row.id, { date: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1 text-text-secondary">
-                          {(parseIsoDateLocal(row.date) ?? new Date()).toLocaleDateString("en-US", { weekday: "short" })}
-                        </td>
-                        <td className="px-2 py-1">
-                          <select value={row.status} onChange={(e) => updateHoliday(row.id, { status: e.target.value as TrackerStatus })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5">
-                            <option value="Coming Up">Coming Up</option>
-                            <option value="Complete">Complete</option>
-                            <option value="Pending">Pending</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updateHoliday(row.id, { notes: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><button onClick={() => updateTracker((current) => ({ ...current, public_holidays: current.public_holidays.filter((r) => r.id !== row.id) }))} className="text-red-300">Delete</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-text-primary">Personal PTO</p>
-                <button
-                  onClick={() =>
-                    updateTracker((current) => ({
-                      ...current,
-                      pto: [
-                        ...current.pto,
-                        {
-                          id: makeRowId(),
-                          description: "",
-                          startDate: toIsoDate(today),
-                          endDate: toIsoDate(today),
-                          daysTotal: 1,
-                          daysTaken: 1,
-                          status: "Coming Up",
-                          notes: "",
-                        },
-                      ],
-                    }))
-                  }
-                  className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                >
-                  Add Row
-                </button>
-              </div>
-              <div className="overflow-auto rounded-md border border-border">
-                <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
-                    <tr>
-                      <th className="px-2 py-1 text-left">Description</th>
-                      <th className="px-2 py-1 text-left">Start Date</th>
-                      <th className="px-2 py-1 text-left">End Date</th>
-                      <th className="px-2 py-1 text-left">Day(s) Total</th>
-                      <th className="px-2 py-1 text-left">Days Taken</th>
-                      <th className="px-2 py-1 text-left">Status</th>
-                      <th className="px-2 py-1 text-left">Notes</th>
-                      <th className="px-2 py-1 text-left" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracker.pto.map((row) => (
-                      <tr key={row.id} className={trackerFocus?.type === "pto" && trackerFocus.id === row.id ? "bg-accent/10" : ""}>
-                        <td className="px-2 py-1"><input value={row.description} onChange={(e) => updatePto(row.id, { description: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.startDate} onChange={(e) => updatePto(row.id, { startDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.endDate} onChange={(e) => updatePto(row.id, { endDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="number" min={1} value={row.daysTotal} onChange={(e) => updatePto(row.id, { daysTotal: Math.max(1, Number(e.target.value) || 1) })} className="w-20 rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="number" min={0} value={row.daysTaken} onChange={(e) => updatePto(row.id, { daysTaken: Math.max(0, Number(e.target.value) || 0) })} className="w-20 rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1">
-                          <select value={row.status} onChange={(e) => updatePto(row.id, { status: e.target.value as TrackerStatus })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5">
-                            <option value="Coming Up">Coming Up</option>
-                            <option value="Complete">Complete</option>
-                            <option value="Pending">Pending</option>
-                          </select>
-                        </td>
-                        <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updatePto(row.id, { notes: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><button onClick={() => updateTracker((current) => ({ ...current, pto: current.pto.filter((r) => r.id !== row.id) }))} className="text-red-300">Delete</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-text-primary">Conferences</p>
-                <button
-                  onClick={() =>
-                    updateTracker((current) => ({
-                      ...current,
-                      conferences: [
-                        ...current.conferences,
-                        {
-                          id: makeRowId(),
-                          eventName: "",
-                          startDate: toIsoDate(today),
-                          endDate: toIsoDate(today),
-                          location: "",
-                          activity: "Pending",
-                          status: "Coming Up",
-                          notes: "",
-                        },
-                      ],
-                    }))
-                  }
-                  className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                >
-                  Add Row
-                </button>
-              </div>
-              <div className="overflow-auto rounded-md border border-border">
-                <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
-                    <tr>
-                      <th className="px-2 py-1 text-left">Event Name</th>
-                      <th className="px-2 py-1 text-left">Start Date</th>
-                      <th className="px-2 py-1 text-left">End Date</th>
-                      <th className="px-2 py-1 text-left">Location</th>
-                      <th className="px-2 py-1 text-left">Activity</th>
-                      <th className="px-2 py-1 text-left">Status</th>
-                      <th className="px-2 py-1 text-left">Notes</th>
-                      <th className="px-2 py-1 text-left" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracker.conferences.map((row) => (
-                      <tr key={row.id} className={trackerFocus?.type === "conference" && trackerFocus.id === row.id ? "bg-accent/10" : ""}>
-                        <td className="px-2 py-1"><input value={row.eventName} onChange={(e) => updateConference(row.id, { eventName: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.startDate} onChange={(e) => updateConference(row.id, { startDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.endDate} onChange={(e) => updateConference(row.id, { endDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input value={row.location} onChange={(e) => updateConference(row.id, { location: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><select value={row.activity} onChange={(e) => updateConference(row.id, { activity: e.target.value as "Booked" | "Pending" })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5"><option value="Pending">Pending</option><option value="Booked">Booked</option></select></td>
-                        <td className="px-2 py-1"><select value={row.status} onChange={(e) => updateConference(row.id, { status: e.target.value as TrackerStatus })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5"><option value="Coming Up">Coming Up</option><option value="Complete">Complete</option><option value="Pending">Pending</option></select></td>
-                        <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updateConference(row.id, { notes: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><button onClick={() => updateTracker((current) => ({ ...current, conferences: current.conferences.filter((r) => r.id !== row.id) }))} className="text-red-300">Delete</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-text-primary">Office Trips</p>
-                <button
-                  onClick={() =>
-                    updateTracker((current) => ({
-                      ...current,
-                      office_trips: [
-                        ...current.office_trips,
-                        {
-                          id: makeRowId(),
-                          tripName: "",
-                          startDate: toIsoDate(today),
-                          endDate: toIsoDate(today),
-                          location: "",
-                          activity: "Pending",
-                          status: "Coming Up",
-                          notes: "",
-                        },
-                      ],
-                    }))
-                  }
-                  className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
-                >
-                  Add Row
-                </button>
-              </div>
-              <div className="overflow-auto rounded-md border border-border">
-                <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
-                    <tr>
-                      <th className="px-2 py-1 text-left">Trip Name</th>
-                      <th className="px-2 py-1 text-left">Start Date</th>
-                      <th className="px-2 py-1 text-left">End Date</th>
-                      <th className="px-2 py-1 text-left">Location</th>
-                      <th className="px-2 py-1 text-left">Activity</th>
-                      <th className="px-2 py-1 text-left">Status</th>
-                      <th className="px-2 py-1 text-left">Notes</th>
-                      <th className="px-2 py-1 text-left" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tracker.office_trips.map((row) => (
-                      <tr key={row.id} className={trackerFocus?.type === "trip" && trackerFocus.id === row.id ? "bg-accent/10" : ""}>
-                        <td className="px-2 py-1"><input value={row.tripName} onChange={(e) => updateTrip(row.id, { tripName: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.startDate} onChange={(e) => updateTrip(row.id, { startDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input type="date" value={row.endDate} onChange={(e) => updateTrip(row.id, { endDate: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><input value={row.location} onChange={(e) => updateTrip(row.id, { location: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><select value={row.activity} onChange={(e) => updateTrip(row.id, { activity: e.target.value as "Booked" | "Pending" })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5"><option value="Pending">Pending</option><option value="Booked">Booked</option></select></td>
-                        <td className="px-2 py-1"><select value={row.status} onChange={(e) => updateTrip(row.id, { status: e.target.value as TrackerStatus })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5"><option value="Coming Up">Coming Up</option><option value="Complete">Complete</option><option value="Pending">Pending</option></select></td>
-                        <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updateTrip(row.id, { notes: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" /></td>
-                        <td className="px-2 py-1"><button onClick={() => updateTracker((current) => ({ ...current, office_trips: current.office_trips.filter((r) => r.id !== row.id) }))} className="text-red-300">Delete</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === "weekly" && (
-          <div className="space-y-2">
-            <div className="grid grid-cols-[220px_minmax(420px,1fr)] gap-1.5">
-              <div className={PLANNER_PURPLE_HEADER}>
-                {useMonthlyTemplateForDate(weeklyViewMonth)
-                  ? layoutTemplates.weeklyLeftHeader
-                  : DEFAULT_LAYOUT_TEMPLATES.weeklyLeftHeader}
-              </div>
-              <div className={PLANNER_PURPLE_HEADER}>
-                {useMonthlyTemplateForDate(weeklyViewMonth)
-                  ? layoutTemplates.weeklyRightHeader
-                  : DEFAULT_LAYOUT_TEMPLATES.weeklyRightHeader}
-              </div>
-            </div>
-            {reviewWeeks.map(({ wk, monday }) => {
-              const review = monthEntryFor(manifest, monday).weekly_reviews[wk];
-              const weeklyDefault = useWeeklyTemplateForDate(monday)
-                ? layoutTemplates.weeklyDefaultContent
-                : WEEKLY_TEMPLATE;
-              const weeklyLegacyAuto = review?.content === WEEKLY_TEMPLATE;
-              const content =
-                review && !(useWeeklyTemplateForDate(monday) && weeklyLegacyAuto)
-                  ? review.content
-                  : weeklyDefault;
-              return (
-                <div key={wk} className="grid grid-cols-[220px_minmax(420px,1fr)] gap-1.5">
-                  <div className="rounded-md border border-border bg-surface-overlay/30 px-3 py-2 text-[11px] font-medium text-text-secondary">
-                    {weekHeader(monday)}
-                  </div>
-                  <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerMarkdownCell
-                      fieldKey={`weekly-${wk}`}
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={content}
-                      onChange={(next) => updateWeeklyReview(monday, next)}
-                      minHeightPx={110}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {tab === "monthly" && (
-          <div className="space-y-2">
-            <p className="text-[11px] font-semibold text-text-primary">
-              Monthly Reviews — {monthlyReviewYear}
-            </p>
-            {monthlyReviewMonths.map((monthDate) => {
-              const monthEntry = monthEntryFor(manifest, monthDate);
-              const prompts = useMonthlyTemplateForDate(monthDate)
-                ? layoutTemplates.monthlyPrompts
-                : MONTHLY_PROMPTS;
-              const monthlyDefault = makeMonthlyTemplateContent(prompts);
-              const monthlyLegacyDefault = makeMonthlyTemplateContent();
-              const monthlyLegacyAuto = monthEntry.monthly_review.content === monthlyLegacyDefault;
-              const content =
-                monthEntry.monthly_review.content &&
-                !(useMonthlyTemplateForDate(monthDate) && monthlyLegacyAuto)
-                  ? monthEntry.monthly_review.content
-                  : monthlyDefault;
-              const achievementsValue = monthEntry.monthly_review.achievements ?? "";
-              return (
-                <div
-                  key={monthDate.toISOString()}
-                  data-monthly-row={monthDate.getMonth()}
-                  className="grid min-w-[920px] grid-cols-[120px_minmax(260px,1fr)_minmax(220px,1fr)] gap-1.5"
-                >
-                  <div className={PLANNER_PURPLE_HEADER}>
-                    {monthName(monthDate)}
-                  </div>
-                  <div className={PLANNER_PURPLE_HEADER}>
-                    {useMonthlyTemplateForDate(monthDate)
-                      ? layoutTemplates.monthlyRightHeader
-                      : DEFAULT_LAYOUT_TEMPLATES.monthlyRightHeader}
-                  </div>
-                  <div className={PLANNER_PURPLE_HEADER}>
-                    Monthly Achievements
-                  </div>
-
-                  <div className="rounded-md border border-border bg-surface-overlay/30 px-3 py-2 text-[11px] font-semibold text-text-primary">
-                    {monthName(monthDate)}
-                  </div>
-                  <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerMarkdownCell
-                      fieldKey={`monthly-r-${monthDate.toISOString()}`}
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={content}
-                      onChange={(next) => updateMonthlyReview(monthDate, next)}
-                      minHeightPx={200}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                  <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
-                    <PlannerMarkdownCell
-                      fieldKey={`monthly-a-${monthDate.toISOString()}`}
-                      activeFieldKey={activePlannerFieldKey}
-                      onActivateField={setActivePlannerFieldKey}
-                      value={achievementsValue}
-                      onChange={(next) => updateMonthlyAchievements(monthDate, next)}
-                      minHeightPx={130}
-                      toolbarViewRef={plannerToolbarViewRef}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      </>
+        </>
       )}
     </div>
   );

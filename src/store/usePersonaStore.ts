@@ -20,6 +20,8 @@ import {
   profileForPersona,
 } from "../utils/providerProfiles";
 import type { LegacyAIProvider } from "../types/persona";
+import { formatError } from "../utils/formatError";
+import { toastError } from "./useToastStore";
 
 export interface SelectionQuery {
   selectedText: string;
@@ -196,6 +198,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       await invoke("save_personas", { json: JSON.stringify(get().personas) });
     } catch (e) {
       console.error("[Metis] Failed to save personas:", e);
+      toastError(`Could not save personas: ${formatError(e)}`);
     }
   },
 
@@ -206,6 +209,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       await invoke("save_settings", { json: JSON.stringify(settings) });
     } catch (e) {
       console.error("[Metis] Failed to save settings:", e);
+      toastError(`Could not save settings: ${formatError(e)}`);
     }
   },
 

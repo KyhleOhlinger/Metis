@@ -1,7 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
 import { safeConvertFileSrc } from "../utils/vaultImages";
 import type { MouseEvent } from "react";
-import { revealPlatformLabel } from "../utils/vaultNavigation";
+import { revealPlatformLabel, revealInFinder } from "../utils/vaultNavigation";
 import { openDomContextMenu } from "../utils/domContextMenu";
 
 interface Props {
@@ -18,9 +17,7 @@ export default function VaultImageViewer({ filePath, vaultPath, bgColor }: Props
     openDomContextMenu(e.clientX, e.clientY, [
       {
         label: revealPlatformLabel(),
-        onClick: () => {
-          invoke("reveal_in_finder", { path: filePath, vaultPath }).catch(console.error);
-        },
+        onClick: () => revealInFinder(filePath, vaultPath),
       },
     ]);
   };

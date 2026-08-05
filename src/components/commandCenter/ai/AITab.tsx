@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useStore, syncUiAfterDiskWrites } from "@/store/useStore";
+import { useStore } from "@/store/useStore";
+import { syncUiAfterDiskWrites } from "@/store/vaultSync";
 import { usePersonaStore, selectProfileApiKey } from "@/store/usePersonaStore";
 import { strategyLabel } from "@/services/contextBuilder";
 import { EgressTransparency } from "../../EgressTransparency";
