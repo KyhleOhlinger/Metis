@@ -10,6 +10,8 @@ import type {
 import type { AiProviderProfile, ExecutionScope, Persona } from "../types/persona";
 import { estimateRunCostUsd } from "../utils/modelPricing";
 import { usePersonaStore } from "../store/usePersonaStore";
+import { toastError } from "../store/useToastStore";
+import { formatError } from "../utils/formatError";
 
 const RESPONSE_PREVIEW_MAX = 400;
 
@@ -98,6 +100,7 @@ export async function recordAgentRun(input: RecordAgentRunInput): Promise<AgentR
     return entry;
   } catch (e) {
     console.error("[Metis] Failed to persist agent run log:", e);
+    toastError(`Could not save run log to disk: ${formatError(e)}`);
     usePersonaStore.getState().prependAgentRunLog(entry);
     return entry;
   }

@@ -1,6 +1,7 @@
 import { useCallback, useMemo, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useStore, syncUiAfterDiskWrites, type DiskWrite } from "@/store/useStore";
+import { useStore, type DiskWrite } from "@/store/useStore";
+import { syncUiAfterDiskWrites } from "@/store/vaultSync";
 import { usePersonaStore, selectProfileForPersona } from "@/store/usePersonaStore";
 import { streamResponse } from "@/services/llmService";
 import { buildOrphanReport } from "@/systemPersonas/librarianContext";
@@ -23,6 +24,7 @@ import {
 import { MAX_HANDWRITING_OCR_BATCH } from "@/systemPersonas/registry";
 import type { Persona, HistoryEntry } from "@/types/persona";
 import type { ContextStrategy } from "@/services/contextBuilder";
+import { appConfirm } from "@/store/useToastStore";
 import type { FileNode } from "@/store/useStore";
 import type { PendingWrite } from "../../agent/pendingWrite.types";
 
@@ -389,7 +391,12 @@ const handleTaskSync = useCallback(async () => {
     const confirmMsg = willOverwrite
       ? `Transcribe ${images.length} image(s)${batchNote}? Existing .md files with the same name will be overwritten.`
       : `Transcribe ${images.length} image(s)${batchNote} into Markdown notes in handwritten/?`;
-    if (!window.confirm(confirmMsg)) return;
+    const ok = await appConfirm(confirmMsg, {
+      title: "Handwriting OCR",
+      confirmLabel: "Transcribe",
+      danger: willOverwrite,
+    });
+    if (!ok) return;
 
     const profile = selectProfileForPersona(
       { ...usePersonaStore.getState(), settings },

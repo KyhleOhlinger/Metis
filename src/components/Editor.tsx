@@ -48,10 +48,11 @@ import DailyTaskGrid from "./DailyTaskGrid";
 import AgentRunHistoryPage from "./agentHistory/AgentRunHistoryPage";
 import { EditorSaveIndicator } from "./EditorWorkspaceHeader";
 import { toastError } from "../store/useToastStore";
+import { formatError } from "../utils/formatError";
 import { isVaultImageFile } from "../utils/vaultImages";
 import { openNoteByWikilinkNameFromStore } from "../utils/vaultNavigation";
+import EditorBgPicker from "./editor/EditorBgPicker";
 import {
-  BG_PRESETS,
   bgCompartment,
   highlightCompartment,
   highlightForPreset,
@@ -95,8 +96,7 @@ function useDebouncedSave(
             markSaved();
           }
         } catch (err) {
-          const msg = String(err);
-          console.error("Auto-save failed:", err);
+          const msg = formatError(err);
           setSaveStatus("error", msg);
           toastError(`Auto-save failed: ${msg}`);
         } finally {
@@ -528,7 +528,7 @@ export default function Editor() {
                 content: view.state.doc.toString(),
               })
                 .then(() => markSaved())
-                .catch(console.error);
+                .catch((err) => toastError(`Save failed: ${formatError(err)}`));
               return true;
             },
           },
@@ -714,51 +714,15 @@ export default function Editor() {
         <div className="flex shrink-0 items-center gap-2">
           {/* ── Background colour picker ──────────────────────────────── */}
           <div className="relative">
-            <button
-              title="Change background colour"
-              onClick={() => setShowBgPicker((v) => !v)}
-              className="flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-2 py-0.5 text-xs text-text-muted transition-colors hover:text-text-primary"
-            >
-              {/* Colour swatch showing the active preset */}
-              <span
-                className="inline-block h-3 w-3 rounded-full border border-white/20"
-                style={{ backgroundColor: bgPreset.bg }}
-              />
-              <span className="hidden sm:inline">{bgPreset.label}</span>
-              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {/* Swatches popover */}
-            {showBgPicker && (
-              <>
-                {/* Click-away overlay */}
-                <div className="fixed inset-0 z-[70]" onClick={() => setShowBgPicker(false)} />
-                <div className="absolute right-0 top-full z-[80] mt-1 flex items-center gap-1.5 rounded-lg border border-border bg-surface-raised p-2 shadow-xl">
-                  {BG_PRESETS.map((p) => (
-                    <button
-                      key={p.id}
-                      title={p.label}
-                      onClick={() => {
-                        setBgPreset(p);
-                        updateSettings({ editorBgPresetId: p.id });
-                        setShowBgPicker(false);
-                      }}
-                      className="flex flex-col items-center gap-1 rounded-md p-1.5 transition-colors hover:bg-surface-overlay"
-                    >
-                      <span
-                        className={`h-5 w-5 rounded-full border-2 transition-all ${
-                          bgPreset.id === p.id ? "border-accent scale-110" : "border-white/20"
-                        }`}
-                        style={{ backgroundColor: p.bg }}
-                      />
-                      <span className="text-[9px] text-text-muted">{p.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
+            <EditorBgPicker
+              bgPreset={bgPreset}
+              open={showBgPicker}
+              onOpenChange={setShowBgPicker}
+              onSelectPreset={(p) => {
+                setBgPreset(p);
+                updateSettings({ editorBgPresetId: p.id });
+              }}
+            />
           </div>
 
           {/* ── Source / Visual mode toggle — notes only ───────────────── */}

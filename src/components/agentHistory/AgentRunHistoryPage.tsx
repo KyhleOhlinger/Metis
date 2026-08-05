@@ -9,6 +9,7 @@ import {
   type AgentType,
 } from "../../types/agentRunLog";
 import { formatCostUsd, formatDurationMs } from "../../utils/modelPricing";
+import { appConfirm } from "../../store/useToastStore";
 
 function statusBadge(status: AgentRunStatus): string {
   switch (status) {
@@ -107,7 +108,12 @@ export default function AgentRunHistoryPage() {
   }, [filtered]);
 
   const handleClear = async () => {
-    if (!window.confirm("Clear all agent run history? This cannot be undone.")) return;
+    const ok = await appConfirm("Clear all agent run history? This cannot be undone.", {
+      title: "Clear run history",
+      confirmLabel: "Clear all",
+      danger: true,
+    });
+    if (!ok) return;
     setClearing(true);
     try {
       await clearAgentRunLogOnDisk();

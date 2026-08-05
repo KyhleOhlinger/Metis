@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import type { NoteMetadata } from "../store/useStore";
+import { formatError } from "./formatError";
 import { normalizePosixPath, pathsEqual } from "./paths";
+import { toastError } from "../store/useToastStore";
 
 /** Strip `[[target|display]]` alias and `#heading` suffix from a wikilink token. */
 export function normalizeWikilinkTarget(rawName: string): string {
@@ -72,7 +74,7 @@ function openNotePath(
 ): void {
   invoke<string>("get_file_content", { path: note.path })
     .then((c) => setActiveFile(note.path, c))
-    .catch(console.error);
+    .catch((err) => toastError(`Could not open note: ${formatError(err)}`));
 }
 
 export function openNoteByWikilinkName(
@@ -95,6 +97,13 @@ export function revealPlatformLabel(): string {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
     ? "Reveal in Finder"
     : "Reveal in File Explorer";
+}
+
+/** Reveal a vault path in the OS file manager; surfaces failures via toast. */
+export function revealInFinder(path: string, vaultPath: string): void {
+  void invoke("reveal_in_finder", { path, vaultPath }).catch((err) =>
+    toastError(`${revealPlatformLabel()} failed: ${formatError(err)}`),
+  );
 }
 
 export type FollowVaultHrefOptions = {
@@ -149,7 +158,9 @@ export function resolveExternalHref(href: string): string | null {
 export function openExternalUrl(raw: string): void {
   const url = raw.trim();
   if (!isExternalHttpUrl(url)) return;
-  invoke("open_url", { url }).catch(console.error);
+  invoke("open_url", { url }).catch((err) =>
+    toastError(`Could not open link: ${formatError(err)}`),
+  );
 }
 
 /** Open external URL, same-page fragment, vault file, or wikilink name. */

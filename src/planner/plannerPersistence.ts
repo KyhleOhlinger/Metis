@@ -4,6 +4,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
+import { toastError } from "@/store/useToastStore";
+import { formatError } from "@/utils/formatError";
 
 export type PlannerStorageMode = "shared" | "vault";
 
@@ -145,13 +147,16 @@ async function flushDirtyFiles(): Promise<void> {
       if (files[fileKey] != null) dirtyFiles.delete(fileKey);
     }
     if (result.mirror_error) {
-      setPlannerSyncStatus("saved", `Saved; backup sync failed: ${result.mirror_error}`);
+      const msg = `Saved; backup sync failed: ${result.mirror_error}`;
+      setPlannerSyncStatus("saved", msg);
+      toastError(msg);
     } else {
       setPlannerSyncStatus("saved");
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setPlannerSyncStatus("error", message);
+    toastError(`Planner save failed: ${message}`);
     throw err;
   }
 }
@@ -242,7 +247,10 @@ export function schedulePlannerSave(fileKey: PlannerFileKey, json: string, delay
   if (flushTimer) clearTimeout(flushTimer);
   flushTimer = setTimeout(() => {
     void enqueueFlush(() =>
-      flushDirtyFiles().catch((err) => console.error("[planner] batch save failed", err)),
+      flushDirtyFiles().catch((err) => {
+        console.error("[planner] batch save failed", err);
+        toastError(`Planner save failed: ${formatError(err)}`);
+      }),
     );
   }, delayMs);
 }

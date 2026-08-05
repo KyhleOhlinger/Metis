@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
+import { toastError } from "../store/useToastStore";
 
 interface SearchMatch {
   file_path: string;
@@ -230,7 +231,7 @@ export default function SearchPanel() {
       navigateEditorTo({ path: m.file_path, offset, matchEnd });
       setActiveFile(m.file_path, content);
     } catch (err) {
-      console.error("Failed to open match:", err);
+      toastError(`Could not open search result: ${String(err)}`);
     }
   }, []);
 

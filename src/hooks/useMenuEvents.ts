@@ -21,6 +21,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore, VaultData } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { LAST_VAULT_KEY } from "../constants";
+import { toastError } from "../store/useToastStore";
+import { formatError } from "../utils/formatError";
 
 interface MenuEventHookOptions {
   /** Toggles the left file-tree sidebar */
@@ -81,13 +83,13 @@ export function useMenuEvents({
                 onForeignVault(data.path, data.vault_hint);
               }
             } catch (e) {
-              console.error("[Metis] Failed to open vault:", e);
+              toastError(`Could not open vault: ${formatError(e)}`);
             }
           } else {
             // Rule 3 — different vault, spawn a new window
-            invoke("open_vault_window", { vaultPath: selected }).catch(
-              console.error,
-            );
+            invoke("open_vault_window", { vaultPath: selected }).catch((e) => {
+              toastError(`Could not open vault window: ${formatError(e)}`);
+            });
           }
           break;
         }
@@ -126,7 +128,7 @@ export function useMenuEvents({
           if (!activeFilePath) break;
           invoke("save_note", { path: activeFilePath, content: activeFileContent })
             .then(() => markSaved())
-            .catch(console.error);
+            .catch((e) => toastError(`Save failed: ${formatError(e)}`));
           break;
         }
 
@@ -142,9 +144,9 @@ export function useMenuEvents({
         case "reveal-in-finder": {
           const { activeFilePath, vaultPath } = store;
           if (!activeFilePath || !vaultPath) break;
-          invoke("reveal_in_finder", { path: activeFilePath, vaultPath }).catch(
-            console.error,
-          );
+          invoke("reveal_in_finder", { path: activeFilePath, vaultPath }).catch((e) => {
+            toastError(`Reveal in Finder failed: ${formatError(e)}`);
+          });
           break;
         }
 
