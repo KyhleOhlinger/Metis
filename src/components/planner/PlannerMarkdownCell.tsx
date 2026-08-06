@@ -1,5 +1,6 @@
 import { useEffect, useState, type MutableRefObject } from "react";
 import type { EditorView } from "@codemirror/view";
+import { useStore } from "@/store/useStore";
 import { getPlannerFieldHeight } from "@/planner/plannerFieldHeights";
 import PlannerCodeMirrorField from "../PlannerCodeMirrorField";
 import PlannerMarkdownPreview from "./PlannerMarkdownPreview";
@@ -49,6 +50,7 @@ export default function PlannerMarkdownCell({
   resizeStorageKey,
   defaultEditHeightPx,
 }: Props) {
+  const plannerReloadKey = useStore((s) => s.plannerReloadKey);
   const [internalEditing, setInternalEditing] = useState(false);
 
   const isControlled = editing !== undefined;
@@ -68,7 +70,7 @@ export default function PlannerMarkdownCell({
   useEffect(() => {
     if (!isEditing || !storageKey) return;
     setEditHeightPx(getPlannerFieldHeight(storageKey, defaultStoredHeight));
-  }, [isEditing, storageKey, defaultStoredHeight]);
+  }, [isEditing, storageKey, defaultStoredHeight, plannerReloadKey]);
 
   const requestEdit = () => {
     onRequestEdit?.();

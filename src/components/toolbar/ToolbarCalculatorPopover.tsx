@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { Calculator, ChevronDown } from "lucide-react";
 import type { EditorView } from "@codemirror/view";
+import { copyTextToClipboard } from "@/utils/clipboard";
 
 type Op = "+" | "-" | "×" | "÷";
 
@@ -109,11 +110,7 @@ export default function ToolbarCalculatorPopover({ viewRef, iconSize, btnCls }: 
   };
 
   const copyResult = async () => {
-    try {
-      await navigator.clipboard.writeText(display);
-    } catch {
-      /* clipboard unavailable */
-    }
+    await copyTextToClipboard(display, { successMessage: "Copied." });
   };
 
   const insertAtCursor = () => {

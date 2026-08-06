@@ -24,6 +24,7 @@ export default function DailyTaskGrid() {
   const vaultPath = useStore((s) => s.vaultPath);
   const plannerMode = useStore((s) => s.plannerMode);
   const plannerReloadKey = useStore((s) => s.plannerReloadKey);
+  const bumpPlannerReload = useStore((s) => s.bumpPlannerReload);
   const plannerNavigateTo = useStore((s) => s.plannerNavigateTo);
   const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
 
@@ -85,6 +86,13 @@ export default function DailyTaskGrid() {
             <>
               <p className="text-red-400">Could not load planner</p>
               <p className="max-w-md text-[10px]">{bootstrap.plannerInitError}</p>
+              <button
+                type="button"
+                onClick={() => bumpPlannerReload()}
+                className="mt-2 rounded border border-border px-3 py-1 text-[10px] text-text-primary hover:bg-surface-overlay"
+              >
+                Retry
+              </button>
             </>
           ) : (
             <p>Loading planner…</p>
@@ -215,6 +223,7 @@ export default function DailyTaskGrid() {
                 importYear={trackerApi.importYear}
                 setImportYear={trackerApi.setImportYear}
                 importStatus={trackerApi.importStatus}
+                importing={trackerApi.importing}
                 importRegions={trackerApi.importRegions}
                 onImportHolidays={trackerApi.importPublicHolidays}
                 updateTracker={trackerApi.updateTracker}

@@ -1,6 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { FileOutput, FileText, FolderOpen, Library, X } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import { toastInfo, toastSuccess } from "@/store/useToastStore";
 import {
   exportNotesToPdf,
   type PdfExportProgress,
@@ -37,13 +38,21 @@ export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
           }
           folderPath = picked;
         }
-        const saved = await exportNotesToPdf({
+        const result = await exportNotesToPdf({
           scope,
           filePath: scope === "file" ? activeFilePath ?? undefined : undefined,
           folderPath,
           onProgress: setProgress,
         });
-        if (saved) onClose();
+        if (result) {
+          toastSuccess(`PDF saved to ${result.savePath.split("/").pop()}`);
+          if (result.failedImages > 0) {
+            toastInfo(
+              `${result.failedImages} image${result.failedImages === 1 ? "" : "s"} could not be embedded in the PDF.`,
+            );
+          }
+          onClose();
+        }
       } catch (err) {
         setError(String(err));
       } finally {
@@ -56,6 +65,15 @@ export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
 
   const fileDisabled = !activeFilePath?.toLowerCase().endsWith(".md");
   const jekyllDisabled = fileDisabled;
+  const fileDisabledReason = fileDisabled ? "Open a markdown note first" : undefined;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
 
   return (
     <div
@@ -94,6 +112,7 @@ export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
                 title="File"
                 description="Export the active markdown note"
                 disabled={busy || fileDisabled}
+                disabledReason={fileDisabledReason}
                 onClick={() => runPdfExport("file")}
               />
               <ExportOption
@@ -122,6 +141,7 @@ export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
               title="Convert to Jekyll"
               description="Active note → _posts/ + copied images"
               disabled={busy || jekyllDisabled}
+              disabledReason={fileDisabledReason}
               onClick={() => {
                 if (activeFilePath) {
                   onJekyllExport(activeFilePath);
@@ -156,18 +176,21 @@ function ExportOption({
   title,
   description,
   disabled,
+  disabledReason,
   onClick,
 }: {
   icon: React.ReactNode;
   title: string;
   description: string;
   disabled?: boolean;
+  disabledReason?: string;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      title={disabled && disabledReason ? disabledReason : undefined}
       onClick={onClick}
       className="flex w-full items-start gap-3 rounded-lg border border-border bg-surface px-3 py-2.5 text-left transition hover:border-accent/40 hover:bg-surface-overlay disabled:cursor-not-allowed disabled:opacity-45"
     >

@@ -7,6 +7,7 @@ import {
   pickJekyllBlogRoot,
   previewJekyllConversion,
 } from "@/services/jekyllExportService";
+import { toastSuccess } from "@/store/useToastStore";
 import { slugify } from "@/utils/jekyllConverter";
 
 interface Props {
@@ -130,6 +131,7 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
         imageSubfolder: imageSubfolder.trim(),
       });
       setSavedPath(path);
+      toastSuccess(`Post saved to ${path.split("/").pop()}`);
     } catch (err) {
       setError(String(err));
     } finally {

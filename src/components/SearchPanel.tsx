@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
-import { toastError } from "../store/useToastStore";
+import { toastError, appConfirm } from "../store/useToastStore";
 
 interface SearchMatch {
   file_path: string;
@@ -185,6 +185,11 @@ export default function SearchPanel() {
 
   const handleReplaceAll = useCallback(async () => {
     if (!query.trim() || replacing) return;
+    const ok = await appConfirm(
+      `Replace all occurrences of "${query}" across the vault? This cannot be undone.`,
+      { title: "Replace all in vault", confirmLabel: "Replace all", danger: true },
+    );
+    if (!ok) return;
     setReplacing(true);
     setError(null);
     try {
@@ -367,6 +372,11 @@ export default function SearchPanel() {
 
       {/* Results */}
       <div className="min-h-0 flex-1 overflow-y-auto px-1">
+        {!hasSearched && !searching && (
+          <div className="px-3 py-6 text-center text-xs text-text-muted">
+            Type to search note names and contents across the vault.
+          </div>
+        )}
         {hasSearched && !searching && results.length === 0 && (
           <div className="px-3 py-6 text-center text-xs text-text-muted">
             No results found.

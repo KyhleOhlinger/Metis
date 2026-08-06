@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "@/store/useStore";
 import { restoreSharedFromVault } from "@/planner/plannerPersistence";
+import { formatError } from "@/utils/formatError";
 import { toastError, toastSuccess } from "@/store/useToastStore";
 
 export default function PlannerRestoreModal() {
@@ -20,7 +21,7 @@ export default function PlannerRestoreModal() {
       bumpPlannerReload();
       toastSuccess("Planner restored from vault backup.");
     } catch (e) {
-      toastError(typeof e === "string" ? e : "Restore failed.");
+      toastError(formatError(e));
     } finally {
       setBusy(false);
     }

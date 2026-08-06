@@ -5,7 +5,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
-import { formatError } from "@/utils/formatError";
 
 export type PlannerStorageMode = "shared" | "vault";
 
@@ -249,7 +248,6 @@ export function schedulePlannerSave(fileKey: PlannerFileKey, json: string, delay
     void enqueueFlush(() =>
       flushDirtyFiles().catch((err) => {
         console.error("[planner] batch save failed", err);
-        toastError(`Planner save failed: ${formatError(err)}`);
       }),
     );
   }, delayMs);

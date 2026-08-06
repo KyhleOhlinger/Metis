@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchPublicHolidays, mergePublicHolidaysIntoTracker } from "@/planner/holidayImport";
+import { toastError } from "@/store/useToastStore";
 import {
   type ConferenceEntry,
   type OfficeTripEntry,
@@ -26,6 +27,7 @@ export function usePlannerTracker(
   const [importRegion, setImportRegion] = useState("ALL");
   const [importYear, setImportYear] = useState(String(new Date().getFullYear()));
   const [importStatus, setImportStatus] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const tracker = useMemo(() => getTracker(manifest), [manifest]);
   const ptoRemaining = useMemo(
@@ -60,20 +62,27 @@ export function usePlannerTracker(
       setImportStatus("Enter a valid year.");
       return;
     }
+    setImporting(true);
     setImportStatus("Importing public holidays…");
     try {
       const rows = await fetchPublicHolidays(year, importCountry);
+      let statusMessage = "";
       updateTracker((current) => {
         const result = mergePublicHolidaysIntoTracker(current, rows, {
           year,
           country: importCountry,
           region: importRegion,
         });
-        setImportStatus(result.statusMessage);
+        statusMessage = result.statusMessage;
         return result.tracker;
       });
+      setImportStatus(statusMessage);
     } catch (e) {
-      setImportStatus(`Import failed: ${String(e)}`);
+      const msg = `Import failed: ${String(e)}`;
+      setImportStatus(msg);
+      toastError(msg);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -117,6 +126,7 @@ export function usePlannerTracker(
     importYear,
     setImportYear,
     importStatus,
+    importing,
     importRegions,
     importPublicHolidays,
     updateTracker,

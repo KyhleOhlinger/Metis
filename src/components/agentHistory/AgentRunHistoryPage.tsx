@@ -9,7 +9,7 @@ import {
   type AgentType,
 } from "../../types/agentRunLog";
 import { formatCostUsd, formatDurationMs } from "../../utils/modelPricing";
-import { appConfirm } from "../../store/useToastStore";
+import { appConfirm, toastError, toastSuccess } from "../../store/useToastStore";
 
 function statusBadge(status: AgentRunStatus): string {
   switch (status) {
@@ -82,6 +82,7 @@ function RunDetail({ entry }: { entry: AgentRunLogEntry }) {
 
 export default function AgentRunHistoryPage() {
   const agentRunLog = usePersonaStore((s) => s.agentRunLog);
+  const personasLoading = usePersonaStore((s) => s.loading);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<AgentRunStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<AgentType | "all">("all");
@@ -117,10 +118,15 @@ export default function AgentRunHistoryPage() {
     setClearing(true);
     try {
       await clearAgentRunLogOnDisk();
+      toastSuccess("Agent run log cleared.");
+    } catch (e) {
+      toastError(typeof e === "string" ? e : "Could not clear run log.");
     } finally {
       setClearing(false);
     }
   };
+
+  const hasActiveFilters = statusFilter !== "all" || typeFilter !== "all";
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface-base text-text-primary">
@@ -172,11 +178,21 @@ export default function AgentRunHistoryPage() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {filtered.length === 0 ? (
+        {personasLoading ? (
           <div className="flex h-full flex-col items-center justify-center px-6 text-center">
-            <p className="text-sm text-text-muted">No agent runs recorded yet.</p>
+            <p className="text-sm text-text-muted">Loading run log…</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+            <p className="text-sm text-text-muted">
+              {hasActiveFilters
+                ? "No runs match the current filters."
+                : "No agent runs recorded yet."}
+            </p>
             <p className="mt-1 max-w-sm text-[11px] text-text-muted/70">
-              Runs from the Command Center AI tab appear here with runtime, token usage, and estimated cost.
+              {hasActiveFilters
+                ? "Try clearing the status or agent type filter."
+                : "Runs from the Command Center AI tab appear here with runtime, token usage, and estimated cost."}
             </p>
           </div>
         ) : (

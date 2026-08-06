@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useStore } from "@/store/useStore";
+import { toastSuccess } from "@/store/useToastStore";
+import { formatError } from "@/utils/formatError";
 import {
   switchPlannerVaultMode,
   type PlannerStorageMode,
@@ -24,9 +26,10 @@ export default function PlannerSetupModal({ onComplete, onDismiss }: Props) {
     setError(null);
     try {
       await switchPlannerVaultMode(vaultPath, mode, mode === "vault" && seedFromShared);
+      toastSuccess(mode === "vault" ? "Vault planner enabled." : "Shared planner enabled.");
       onComplete();
     } catch (e) {
-      setError(typeof e === "string" ? e : "Could not save planner settings.");
+      setError(formatError(e));
     } finally {
       setBusy(false);
     }
@@ -43,7 +46,8 @@ export default function PlannerSetupModal({ onComplete, onDismiss }: Props) {
           How should Planner store data?
         </h2>
         <p className="mt-2 text-xs text-text-muted">
-          Choose once per vault. You can change this later in Settings → Planner.
+          Choose once per vault. You can change this later in Settings → Planner. Cancel keeps
+          planner unavailable until you complete setup.
         </p>
 
         <div className="mt-4 space-y-3 text-xs">
