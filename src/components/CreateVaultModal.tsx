@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, VaultData } from "../store/useStore";
+import { toastSuccess } from "../store/useToastStore";
+import { formatError } from "../utils/formatError";
 
 interface CreateVaultModalProps {
   onClose: () => void;
@@ -44,9 +46,10 @@ export default function CreateVaultModal({ onClose }: CreateVaultModalProps) {
         name: trimmed,
       });
       setVault(data);
+      toastSuccess(`Vault "${trimmed}" created.`);
       onClose();
     } catch (err) {
-      setError(String(err));
+      setError(formatError(err));
     } finally {
       setLoading(false);
     }
@@ -54,14 +57,16 @@ export default function CreateVaultModal({ onClose }: CreateVaultModalProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleCreate();
-    if (e.key === "Escape") onClose();
+    if (e.key === "Escape" && !loading) onClose();
   };
 
   return (
     /* Backdrop */
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !loading) onClose();
+      }}
     >
       <div className="z-50 w-[420px] rounded-xl border border-border bg-surface-raised p-5 shadow-2xl shadow-black/60">
         {/* Title */}
@@ -112,7 +117,8 @@ export default function CreateVaultModal({ onClose }: CreateVaultModalProps) {
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="rounded-md px-4 py-1.5 text-xs text-text-muted transition-colors hover:text-text-primary"
+            disabled={loading}
+            className="rounded-md px-4 py-1.5 text-xs text-text-muted transition-colors hover:text-text-primary disabled:opacity-50"
           >
             Cancel
           </button>

@@ -330,6 +330,12 @@ export default function CommandPalette({ onClose }: Props) {
           <span className="text-[10px] text-text-muted">
             <kbd className="font-mono">{">"}</kbd> commands
           </span>
+          <span className="text-[10px] text-text-muted">
+            <kbd className="font-mono">esc</kbd> close
+          </span>
+          <span className="text-[10px] text-text-muted">
+            <kbd className="font-mono">⌘P</kbd> palette
+          </span>
           <span className="ml-auto text-[10px] text-text-muted">
             {commandMode
               ? `${filteredActions.length} command${filteredActions.length !== 1 ? "s" : ""}`

@@ -23,6 +23,8 @@ import {
   flushPlannerSaves,
   syncSharedMirror,
 } from "./planner/plannerPersistence";
+import { toastError } from "./store/useToastStore";
+import { formatError } from "./utils/formatError";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
@@ -112,7 +114,8 @@ export default function App() {
   const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
   const plannerReloadKey = useStore((s) => s.plannerReloadKey);
   const setPlannerRestoreOffer = useStore((s) => s.setPlannerRestoreOffer);
-  const bumpPlannerReload = useStore((s) => s.bumpPlannerReload);
+  const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
+  const [vaultRestoring, setVaultRestoring] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exportPdfOpen, setExportPdfOpen] = useState(false);
   const [exportHubOpen, setExportHubOpen] = useState(false);
@@ -273,21 +276,19 @@ export default function App() {
     const pathToOpen = vaultFromUrl ?? localStorage.getItem(LAST_VAULT_KEY);
     if (!pathToOpen) return;
 
+    setVaultRestoring(true);
     invoke<VaultData>("open_vault", { path: pathToOpen })
       .then((data) => {
         useStore.getState().setVault(data);
-        // If the opened folder is not a Metis vault, surface the conversion
-        // prompt.  The modal itself calls setVault again on successful
-        // conversion, which flips isMetisVault and removes the prompt.
         if (!data.is_metis_vault) {
           setConvertPrompt({ path: data.path, hint: data.vault_hint });
         }
       })
-      .catch(() => {
-        // Only clear localStorage for the primary window's stale entry.
-        // URL-specified vaults (new windows) are never in localStorage.
+      .catch((err) => {
+        toastError(`Could not open vault: ${formatError(err)}`);
         if (!vaultFromUrl) localStorage.removeItem(LAST_VAULT_KEY);
-      });
+      })
+      .finally(() => setVaultRestoring(false));
   }, [vaultPath, vaultFromUrl]);
 
   // If the vault becomes a Metis vault after conversion, close the prompt.
@@ -391,8 +392,16 @@ export default function App() {
     if (!vaultPath || plannerMode !== "shared" || plannerSetupRequired) return;
     void flushPlannerSaves()
       .then(() => syncSharedMirror(vaultPath))
-      .catch(console.error);
-  }, [vaultPath, plannerMode, plannerSetupRequired]);
+      .catch((err) => {
+        toastError(`Planner backup sync failed: ${formatError(err)}`);
+      });
+  }, [vaultPath, plannerMode, plannerSetupRequired, plannerReloadKey]);
+
+  // Prompt planner setup when a Metis vault requires first-time configuration.
+  useEffect(() => {
+    if (!vaultPath || !isMetisVault || !plannerSetupRequired || plannerSetupModalOpen) return;
+    setPlannerSetupModalOpen(true);
+  }, [vaultPath, isMetisVault, plannerSetupRequired, plannerSetupModalOpen, setPlannerSetupModalOpen]);
 
   // Offer restore when shared planner is empty but vault has a backup mirror.
   useEffect(() => {
@@ -403,7 +412,7 @@ export default function App() {
     let cancelled = false;
     void checkPlannerRestore(vaultPath)
       .then((check) => {
-        if (!cancelled && check.offer_restore) setPlannerRestoreOffer(true);
+        if (!cancelled) setPlannerRestoreOffer(check.offer_restore);
       })
       .catch(console.error);
     return () => {
@@ -491,10 +500,12 @@ export default function App() {
         <PlannerSetupModal
           onComplete={() => {
             setPlannerSetupModalOpen(false);
-            bumpPlannerReload();
             useStore.getState().setEditorTab("planner");
           }}
-          onDismiss={() => setPlannerSetupModalOpen(false)}
+          onDismiss={() => {
+            setPlannerSetupModalOpen(false);
+            clearPlannerNavigateTo();
+          }}
         />
       )}
 
@@ -512,7 +523,12 @@ export default function App() {
         style={{ width: sidebarOpen ? sidebarWidth : COLLAPSED_W }}
         onMouseDown={() => { lastPaneRef.current = "sidebar"; }}
       >
-        <Sidebar isOpen={sidebarOpen} onToggle={toggleSidebar} onForeignVault={onForeignVault} />
+        <Sidebar
+          isOpen={sidebarOpen}
+          onToggle={toggleSidebar}
+          onForeignVault={onForeignVault}
+          vaultRestoring={vaultRestoring}
+        />
 
         {/* Inner resize grip — right edge of the sidebar */}
         {sidebarOpen && (

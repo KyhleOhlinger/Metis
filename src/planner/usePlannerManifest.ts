@@ -62,6 +62,16 @@ export function usePlannerManifest(
   const todayMonthStart = useMemo(() => monthStart(today.getFullYear(), today.getMonth()), [today]);
 
   const tracker = useMemo(() => getTracker(manifest), [manifest]);
+  const trackerSyncKey = useMemo(
+    () =>
+      JSON.stringify({
+        holidays: tracker.public_holidays,
+        pto: tracker.pto,
+        conferences: tracker.conferences,
+        trips: tracker.office_trips,
+      }),
+    [tracker],
+  );
 
   const isOnOrAfterToday = (date: Date) => startOfDay(date).getTime() >= today.getTime();
   const useWeeklyTemplateForDate = (monday: Date) => monday.getTime() >= todayWeekStart.getTime();
@@ -109,7 +119,7 @@ export function usePlannerManifest(
       saveManifest(result.manifest);
       return result.manifest;
     });
-  }, [tracker, setManifest]);
+  }, [trackerSyncKey, setManifest]);
 
   return {
     weeklyViewMonth,

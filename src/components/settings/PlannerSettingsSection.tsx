@@ -28,18 +28,27 @@ export function PlannerSettingsSection() {
   const [mirrorSyncedAt, setMirrorSyncedAt] = useState<number | null>(null);
   const [registeredVaultCount, setRegisteredVaultCount] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [pathsLoading, setPathsLoading] = useState(false);
 
   const refreshStatus = async () => {
     if (!vaultPath) return;
-    const [cfg, mirror] = await Promise.all([
-      fetchPlannerConfig(vaultPath),
-      fetchPlannerMirrorStatus(vaultPath),
-    ]);
-    setActiveDir(cfg.active_dir);
-    setMirrorDir(cfg.mirror_dir);
-    setMirrorSyncedAt(mirror.mirror_last_synced_unix ?? null);
-    setRegisteredVaultCount(mirror.registered_vault_count);
-    setPlannerConfig(cfg.mode, cfg.setup_required);
+    setPathsLoading(true);
+    try {
+      const [cfg, mirror] = await Promise.all([
+        fetchPlannerConfig(vaultPath),
+        fetchPlannerMirrorStatus(vaultPath),
+      ]);
+      setActiveDir(cfg.active_dir);
+      setMirrorDir(cfg.mirror_dir);
+      setMirrorSyncedAt(mirror.mirror_last_synced_unix ?? null);
+      setRegisteredVaultCount(mirror.registered_vault_count);
+      setPlannerConfig(cfg.mode, cfg.setup_required);
+    } catch (e) {
+      toastError(typeof e === "string" ? e : "Could not load planner status.");
+      throw e;
+    } finally {
+      setPathsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -171,7 +180,9 @@ export function PlannerSettingsSection() {
 
       <div>
         <p className={labelCls}>Paths</p>
-        <p className="mt-1 break-all font-mono text-[10px] text-text-secondary">{activeDir || "—"}</p>
+        <p className="mt-1 break-all font-mono text-[10px] text-text-secondary">
+          {pathsLoading ? "Loading…" : activeDir || "—"}
+        </p>
         {plannerMode === "shared" && mirrorDir && (
           <>
             <p className="mt-2 text-[10px]">

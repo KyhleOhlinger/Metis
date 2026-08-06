@@ -26,6 +26,7 @@ export interface PlannerTrackerTabProps {
   importYear: string;
   setImportYear: (value: string) => void;
   importStatus: string;
+  importing?: boolean;
   importRegions: Array<{ code: string; label: string }>;
   onImportHolidays: () => void;
   updateTracker: (updater: (current: TrackerData) => TrackerData) => void;
@@ -47,6 +48,7 @@ export default function PlannerTrackerTab({
   importYear,
   setImportYear,
   importStatus,
+  importing = false,
   importRegions,
   onImportHolidays,
   updateTracker,
@@ -117,10 +119,12 @@ export default function PlannerTrackerTab({
                     className="w-20 rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
                   />
                   <button
+                    type="button"
                     onClick={onImportHolidays}
-                    className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
+                    disabled={importing}
+                    className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Import by Country
+                    {importing ? "Importing…" : "Import by Country"}
                   </button>
                   <button
                     onClick={() =>

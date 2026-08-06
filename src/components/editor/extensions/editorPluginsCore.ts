@@ -60,7 +60,7 @@ class CodeFenceActionsWidget extends WidgetType {
           btn.textContent = "Copy";
           btn.classList.remove("cm-copy-btn--copied");
         }, 1800);
-      });
+      }).catch(() => toastError("Could not copy code to clipboard."));
     });
     wrap.appendChild(btn);
 

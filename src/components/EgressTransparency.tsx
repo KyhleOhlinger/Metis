@@ -32,10 +32,15 @@ export function EgressTransparency({
   const [loading, setLoading] = useState(false);
 
   const showForScope =
-    scope.type === "specific-folder" || scope.type === "full-vault";
+    scope.type === "specific-folder" ||
+    scope.type === "full-vault" ||
+    scope.type === "current-file" ||
+    scope.type === "specific-file";
+
+  const hasApiKey = Boolean(profile?.apiKey?.trim());
 
   useEffect(() => {
-    if (hidden || !showForScope || !persona || !profile?.apiKey?.trim()) {
+    if (hidden || !showForScope || !persona || !hasApiKey || !profile) {
       setEstimate(null);
       return;
     }
@@ -77,9 +82,23 @@ export function EgressTransparency({
     activeFileContent,
     activeFilePath,
     vaultPath,
+    hasApiKey,
   ]);
 
   if (hidden || !showForScope || !persona) return null;
+
+  if (!hasApiKey) {
+    return (
+      <div className="shrink-0 border-b border-border bg-surface-overlay/30 px-3 py-2">
+        <p className="text-[9px] font-semibold uppercase tracking-widest text-text-muted/70 mb-1">
+          Data sent to AI
+        </p>
+        <p className="text-[10px] text-text-muted italic">
+          Configure an API key in Settings to preview what will be sent for this scope.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="shrink-0 border-b border-border bg-surface-overlay/30 px-3 py-2">

@@ -83,12 +83,13 @@ async function readNoteContents(
 }
 
 /** Replace vault image refs with inline data URLs for offline PDF rendering. */
-async function inlineExportImages(html: string): Promise<string> {
+async function inlineExportImages(html: string): Promise<{ html: string; failedImages: number }> {
   const parser = new DOMParser();
   const doc = parser.parseFromString(`<div id="root">${html}</div>`, "text/html");
   const root = doc.getElementById("root");
-  if (!root) return html;
+  if (!root) return { html, failedImages: 0 };
 
+  let failedImages = 0;
   const images = root.querySelectorAll<HTMLImageElement>("img[data-export-abs-path]");
   for (const img of images) {
     const absPath = img.getAttribute("data-export-abs-path");
@@ -101,11 +102,12 @@ async function inlineExportImages(html: string): Promise<string> {
       img.src = `data:${mime_type};base64,${data_base64}`;
       img.removeAttribute("data-export-abs-path");
     } catch {
+      failedImages += 1;
       img.alt = img.alt || "Image unavailable";
       img.removeAttribute("src");
     }
   }
-  return root.innerHTML;
+  return { html: root.innerHTML, failedImages };
 }
 
 function buildExportHost(
@@ -234,12 +236,14 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(binary);
 }
 
+export type PdfExportResult = { savePath: string; failedImages: number };
+
 export async function exportNotesToPdf(options: {
   scope: PdfExportScope;
   filePath?: string;
   folderPath?: string;
   onProgress?: (p: PdfExportProgress) => void;
-}): Promise<string | null> {
+}): Promise<PdfExportResult | null> {
   const { vaultPath, noteIndex, assetIndex, activeFilePath, activeFileContent } =
     useStore.getState();
   if (!vaultPath) throw new Error("Open a vault before exporting.");
@@ -293,6 +297,7 @@ export async function exportNotesToPdf(options: {
   }
 
   const chapters: { title: string; html: string }[] = [];
+  let failedImages = 0;
   for (let i = 0; i < notes.length; i++) {
     const note = notes[i];
     options.onProgress?.({
@@ -308,7 +313,9 @@ export async function exportNotesToPdf(options: {
       filePath: note.path,
       assetIndex,
     });
-    html = await inlineExportImages(html);
+    const inlined = await inlineExportImages(html);
+    html = inlined.html;
+    failedImages += inlined.failedImages;
     const rel = note.path.startsWith(`${vaultPath}/`)
       ? note.path.slice(vaultPath.length + 1)
       : note.name;
@@ -336,5 +343,5 @@ export async function exportNotesToPdf(options: {
     dataBase64: await blobToBase64(pdfBlob),
   });
 
-  return savePath;
+  return { savePath, failedImages };
 }

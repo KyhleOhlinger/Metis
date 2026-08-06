@@ -10,6 +10,7 @@ import { collectImagePathsFromMarkdown } from "../../utils/noteImages";
 import { exportNotesToPdf } from "../../services/pdfExportService";
 import { isVaultImageFile } from "../../utils/vaultImages";
 import { appConfirm, toastError, toastInfo, toastSuccess } from "../../store/useToastStore";
+import { copyTextToClipboard } from "../../utils/clipboard";
 import { dragSlot } from "./sidebarDragDrop";
 import { IconFile, IconFolder } from "./sidebarIcons";
 import { InlineInput } from "./InlineInput";
@@ -196,9 +197,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     items.push({
       label: "Copy Path",
       onClick: () => {
-        navigator.clipboard.writeText(node.path).catch((err) =>
-          toastError(`Could not copy path: ${String(err)}`),
-        );
+        void copyTextToClipboard(node.path, { successMessage: "Path copied." });
       },
     });
 

@@ -18,6 +18,8 @@ import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useStore, VaultData } from "../store/useStore";
+import { toastSuccess } from "../store/useToastStore";
+import { formatError } from "../utils/formatError";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -84,8 +86,9 @@ export default function ConvertVaultModal({ vaultPath, vaultHint, onDismiss }: P
       // Apply the converted vault — `setVault` updates `isMetisVault` to true,
       // which closes this modal from the parent component.
       useStore.getState().setVault(data);
+      toastSuccess("Vault converted to Metis format.");
     } catch (e) {
-      setError(typeof e === "string" ? e : "Conversion failed. Please try again.");
+      setError(formatError(e));
       setConverting(false);
     }
   };

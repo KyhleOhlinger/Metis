@@ -84,7 +84,10 @@ export function openNoteByWikilinkName(
   vaultPath?: string,
 ): void {
   const note = findNoteByWikilinkName(rawName, noteIndex, vaultPath);
-  if (!note) return;
+  if (!note) {
+    toastError(`Note not found: ${normalizeWikilinkTarget(rawName)}`);
+    return;
+  }
   openNotePath(note, setActiveFile);
 }
 
@@ -187,7 +190,11 @@ export function followVaultHref(href: string, opts: FollowVaultHrefOptions): voi
 
   const tryOpenByName = () => {
     const note = findNoteByWikilinkName(pathPart, noteIndex, opts.vaultPath);
-    if (note) openNotePath(note, setActive);
+    if (note) {
+      openNotePath(note, setActive);
+    } else {
+      toastError(`Note not found: ${normalizeWikilinkTarget(pathPart)}`);
+    }
   };
 
   // `[text](Note Title)` — resolve by name before treating as a relative file path.
