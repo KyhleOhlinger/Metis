@@ -11,6 +11,7 @@ import { EditorHeaderBar } from "./editor/EditorHeaderBar";
 import { EditorMainContent } from "./editor/EditorMainContent";
 import { applyEditorNavigation } from "./editor/applyEditorNavigation";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import type { EditorKeymapOpts } from "@/components/editor/editorKeymaps";
 import { useCodeMirrorEditor, useCodeMirrorCompartments } from "../hooks/useCodeMirrorEditor";
 import { useEditorPaneMode } from "../hooks/useEditorPaneMode";
 import type { BgPreset } from "./editor/bgPresets";
@@ -21,6 +22,7 @@ export default function Editor() {
   const viewRef = useRef<EditorView | null>(null);
   const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
   const spellcheckLang = usePersonaStore((s) => s.settings.spellcheckLanguage ?? "en_US");
+  const keybindingOverrides = usePersonaStore((s) => s.settings.keybindingOverrides);
   const updateSettings = usePersonaStore((s) => s.updateSettings);
 
   const [findBarOpen, setFindBarOpen] = useState(false);
@@ -29,6 +31,13 @@ export default function Editor() {
   const bgPresetRef = useRef<BgPreset>(resolveBgPreset("dark"));
   const spellcheckRef = useRef(spellcheckEnabled);
   const spellcheckLangRef = useRef(spellcheckLang);
+  const keymapOptsRef = useRef<EditorKeymapOpts>({
+    activeFilePath: null,
+    markSaved: () => {},
+    setFindBarOpen: () => {},
+    setFindBarReplace: () => {},
+    findBarRef,
+  });
 
   const {
     activeFilePath,
@@ -66,6 +75,16 @@ export default function Editor() {
     spellcheckLangRef.current = spellcheckLang;
   }, [spellcheckEnabled, spellcheckLang]);
 
+  useEffect(() => {
+    keymapOptsRef.current = {
+      activeFilePath,
+      markSaved,
+      setFindBarOpen,
+      setFindBarReplace,
+      findBarRef,
+    };
+  }, [activeFilePath, markSaved, setFindBarOpen, setFindBarReplace, findBarRef]);
+
   const scheduleSave = useDebouncedSave(markSaved, setSaveStatus);
 
   const dismissSelectionToolbar = useCallback(() => {
@@ -102,7 +121,14 @@ export default function Editor() {
     findBarRef,
   });
 
-  useCodeMirrorCompartments(viewRef, bgPreset, spellcheckEnabled, spellcheckLang);
+  useCodeMirrorCompartments(
+    viewRef,
+    bgPreset,
+    spellcheckEnabled,
+    spellcheckLang,
+    keymapOptsRef,
+    keybindingOverrides,
+  );
 
   const handlePreviewSourceActivate = useCallback(
     (sourceOffset: number, matchEnd?: number) => {

@@ -24,6 +24,7 @@ import {
 } from "@/utils/stickyNotes";
 import { calloutPlugin, createVisualModePlugin } from "./editorPluginsCore";
 import { selectionIntersectsRange } from "./editorPluginUtils";
+import { frontmatterEndPos } from "../frontmatterUtils";
 
 
 // ── 6. WikiLink autocomplete + clickable [[links]] ────────────────────────────
@@ -179,6 +180,11 @@ export const markdownCaretAtomicExtension = EditorView.atomicRanges.of((view) =>
   const { state } = view;
   const builder = new RangeSetBuilder<Decoration>();
   const mark = Decoration.mark({ class: "cm-inline-preview-atomic" });
+
+  const fmEnd = frontmatterEndPos(state);
+  if (fmEnd > 0) {
+    builder.add(0, fmEnd, mark);
+  }
 
   for (const { from, to } of findStandardMarkdownLinks(state.doc)) {
     if (!selectionIntersectsRange(state.selection, from, to)) {

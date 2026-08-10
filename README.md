@@ -12,12 +12,14 @@ This application takes her name for the same reason: a knowledge base should not
 
 Metis is a desktop markdown editor that stores your notes as plain `.md` files on your own filesystem — no cloud sync, no lock-in, no subscription. It pairs a powerful CodeMirror 6 editor with a clean three-pane layout, rich markdown rendering, a persona-driven AI writing assistant, and a growing set of smart writing tools.
 
+**Current version:** v0.9.14
+
 
 ---
 
 ## Supported AI Providers
 
-All providers are accessed via a **Compatible API**. Configure any provider with your own key in **Settings → API Providers**, then use the **↓ Models** button in a persona form to fetch the latest available models directly from the provider.
+All providers are accessed via a **Compatible API**. Configure any provider with your own key in **Settings → AI** (full modal: **Metis → Settings…** or **⌘,**), then use the **↓ Models** button in a persona form to fetch the latest available models directly from the provider.
 
 | Provider | API Endpoint | Key Format | Highlights |
 |----------|-------------|------------|------------|
@@ -25,6 +27,8 @@ All providers are accessed via a **Compatible API**. Configure any provider with
 | **Google Gemini** | `generativelanguage.googleapis.com/v1beta/openai` | `AIzaSy…` | Gemini 2.0 Flash, 1.5 Pro/Flash — up to 1 M token context |
 | **Groq** | `api.groq.com/openai/v1` | `gsk_…` | Llama 3.x, Mixtral — ultra-fast inference |
 | **Perplexity AI** | `api.perplexity.ai` | `pplx-…` | Sonar family with real-time web search |
+| **Anthropic** | `api.anthropic.com/v1` | `sk-ant-…` | Claude Sonnet, Haiku, Opus |
+| **LiteLLM** | Your gateway URL | varies | Enterprise / multi-provider proxy (OpenAI-compatible) |
 
 API keys are stored locally in the OS app-data directory and are never sent anywhere other than the chosen provider.
 
@@ -47,7 +51,8 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - **Source mode** — raw markdown with GFM syntax highlighting, inline image rendering, and `Cmd+Click` link following
 - **Visual mode** — full HTML preview with tables, task lists, callouts, and image rendering
 - **Formatting toolbar** — H1–H3, Bold, Italic, Code, Link, Image, Code Block, Blockquote, Lists, HR, Callout dropdown, Spellcheck toggle — **responsive**: automatically switches to compact mode (smaller icons, tighter spacing) on narrow editor panes so all items remain visible
-- **Spellcheck** — lint-based spellcheck powered by Hunspell dictionaries (via the `spellbook` Rust library); misspelled words are shown with wavy underlines; hover a word to see suggestions, click to replace (case-preserving); toggle on/off from the toolbar; choose between English (US) and English (UK) in Settings → Spellcheck
+- **Spellcheck** — lint-based spellcheck powered by Hunspell dictionaries (via the `spellbook` Rust library); misspelled words are shown with wavy underlines; hover a word to see suggestions, click to replace (case-preserving); toggle on/off from the toolbar; choose between English (US) and English (UK) in **Settings → Editor**
+- **Sticky notes** — `:::sticky {float width color wrap}` blocks with Visual wrap zones; defaults in **Settings → Sticky notes**
 - **Background themes** — Dark, Black, Slate, Purple, Pink, White, Cream; hot-swapped without reloading the editor
 - Theme picker remains interactive in Planner mode and resets popovers cleanly across tab/file transitions
 - YAML frontmatter editing panel below the editor
@@ -61,7 +66,11 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - Smart paste: drop a URL over selected text → Markdown link; paste a screenshot → saves to `assets/` and inserts `![](assets/...)`
 - Auto-close pairs: `` ``` ``, `**`, `_`, `` ` ``, `[]()`
 - Fenced code blocks with syntax highlighting, language badges, and a hover Copy button
-- Obsidian-style callouts (`> [!INFO]`, `> [!WARNING]`, `> [!TIP]`, …)
+- **Custom hotkeys** — rebind app and editor shortcuts in **Settings → Hotkeys**; overrides sync to the native menu bar (File, View, Settings…)
+
+### Export
+- **PDF** — File menu, sidebar context menus, or export hub; single note, folder, or full vault (Visual-rendered pipeline)
+- **Jekyll (Chirpy)** — **Convert to Jekyll…** on notes; writes `_posts/` and copies images to `assets/img/`
 
 ### Metadata & note properties
 - **Status field** — `draft`, `in-progress`, `review`, `done`, `archived` — shown as coloured file icons in the sidebar
@@ -74,13 +83,13 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 <img width="835" height="406" alt="image-1778255125354" src="https://github.com/user-attachments/assets/873a679d-da63-4f93-9dcf-146b5bfb76cc" />
 
 ### Search & replace
-- **In-editor** — `Cmd+F` opens find, `Cmd+R` opens find-and-replace; supports case-sensitive and regex toggles, Replace / Replace All
-- **Vault-wide** — `Cmd+Shift+F` opens the sidebar search panel; searches all `.md` files with case-sensitivity and regex options
+- **In-editor** — default `Cmd+F` find, `Cmd+R` find-and-replace (rebindable in Settings → Hotkeys); supports case-sensitive and regex toggles, Replace / Replace All
+- **Vault-wide** — default `Cmd+Shift+F` opens the sidebar search panel; searches all `.md` files with case-sensitivity and regex options
 - Click any vault-wide result to jump to the file and line
 - Vault-wide Replace All writes changes to disk — use version control as a safety net
 
 ### Navigation
-- `Cmd+P` Quick Switcher — fuzzy-search all notes by name or alias, filterable by status
+- `Cmd+P` Quick Switcher — fuzzy-search all notes by name or alias, filterable by status (customizable in Settings → Hotkeys)
 - `Cmd+Shift+F` Search vault — search (and replace) across all notes
 - `[[wikilink]]` autocomplete — scans your entire vault instantly, matching names and aliases
 - Wikilinks in Visual mode are clickable
@@ -113,10 +122,13 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 ### AI writing assistant (Command Center — AI tab)
 - **System Default personas** (built-in, protected):
   - **The Librarian** — scans your vault for orphaned notes (no incoming/outgoing links) and suggests connections
-  - **Task Manager** — supports Vault Task Scan (aggregate incomplete checkbox tasks into `summaries/todo.md`) and Vault Task Sync (bi-directional checkbox sync between `summaries/todo.md` and source notes)
+  - **Task Manager** — Vault Task Scan (aggregate incomplete checkbox tasks into `summaries/todo.md`) and Vault Task Sync (bi-directional checkbox sync between `summaries/todo.md` and source notes)
+  - **Handwriting OCR** — transcribes images in `handwritten/` (and pending images) to Markdown via a vision model
 - **Custom personas** — create personas with custom system prompts, models, and providers
 - **Persona chip groups** — System and Custom chips are visually separated
 - **Scoped context** — run against the current file, a specific file, a folder, or your full vault
+- **Egress transparency** — folder, vault, and file scopes show an estimate of what will be sent before you confirm
+- **Agent Run Log** — persistent history of AI runs (runtime, tokens, estimated cost) in the main editor view
 - **Streaming responses** — output appears word-by-word in real-time; a spinning "thinking" indicator displays while the model processes your request
 - **Agent file tools** — the AI can write, append, prepend, insert at cursor, or create new notes — with a review step before applying changes
 - **Floating selection toolbar** — highlight any text to instantly improve, summarise, expand, or extract action items
@@ -141,7 +153,7 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 | Preview | marked + DOMPurify |
 | Search | Fuse.js |
 | Spellcheck | spellbook (Hunspell-compatible, Rust) |
-| AI | openai SDK (OpenAI-compatible) |
+| AI | Vercel AI SDK (`@ai-sdk/*`) via `llmService.ts`; OpenAI-compatible profile URLs |
 
 ---
 
@@ -232,30 +244,36 @@ The first build takes 5–15 minutes because Cargo compiles all Rust dependencie
 ```
 Metis/
 ├── src/                        # React / TypeScript frontend
-│   ├── components/             # UI components (incl. spellcheck.ts linter)
-│   ├── hooks/                  # useMenuEvents (native menu bridge)
+│   ├── components/             # UI (editor, sidebar, commandCenter, settings, planner)
+│   ├── config/                 # keybindingRegistry.ts — default shortcuts
+│   ├── hooks/                  # useGlobalKeybindings, useCodeMirrorEditor, useMenuEvents, …
 │   ├── store/                  # Zustand stores (vault + persona)
-│   ├── services/               # AI gateway and smart context builder
+│   ├── services/               # llmService, keybindingRuntime, menuAcceleratorSync, contextBuilder
 │   ├── types/                  # Persona and settings type definitions
-│   └── utils/                  # File tree helpers, asset path resolver
+│   └── utils/                  # keyChord, vaultNavigation, markdownHtml, paths
 ├── src-tauri/
-│   ├── src/main.rs             # All Rust commands + FS watcher + menu
+│   ├── src/lib.rs              # Tauri builder + IPC command registration
+│   ├── src/menu.rs             # Native menu + sync_menu_accelerators
+│   ├── src/vault_fs/commands/  # Vault open, read, write, tree ops
 │   ├── resources/dictionaries/ # Bundled Hunspell .aff/.dic files (en_US, en_GB)
 │   └── tauri.conf.json         # App config, CSP, asset protocol
-└── …                           # Developer wiki: separate repo **Metis.wiki** (GitHub Wiki), not under this tree
+├── specs/CHANGELOG.md          # Timestamped dev changelog
+└── …                           # Developer wiki: separate repo **Metis.wiki** (GitHub Wiki)
 ```
 
 ---
 
 ## Configuring AI
 
-1. Open **Command Center** (right panel) → **Settings** tab.
-2. Choose your provider (OpenAI, Gemini, Groq, or Perplexity AI) and paste your API key.
+1. Open **Command Center** (right panel) → **⚙** tab, or **Metis → Settings…** (**⌘,**) → **AI**.
+2. Choose your provider (OpenAI, Gemini, Groq, Perplexity, Anthropic, LiteLLM, or a custom OpenAI-compatible URL) and paste your API key.
 3. Click **Test Connection** to verify.
-4. Switch to the **AI** tab to select a persona and run your first prompt.
+4. Switch to the **AI ✦** tab to select a persona and run your first prompt.
 5. When creating or editing a persona, click **↓ Models** to fetch the latest available models from the provider and pick from a dropdown.
 
 API keys are stored in your OS app-data directory (`~/Library/Application Support/com.metis.desktop/` on macOS) and are never sent anywhere other than your chosen AI provider. Only the specific note content needed for each task is ever transmitted — your full vault is never sent in a single call.
+
+Developer architecture docs live in the [**Metis.wiki**](https://github.com/ko800r/Metis/wiki) repository (see [Metis-Architecture](https://github.com/ko800r/Metis/wiki/Metis-Architecture)). File-level history: `specs/CHANGELOG.md`.
 
 ---
 
@@ -298,8 +316,9 @@ Metis is designed to be safe by default. The security model operates on the prin
 - API keys are never logged, never included in vault files, and are transmitted only to the user's chosen provider
 
 **External interaction**
-- `open_url` validates the scheme is `https://` before opening a URL in the browser
+- `open_url` validates the scheme is `http://` or `https://` before opening a URL in the browser
 - `reveal_in_finder` (macOS) rejects paths containing `"`, `\n`, or `\r` before embedding them in an AppleScript string literal
+- Native menu accelerators for File / View / Settings actions sync from **Settings → Hotkeys** on load and save
 
 ---
 

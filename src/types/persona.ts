@@ -68,6 +68,9 @@ export interface HistoryEntry {
   response: string;
 }
 
+import type { KeyChord } from "@/utils/keyChord";
+import type { KeybindingCommandId } from "@/config/keybindingRegistry";
+
 // ── Quick actions (floating selection toolbar) ────────────────────────────────
 
 export interface QuickAction {
@@ -193,6 +196,11 @@ export interface Settings {
   jekyllSiteUrl?: string;
   /** Chirpy `description` boilerplate for exported posts. */
   jekyllDescription?: string;
+  /**
+   * Per-command shortcut overrides. `null` disables a command's shortcuts.
+   * Omitted ids use registry defaults.
+   */
+  keybindingOverrides?: Partial<Record<KeybindingCommandId, KeyChord | null>>;
 }
 
 export const DEFAULT_SETTINGS: Settings = {

@@ -21,6 +21,7 @@ import {
 } from "../utils/providerProfiles";
 import type { LegacyAIProvider } from "../types/persona";
 import { formatError } from "../utils/formatError";
+import { syncMenuAccelerators } from "../services/menuAcceleratorSync";
 import { toastError } from "./useToastStore";
 
 export interface SelectionQuery {
@@ -183,11 +184,13 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         settings,
       });
 
+      void syncMenuAccelerators(settings);
       void get().loadAgentRunLog();
     } catch (e) {
       console.warn("[Metis] Could not load personas/settings from disk:", e);
       const settings = settingsWithHosts(migrateSettings({}));
       set({ settings });
+      void syncMenuAccelerators(settings);
     } finally {
       set({ loading: false });
     }
@@ -207,6 +210,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
     set({ settings });
     try {
       await invoke("save_settings", { json: JSON.stringify(settings) });
+      await syncMenuAccelerators(settings);
     } catch (e) {
       console.error("[Metis] Failed to save settings:", e);
       toastError(`Could not save settings: ${formatError(e)}`);

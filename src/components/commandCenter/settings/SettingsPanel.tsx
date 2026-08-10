@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiProviderProfile, Settings, SettingsSectionId, StickyNoteDefaults } from "@/types/persona";
 import type { usePersonaStore } from "@/store/usePersonaStore";
-import { KEYBINDINGS, KEYBINDING_CATEGORIES } from "@/config/keybindings";
 import { STICKY_COLOR_PRESETS } from "@/utils/stickyNotes";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { BG_PRESETS } from "../../editor/bgPresets";
 import { SETTINGS_NAV } from "../../settings/settingsNav";
 import { JekyllExportSettings } from "../../settings/JekyllExportSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
+import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
 import { SettingsTab } from "./SettingsTab";
 
 type StoreSettings = ReturnType<typeof usePersonaStore.getState>["settings"];
@@ -85,7 +85,7 @@ export function SettingsPanel({
         )}
         {section === "hotkeys" && (
           <SettingsSection title="Hotkeys">
-            <HotkeysSettingsSection />
+            <HotkeysSettingsSection settings={settings} onUpdate={onUpdateSettings} />
           </SettingsSection>
         )}
         {section === "ai" && (
@@ -298,41 +298,6 @@ function StickySettingsSection({
           ))}
         </div>
       </div>
-    </div>
-  );
-}
-
-function HotkeysSettingsSection() {
-  return (
-    <div className="space-y-4 text-[11px]">
-      <p className="text-text-muted">
-        Keyboard shortcuts are fixed in this release. Custom rebinding is planned for a future update.
-      </p>
-      {KEYBINDING_CATEGORIES.map((cat) => {
-        const rows = KEYBINDINGS.filter((k) => k.category === cat);
-        if (!rows.length) return null;
-        return (
-          <div key={cat}>
-            <p className={labelCls}>{cat}</p>
-            <div className="mt-1.5 overflow-hidden rounded-md border border-border">
-              {rows.map((row, i) => (
-                <div
-                  key={row.id}
-                  className={[
-                    "flex items-center justify-between gap-3 px-2.5 py-1.5",
-                    i > 0 ? "border-t border-border/60" : "",
-                  ].join(" ")}
-                >
-                  <span className="text-text-primary">{row.label}</span>
-                  <kbd className="shrink-0 rounded border border-border bg-surface-base px-1.5 py-0.5 font-mono text-[10px] text-text-muted">
-                    {row.keys}
-                  </kbd>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

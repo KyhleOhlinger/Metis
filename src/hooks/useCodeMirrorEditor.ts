@@ -1,11 +1,11 @@
 import { useEffect, type MutableRefObject, type RefObject } from "react";
+import { EditorState } from "@codemirror/state";
 import {
   EditorView,
   keymap,
   highlightActiveLine,
   highlightActiveLineGutter,
 } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
 import { history } from "@codemirror/commands";
 import { search } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -28,7 +28,12 @@ import {
   makeInlinePreviewExtension,
   hideFrontmatterField,
 } from "@/components/editorExtensions";
-import { buildEditorKeymaps } from "@/components/editor/editorKeymaps";
+import {
+  buildEditorKeymaps,
+  editorKeymapCompartment,
+  editorKeymapExtension,
+  type EditorKeymapOpts,
+} from "@/components/editor/editorKeymaps";
 import { makeSpellcheckExt } from "@/components/editor/editorSpellcheck";
 import {
   bgCompartment,
@@ -39,6 +44,7 @@ import {
   spellcheckCompartment,
   type BgPreset,
 } from "@/components/editor/bgPresets";
+import type { Settings } from "@/types/persona";
 
 interface Options {
   editorHostRef: RefObject<HTMLDivElement | null>;
@@ -146,15 +152,13 @@ export function useCodeMirrorEditor({
           makeSpellcheckExt(spellcheckRef.current, spellcheckLangRef.current),
         ),
         bgCompartment.of(makeBgTheme(bgPresetRef.current)),
-        keymap.of(
-          buildEditorKeymaps({
-            activeFilePath,
-            markSaved,
-            setFindBarOpen,
-            setFindBarReplace,
-            findBarRef,
-          }),
-        ),
+        editorKeymapExtension({
+          activeFilePath,
+          markSaved,
+          setFindBarOpen,
+          setFindBarReplace,
+          findBarRef,
+        }),
         updateListener,
         EditorView.lineWrapping,
       ],
@@ -179,12 +183,14 @@ export function useCodeMirrorEditor({
   }, [activeFileContent, isImageFile, viewRef]);
 }
 
-/** Hot-swap spellcheck and background without rebuilding the editor. */
+/** Hot-swap spellcheck, background, and keybindings without rebuilding the editor. */
 export function useCodeMirrorCompartments(
   viewRef: MutableRefObject<EditorView | null>,
   bgPreset: BgPreset,
   spellcheckEnabled: boolean,
   spellcheckLang: string,
+  keymapOptsRef: MutableRefObject<EditorKeymapOpts>,
+  keybindingOverrides: Settings["keybindingOverrides"],
 ) {
   useEffect(() => {
     viewRef.current?.dispatch({
@@ -202,4 +208,12 @@ export function useCodeMirrorCompartments(
       ),
     });
   }, [spellcheckEnabled, spellcheckLang, viewRef]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: editorKeymapCompartment.reconfigure(
+        keymap.of(buildEditorKeymaps(keymapOptsRef.current)),
+      ),
+    });
+  }, [keybindingOverrides, keymapOptsRef, viewRef]);
 }
