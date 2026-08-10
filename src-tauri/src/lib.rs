@@ -55,6 +55,7 @@ pub fn run() {
             settings::load_settings,
             settings::save_settings,
             settings::get_app_version,
+            menu::sync_menu_accelerators,
             planner::get_planner_storage_dir,
             planner::planner_get_config,
             planner::planner_set_vault_mode,

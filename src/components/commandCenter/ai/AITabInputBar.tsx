@@ -1,6 +1,8 @@
 import type { Persona } from "@/types/persona";
 import type { PendingWrite } from "../agent/pendingWrite.types";
 import type { ContextStrategy } from "@/services/contextBuilder";
+import { usePersonaStore } from "@/store/usePersonaStore";
+import { getDisplayChord, aiRunChordMatches } from "@/services/keybindingRuntime";
 
 interface AITabInputBarProps {
   userMessage: string;
@@ -29,13 +31,16 @@ export function AITabInputBar({
   handleStop,
   onClear,
 }: AITabInputBarProps) {
+  const settings = usePersonaStore((s) => s.settings);
+  const runKeys = getDisplayChord("ai-run", settings);
+
   return (
     <div className="shrink-0 border-t border-border p-2 space-y-1.5">
       <textarea
         value={userMessage}
         onChange={(e) => setUserMessage(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          if (aiRunChordMatches(e.nativeEvent, settings)) {
             e.preventDefault();
             handleRun();
           }
@@ -44,7 +49,7 @@ export function AITabInputBar({
           isSystemPersonaActive
             ? `Use the panel above to run ${activePersona?.name ?? "this agent"}`
             : activePersona
-              ? `Ask ${activePersona.name}… (⌘↵ to run)`
+              ? `Ask ${activePersona.name}… (${runKeys} to run)`
               : "Select a persona first"
         }
         disabled={!activePersona || streaming || isSystemPersonaActive}

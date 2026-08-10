@@ -18,6 +18,7 @@ import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
 import { resolveMarkdownImageSrc } from "@/utils/vaultImages";
 import { selectionIntersectsRange } from "./editorPluginUtils";
+import { frontmatterLineCount, FRONTMATTER_RE } from "../frontmatterUtils";
 
 // ── 2. Code block background + language badge + copy button ──────────────────
 
@@ -748,14 +749,6 @@ export const smartPasteExtension = EditorView.domEventHandlers({
 
 // ── Frontmatter-aware line numbers ───────────────────────────────────────────
 
-function frontmatterLineCount(state: EditorState): number {
-  const text = state.doc.sliceString(0, Math.min(state.doc.length, 4_000));
-  const match = text.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
-  if (!match) return 0;
-  // Count newlines inside the matched block to get the number of hidden lines
-  return (match[0].match(/\n/g) ?? []).length;
-}
-
 export const metisLineNumbers = lineNumbers({
   formatNumber(lineNo, state) {
     const fmLines = frontmatterLineCount(state);
@@ -774,8 +767,6 @@ export const metisLineNumbers = lineNumbers({
 // Uses a StateField (not a ViewPlugin) because replace decorations that span
 // multiple lines must be provided via StateField to satisfy CM6's constraint:
 // "Block decorations may not be specified via plugins."
-
-const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
 function buildFrontmatterDeco(state: EditorState): DecorationSet {
   // Only scan the first 4 000 characters — frontmatter is always at the very

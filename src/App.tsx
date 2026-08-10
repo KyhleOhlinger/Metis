@@ -17,6 +17,7 @@ import ConvertToJekyllModal from "./components/ConvertToJekyllModal";
 import ToastHost from "./components/ToastHost";
 import { useStore, VaultData } from "./store/useStore";
 import { useMenuEvents } from "./hooks/useMenuEvents";
+import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { LAST_VAULT_KEY } from "./constants";
 import {
   checkPlannerRestore,
@@ -221,6 +222,7 @@ export default function App() {
 
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
   const togglePanel   = useCallback(() => setCcOpen((v) => !v), []);
+  const lastPaneRef = useRef<"sidebar" | "editor" | "cc">("editor");
 
   const openDailyNote = useCallback(() => {
     const { vaultPath: vp, setActiveFile, refreshVault: rv } = useStore.getState();
@@ -245,6 +247,16 @@ export default function App() {
 
   const openExportPdf = useCallback(() => setExportPdfOpen(true), []);
   useMenuEvents({ toggleSidebar, togglePanel, openDailyNote, onExportPdf: openExportPdf, onForeignVault });
+
+  useGlobalKeybindings({
+    setPaletteOpen,
+    sidebarOpen,
+    setSidebarOpen,
+    lastPaneRef,
+    toggleSidebar,
+    togglePanel,
+    openDailyNote,
+  });
 
   const pendingMenuAction = useStore((s) => s.pendingMenuAction);
   const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
@@ -305,45 +317,6 @@ export default function App() {
     }
   }, [vaultPath, vaultFromUrl]);
 
-  // Track which pane was last interacted with so Cmd+F can be routed
-  // to the sidebar search or the editor find bar accordingly.
-  const lastPaneRef = useRef<"sidebar" | "editor" | "cc">("editor");
-
-  // Global Cmd/Ctrl+P → open Quick Switcher
-  // Global Cmd/Ctrl+Shift+F → open vault-wide search in sidebar
-  // Global Cmd/Ctrl+F → context-aware: sidebar search or editor find
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "p") {
-        e.preventDefault();
-        setPaletteOpen((v) => !v);
-      }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        const store = useStore.getState();
-        if (!store.vaultPath) return;
-        store.setSidebarView("search");
-        if (!sidebarOpen) setSidebarOpen(true);
-      }
-      // Cmd/Ctrl+F while sidebar was last active → open sidebar search
-      if (
-        (e.metaKey || e.ctrlKey) &&
-        !e.shiftKey &&
-        e.key.toLowerCase() === "f" &&
-        lastPaneRef.current === "sidebar"
-      ) {
-        e.preventDefault();
-        const store = useStore.getState();
-        if (!store.vaultPath) return;
-        store.setSidebarView("search");
-        if (!sidebarOpen) setSidebarOpen(true);
-      }
-      if (e.key === "Escape") setPaletteOpen(false);
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [sidebarOpen]);
-
   // Start (or replace) the Rust FS watcher whenever the active vault changes
   useEffect(() => {
     if (!vaultPath) return;
@@ -372,19 +345,6 @@ export default function App() {
 
   useEffect(() => {
     usePersonaStore.getState().loadFromDisk();
-  }, []);
-
-  // Global preferences shortcut (mirrors native Settings… menu item).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== ",") return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      e.preventDefault();
-      usePersonaStore.getState().openSettings();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
   // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.

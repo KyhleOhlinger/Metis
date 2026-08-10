@@ -1,5 +1,6 @@
-use tauri::menu::{AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, MenuItemBuilder, MenuItemKind, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
+use std::collections::HashMap;
 
 // ── Native application menu ───────────────────────────────────────────────────
 
@@ -248,4 +249,43 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
     if let Some(action) = action {
         let _ = app.emit("menu-event", action);
     }
+}
+
+/// Find a custom menu item by id within the app menu tree (one submenu level).
+fn find_menu_item(app: &AppHandle, menu_id: &str) -> Option<MenuItem<tauri::Wry>> {
+    let menu = app.menu()?;
+    for item in menu.items().unwrap_or_default() {
+        if let MenuItemKind::Submenu(sub) = item {
+            if let Some(found) = sub.get(menu_id) {
+                if let MenuItemKind::MenuItem(mi) = found {
+                    return Some(mi);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Apply user keybinding overrides to native menu accelerator labels.
+pub fn apply_menu_accelerators(
+    app: &AppHandle,
+    accelerators: HashMap<String, Option<String>>,
+) -> Result<(), String> {
+    for (menu_id, accel) in accelerators {
+        if let Some(item) = find_menu_item(app, &menu_id) {
+            item
+                .set_accelerator(accel.as_deref())
+                .map_err(|e| format!("Failed to set accelerator for {menu_id}: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// IPC: sync menu bar shortcuts from frontend `keybindingOverrides`.
+#[tauri::command]
+pub fn sync_menu_accelerators(
+    app_handle: tauri::AppHandle,
+    accelerators: HashMap<String, Option<String>>,
+) -> Result<(), String> {
+    apply_menu_accelerators(&app_handle, accelerators)
 }
