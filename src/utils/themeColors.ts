@@ -54,6 +54,18 @@ export function isDarkBackground(hex: string): boolean {
   return relativeLuminance(hex) < 0.42;
 }
 
+/** Readable text on a solid accent-coloured control or selection row. */
+export function accentForegroundOn(accent: string): string {
+  return relativeLuminance(accent) < 0.45
+    ? "#ffffff"
+    : mixHex(accent, "#000000", 0.72);
+}
+
+/** Sidebar / list selection tint derived from surface + accent. */
+export function accentMutedBackground(bg: string, accent: string, isDark: boolean): string {
+  return isDark ? mixHex(accent, "#000000", 0.35) : mixHex(bg, accent, 0.38);
+}
+
 /** Mix two hex colours; `t` is weight of `b` (0 = all `a`). */
 export function mixHex(a: string, b: string, t: number): string {
   const ta = Math.max(0, Math.min(1, t));

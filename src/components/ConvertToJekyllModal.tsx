@@ -283,7 +283,7 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
             type="button"
             onClick={runExport}
             disabled={busy || !content || !preview}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-40"
           >
             {busy ? "Exporting…" : "Export to _posts"}
           </button>

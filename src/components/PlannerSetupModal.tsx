@@ -119,7 +119,7 @@ export default function PlannerSetupModal({ onComplete, onDismiss }: Props) {
             type="button"
             onClick={() => void handleConfirm()}
             disabled={busy}
-            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+            className="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
           >
             {busy ? "Saving…" : "Continue"}
           </button>

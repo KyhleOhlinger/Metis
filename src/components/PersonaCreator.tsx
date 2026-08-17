@@ -177,7 +177,7 @@ export default function PersonaCreator({ editing, onClose }: Props) {
             <button
               type="button"
               onClick={handleSave}
-              className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
+              className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover transition-colors"
             >
               {editing ? "Save Changes" : "Create Persona"}
             </button>

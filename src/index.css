@@ -328,6 +328,18 @@ body,
   background-color: var(--editor-accent, #7c3aed) !important;
 }
 
+.editor-theme .bg-accent-muted {
+  background-color: var(--editor-accent-muted, #4c1d95) !important;
+}
+
+.editor-theme .text-on-accent {
+  color: var(--editor-accent-fg, #ffffff) !important;
+}
+
+.editor-theme .text-on-accent\/80 {
+  color: color-mix(in srgb, var(--editor-accent-fg, #ffffff) 80%, transparent) !important;
+}
+
 .editor-theme .bg-accent\/10 {
   background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 10%, transparent) !important;
 }
@@ -368,6 +380,145 @@ body,
 .editor-theme thead.planner-grid-header-row th {
   background-color: var(--planner-header-bg, #7f00ff) !important;
   color: var(--planner-header-fg, #ffffff) !important;
+}
+
+.editor-theme .planner-header-input {
+  color: var(--planner-header-fg, #ffffff) !important;
+}
+
+.editor-theme .planner-header-input::placeholder {
+  color: color-mix(in srgb, var(--planner-header-fg, #ffffff) 50%, transparent) !important;
+}
+
+.editor-theme .planner-header-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--planner-header-fg, #ffffff) 40%, transparent);
+}
+
+.editor-theme .btn-accent {
+  background-color: var(--editor-accent, #7c3aed) !important;
+  color: var(--editor-accent-fg, #ffffff) !important;
+}
+
+.editor-theme .btn-accent:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 88%, black) !important;
+}
+
+.editor-theme .hover\:bg-accent-hover:hover {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 88%, black) !important;
+}
+
+.editor-theme .bg-accent\/85 {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 85%, transparent) !important;
+}
+
+.editor-theme .bg-accent\/90 {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 90%, transparent) !important;
+}
+
+/* CodeMirror chrome — theme-aware when nested in .editor-theme */
+.editor-theme .cm-search {
+  background: var(--editor-surface-raised, #1e1f24) !important;
+  border-bottom-color: var(--editor-border, #2d2e35) !important;
+  color: var(--editor-text-primary, #e2e8f0) !important;
+}
+
+.editor-theme .cm-search label {
+  color: var(--editor-text-muted, #94a3b8) !important;
+}
+
+.editor-theme .cm-search label:hover {
+  color: var(--editor-text-primary, #e2e8f0) !important;
+}
+
+.editor-theme .cm-search input[type="checkbox"] {
+  accent-color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .cm-search .cm-textfield {
+  background: var(--editor-surface-base, #16171a) !important;
+  color: var(--editor-text-primary, #e2e8f0) !important;
+  border-color: var(--editor-border, #3d3e45) !important;
+}
+
+.editor-theme .cm-search .cm-textfield:focus {
+  border-color: var(--editor-accent, #7c3aed) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--editor-accent, #7c3aed) 30%, transparent) !important;
+}
+
+.editor-theme .cm-search .cm-button {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 15%, transparent) !important;
+  color: var(--editor-accent, #7c3aed) !important;
+  border-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 30%, transparent) !important;
+}
+
+.editor-theme .cm-search .cm-button:hover {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 28%, transparent) !important;
+}
+
+.editor-theme .cm-search .cm-button:active {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 40%, transparent) !important;
+}
+
+.editor-theme .cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 40%, transparent) !important;
+  outline-color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .cm-tooltip-autocomplete {
+  background: var(--editor-surface-raised, #1e1f24) !important;
+  border-color: var(--editor-border, #3d3e45) !important;
+}
+
+.editor-theme .cm-tooltip-autocomplete li {
+  color: var(--editor-text-secondary, #cbd5e1) !important;
+}
+
+.editor-theme .cm-tooltip-autocomplete li[aria-selected] {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 20%, transparent) !important;
+  color: var(--editor-text-primary, #e2e8f0) !important;
+}
+
+.editor-theme .cm-tooltip-autocomplete li:hover {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 12%, transparent) !important;
+}
+
+.editor-theme .cm-task-checkbox:hover {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 14%, transparent) !important;
+}
+
+.editor-theme .cm-wikilink {
+  color: var(--editor-accent, #7c3aed) !important;
+  border-bottom-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 65%, transparent) !important;
+}
+
+.editor-theme .cm-wikilink:hover {
+  color: color-mix(in srgb, var(--editor-accent, #7c3aed) 85%, black) !important;
+  border-bottom-color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .cm-code-lang-badge {
+  color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .cm-copy-btn {
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 15%, transparent) !important;
+  color: var(--editor-accent, #7c3aed) !important;
+  border-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 30%, transparent) !important;
+}
+
+.editor-theme .preview-prose :not(pre) > code {
+  color: var(--editor-accent, #7c3aed) !important;
+  background: color-mix(in srgb, var(--editor-accent, #7c3aed) 12%, transparent) !important;
+}
+
+.editor-theme .preview-prose pre {
+  border-color: var(--editor-border, #2d3748) !important;
+  border-left-color: var(--editor-accent-muted, #4c1d95) !important;
+}
+
+.editor-theme .preview-prose blockquote {
+  border-left-color: var(--editor-accent, #7c3aed) !important;
 }
 
 .editor-theme .divide-border > :not([hidden]) ~ :not([hidden]) {

@@ -400,7 +400,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
           className={[
             `group flex items-center gap-1.5 pr-1 py-[3px] rounded-sm select-none transition-colors ${node.is_dir || isOpenable ? "cursor-pointer" : "cursor-default"}`,
             isActiveFile
-              ? "bg-accent-muted text-text-primary"
+              ? "bg-accent text-on-accent"
               : isActiveFolder
               ? "border-l-2 border-accent bg-surface-overlay text-text-primary"
               : "text-text-secondary hover:bg-surface-overlay hover:text-text-primary",
@@ -437,7 +437,11 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
             const status = !node.is_dir
               ? noteIndex.find((n) => n.path === node.path)?.status
               : undefined;
-            const iconColor = status ? (STATUS_ICON_COLORS[status] ?? "text-text-muted") : "text-text-muted";
+            const iconColor = status
+              ? (STATUS_ICON_COLORS[status] ?? "text-text-muted")
+              : isActiveFile
+                ? "text-on-accent/80"
+                : "text-text-muted";
             return (
               <span className={`shrink-0 ${iconColor}`}>
                 {node.is_dir ? (

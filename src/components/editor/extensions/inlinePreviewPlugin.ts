@@ -37,7 +37,7 @@ import {
 //
 // Renders actual <img> elements directly below image markdown lines so the
 // user doesn't need to switch to the Visual tab to see images.
-// Links already receive blue/underline styling via metisHighlightStyle; here
+// Links already receive accent/underline styling via highlight styles; here
 // we also enable Cmd/Ctrl+Click to follow links without leaving source mode.
 
 class InlineImageWidget extends WidgetType {

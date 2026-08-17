@@ -68,7 +68,7 @@ export function EditorHeaderBar({
                 onClick={() => setEditorMode(mode)}
                 className={`rounded px-2 py-0.5 text-xs font-medium capitalize transition-colors ${
                   editorMode === mode
-                    ? "bg-accent text-white"
+                    ? "bg-accent text-on-accent"
                     : "text-text-muted hover:text-text-primary"
                 }`}
               >

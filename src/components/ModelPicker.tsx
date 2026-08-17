@@ -29,7 +29,7 @@ const TIER_LABEL: Record<CuratedModel["tier"], string> = {
 const TIER_COLOR: Record<CuratedModel["tier"], string> = {
   small: "text-emerald-400",
   medium: "text-blue-400",
-  large: "text-purple-400",
+  large: "text-accent",
   reasoning: "text-amber-400",
 };
 

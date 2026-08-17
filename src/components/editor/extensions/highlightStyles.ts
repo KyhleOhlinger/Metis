@@ -97,9 +97,6 @@ export const metisHighlightStyleLight = syntaxHighlighting(
   ]),
 );
 
-/** Alias for `metisHighlightStyleDark` (existing imports). */
-export const metisHighlightStyle = metisHighlightStyleDark;
-
 /**
  * Planner cells inherit `--planner-text-*` from `.planner-theme`. Prose tokens use
  * those CSS variables so bold/headings stay readable on light and dark presets.

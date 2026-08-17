@@ -8,7 +8,7 @@ import {
   type TaskStatus,
   DAY_NAMES,
   DEFAULT_LAYOUT_TEMPLATES,
-  PLANNER_PURPLE_HEADER,
+  PLANNER_GRID_HEADER,
   SPECIAL_LABELS,
   dayDate,
   getEntry,
@@ -70,7 +70,7 @@ export default function PlannerDailyTab({
         <div
           key={`hdr-${monday.toISOString()}`}
           style={{ gridColumn: wi + 2, gridRow: 1 }}
-          className={PLANNER_PURPLE_HEADER}
+          className={PLANNER_GRID_HEADER}
         >
           {weekHeader(monday)}
         </div>
@@ -80,7 +80,7 @@ export default function PlannerDailyTab({
         <Fragment key={day}>
           <div
             style={{ gridColumn: 1, gridRow: di + 2 }}
-            className={PLANNER_PURPLE_HEADER}
+            className={PLANNER_GRID_HEADER}
           >
             {day}
           </div>

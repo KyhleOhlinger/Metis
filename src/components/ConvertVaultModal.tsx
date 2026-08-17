@@ -221,7 +221,7 @@ export default function ConvertVaultModal({ vaultPath, vaultHint, onDismiss }: P
           <button
             onClick={handleConvert}
             disabled={converting}
-            className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {converting ? "Converting…" : "Convert to Metis Vault"}
           </button>

@@ -171,7 +171,7 @@ export default function PlannerTrackerTab({
                           <div className="flex items-center gap-1.5">
                             <input value={row.name} onChange={(e) => updateHoliday(row.id, { name: e.target.value })} className="w-full rounded border border-border bg-surface-raised px-1 py-0.5" />
                             {isLongWeekendHoliday(row.date) && (
-                              <span className="shrink-0 rounded border border-violet-400/40 bg-violet-500/15 px-1.5 py-0.5 text-[9px] font-semibold text-violet-200">
+                              <span className="shrink-0 rounded border border-accent/40 bg-accent/15 px-1.5 py-0.5 text-[9px] font-semibold text-accent">
                                 Long Weekend
                               </span>
                             )}

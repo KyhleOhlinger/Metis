@@ -6,9 +6,12 @@ import {
   metisHighlightStyleLight,
 } from "../editorExtensions";
 import {
+  accentForegroundOn,
+  accentMutedBackground,
   deriveCustomThemeFields,
   deriveThemePalette,
   normalizeHex,
+  withAlphaHex,
 } from "@/utils/themeColors";
 
 export const CUSTOM_PRESET_ID = "custom";
@@ -110,9 +113,12 @@ function themeTokensForPreset(p: BgPreset) {
   if (isBuiltInId(p.id)) {
     const t = BUILT_IN_PALETTE[p.id];
     const header = BUILT_IN_PLANNER_HEADER[p.id];
+    const accent = BUILT_IN_ACCENT[p.id];
     return {
       ...t,
-      accent: BUILT_IN_ACCENT[p.id],
+      accent,
+      accentMuted: accentMutedBackground(p.bg, accent, p.isDark),
+      accentFg: accentForegroundOn(accent),
       plannerHeaderBg: header.bg,
       plannerHeaderFg: header.fg,
     };
@@ -125,6 +131,8 @@ function themeTokensForPreset(p: BgPreset) {
     secondary: derived.secondary,
     muted: derived.muted,
     accent: derived.accent,
+    accentMuted: accentMutedBackground(p.bg, derived.accent, p.isDark),
+    accentFg: accentForegroundOn(derived.accent),
     plannerHeaderBg: derived.plannerHeaderBg,
     plannerHeaderFg: derived.plannerHeaderFg,
   };
@@ -141,6 +149,8 @@ export function editorPaneThemeVars(p: BgPreset): CSSProperties {
     "--editor-text-secondary": t.secondary,
     "--editor-text-muted": t.muted,
     "--editor-accent": t.accent,
+    "--editor-accent-muted": t.accentMuted,
+    "--editor-accent-fg": t.accentFg,
     "--planner-header-bg": t.plannerHeaderBg,
     "--planner-header-fg": t.plannerHeaderFg,
     /* Legacy aliases — planner inline CodeMirror fields still reference these. */
@@ -153,9 +163,6 @@ export function editorPaneThemeVars(p: BgPreset): CSSProperties {
     "--planner-text-muted": t.muted,
   } as CSSProperties;
 }
-
-/** Alias — planner shares the editor pane palette. */
-export const plannerThemeVars = editorPaneThemeVars;
 
 export function makeBgTheme(p: BgPreset) {
   const accent = themeTokensForPreset(p).accent;
@@ -171,8 +178,9 @@ export function makeBgTheme(p: BgPreset) {
       ".cm-activeLineGutter": { backgroundColor: `${p.activeGutter} !important` },
       ".cm-activeLine": { backgroundColor: `${p.activeLine} !important` },
       ".cm-cursor": { borderLeftColor: accent, borderLeftWidth: "2px" },
+      ".cm-content": { caretColor: accent },
       ".cm-selectionBackground, ::selection": {
-        backgroundColor: `${p.isDark ? "rgba(76, 29, 149, 0.38)" : "rgba(124, 58, 237, 0.22)"} !important`,
+        backgroundColor: `${withAlphaHex(accent, p.isDark ? 0.38 : 0.22)} !important`,
       },
     },
     { dark: p.isDark },
@@ -184,7 +192,7 @@ export const metisTheme = EditorView.theme(
     "&": { height: "100%" },
     ".cm-scroller": { fontFamily: '"Inter","SF Pro Text",system-ui,sans-serif', overflow: "auto" },
     ".cm-content": {
-      caretColor: "#7c3aed",
+      caretColor: "var(--editor-accent, #7c3aed)",
       padding: "1.5rem 1.5rem 1.5rem 1rem",
       minHeight: "100%",
       fontSize: "15px",

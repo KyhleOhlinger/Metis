@@ -64,7 +64,7 @@ export function SidebarFileTreePanel({
               <button
                 type="button"
                 onClick={onCreateVault}
-                className="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-accent-hover"
+                className="w-full rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-on-accent transition-colors hover:bg-accent-hover"
               >
                 Create Vault
               </button>

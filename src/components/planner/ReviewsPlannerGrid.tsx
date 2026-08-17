@@ -1,5 +1,6 @@
 import { type MutableRefObject } from "react";
 import type { EditorView } from "@codemirror/view";
+import { PLANNER_GRID_HEADER } from "@/planner/plannerStorage";
 import PlannerMarkdownCell from "./PlannerMarkdownCell";
 
 /** One review row — mirrors `ReviewTableRow` in DailyTaskGrid (kept separate to avoid circular imports). */
@@ -15,9 +16,6 @@ export type ReviewsPlannerRow = {
 const GRID_GAP_CLASS = "gap-1.5";
 /** Matches Daily Log default: narrow row-label track + four flex columns (see DailyTaskGrid `dailyGridTemplateColumns`). */
 const GRID_TEMPLATE = "110px repeat(4, minmax(210px, 1fr)) minmax(3.25rem, 4rem)";
-
-const PURPLE_HEADER =
-  "planner-grid-header flex min-h-[2.5rem] items-center justify-center rounded-md px-2 py-1.5 text-center text-[11px] font-semibold";
 
 const WORK_CELL_SHELL =
   "flex min-h-0 items-stretch rounded-md border border-border bg-surface-overlay/30 p-2";
@@ -56,7 +54,7 @@ export default function ReviewsPlannerGrid({
     <div className="overflow-auto">
       <div className={["grid min-w-[980px]", GRID_GAP_CLASS].join(" ")} style={gridStyle}>
         {headers.map((h, i) => (
-          <div key={`review-h-${i}`} className={PURPLE_HEADER}>
+          <div key={`review-h-${i}`} className={PLANNER_GRID_HEADER}>
             <label className="sr-only" htmlFor={`review-col-header-${i}`}>
               Column {i + 1} header
             </label>
@@ -64,12 +62,12 @@ export default function ReviewsPlannerGrid({
               id={`review-col-header-${i}`}
               value={h}
               onChange={(e) => onHeaderChange(i, e.target.value)}
-              className="w-full border-0 bg-transparent text-center text-[11px] font-semibold text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-white/40"
+              className="w-full border-0 bg-transparent text-center text-[11px] font-semibold planner-header-input"
               placeholder="Column title"
             />
           </div>
         ))}
-        <div className={`${PURPLE_HEADER}`} aria-hidden />
+        <div className={`${PLANNER_GRID_HEADER}`} aria-hidden />
 
         {rows.length === 0 ? (
           <div className="col-span-6 flex min-h-[2.5rem] items-center justify-center rounded-md border border-border bg-surface-overlay/30 px-3 py-6 text-center text-[10px] text-text-muted">
@@ -113,7 +111,7 @@ function ReviewsPlannerDataRow({
 }) {
   return (
     <>
-      <div className={`${PURPLE_HEADER} min-h-[96px]`}>
+      <div className={`${PLANNER_GRID_HEADER} min-h-[96px]`}>
         <label className="sr-only" htmlFor={`review-cycle-${row.id}`}>
           {headers[0] || "Review cycle"}
         </label>
@@ -123,7 +121,7 @@ function ReviewsPlannerDataRow({
           onChange={(e) => onRowPatch(row.id, { cycleLabel: e.target.value })}
           rows={3}
           placeholder="Review cycle"
-          className="max-h-[5.5rem] min-h-[2.5rem] w-full resize-none overflow-auto border-0 bg-transparent text-center text-[11px] font-semibold leading-snug text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-white/40"
+          className="max-h-[5.5rem] min-h-[2.5rem] w-full resize-none overflow-auto border-0 bg-transparent text-center text-[11px] font-semibold leading-snug planner-header-input"
         />
       </div>
 

@@ -3,7 +3,6 @@ export {
   codeBlockPlugin,
   copyButtonPlugin,
   calloutPlugin,
-  createVisualModePlugin,
   markdownAutoComplete,
   listContinuationKeymap,
   smartPasteExtension,

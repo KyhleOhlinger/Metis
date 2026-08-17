@@ -216,9 +216,6 @@ export const SPECIAL_LABELS: Record<Exclude<TaskStatus, "work">, string> = {
 export const PLANNER_GRID_HEADER =
   "planner-grid-header flex min-h-[2.5rem] items-center justify-center rounded-md px-2 py-1.5 text-center text-[11px] font-semibold";
 
-/** @deprecated Use `PLANNER_GRID_HEADER` */
-export const PLANNER_PURPLE_HEADER = PLANNER_GRID_HEADER;
-
 export function makeRowId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

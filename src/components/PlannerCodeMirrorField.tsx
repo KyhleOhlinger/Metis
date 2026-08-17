@@ -26,15 +26,15 @@ const plannerCmBaseTheme = EditorView.theme(
     },
     ".cm-content": {
       padding: "6px 8px",
-      caretColor: "#7c3aed",
+      caretColor: "var(--editor-accent, #7c3aed)",
       minHeight: "100%",
       fontWeight: "400",
     },
     ".cm-activeLine": {
-      backgroundColor: "rgba(124, 58, 237, 0.08) !important",
+      backgroundColor: "color-mix(in srgb, var(--editor-accent, #7c3aed) 8%, transparent) !important",
     },
     ".cm-cursor": {
-      borderLeftColor: "#7c3aed",
+      borderLeftColor: "var(--editor-accent, #7c3aed)",
     },
   },
   { dark: true },

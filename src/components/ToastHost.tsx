@@ -67,10 +67,10 @@ export default function ToastHost() {
                 type="button"
                 onClick={() => resolveConfirm(true)}
                 className={[
-                  "rounded-md px-3 py-1.5 text-xs font-medium text-white",
+                  "rounded-md px-3 py-1.5 text-xs font-medium",
                   confirm.danger
-                    ? "bg-red-600 hover:bg-red-500"
-                    : "bg-accent hover:bg-accent-hover",
+                    ? "bg-red-600 text-white hover:bg-red-500"
+                    : "bg-accent text-on-accent hover:bg-accent-hover",
                 ].join(" ")}
               >
                 {confirm.confirmLabel}

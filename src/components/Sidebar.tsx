@@ -205,8 +205,8 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
               onClick={() => openPlannerTab()}
               className={
                 editorTab === "planner"
-                  ? "bg-accent text-white shadow-sm shadow-accent/40 ring-1 ring-accent/60"
-                  : "bg-accent/85 text-white hover:bg-accent"
+                  ? "bg-accent text-on-accent shadow-sm shadow-accent/40 ring-1 ring-accent/60"
+                  : "bg-accent/85 text-on-accent hover:bg-accent"
               }
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -270,8 +270,8 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
               className={[
                 "mb-1.5 w-full rounded border px-2 py-1 text-[10px] font-semibold transition-colors",
                 editorTab === "planner"
-                  ? "border-accent/70 bg-accent text-white shadow-sm shadow-accent/30"
-                  : "border-accent/50 bg-accent/90 text-white hover:bg-accent",
+                  ? "border-accent/70 bg-accent text-on-accent shadow-sm shadow-accent/30"
+                  : "border-accent/50 bg-accent/90 text-on-accent hover:bg-accent",
               ].join(" ")}
               title="Open Planner"
             >
