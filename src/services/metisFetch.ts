@@ -6,7 +6,7 @@
  */
 
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import type { AiProviderProfile } from "../types/persona";
+import type { AiProviderProfile, ProviderKind } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
 
 export function isTauriWebview(): boolean {
@@ -29,10 +29,32 @@ function normalizeCompatBaseUrl(baseUrl: string): string {
   if (s.includes("api.perplexity.ai")) {
     return "https://api.perplexity.ai";
   }
-  if (s.includes("api.anthropic.com") && !s.endsWith("/v1")) {
-    return `${s}/v1`;
+  // Misconfigured openai-compatible profile pointing at Anthropic — still normalize.
+  if (s.includes("api.anthropic.com")) {
+    return normalizeAnthropicBaseUrl(s);
+  }
+  if (s.includes("api.openai.com")) {
+    return normalizeOpenAiBaseUrl(s);
   }
 
+  return s;
+}
+
+function normalizeOpenAiBaseUrl(baseUrl: string): string {
+  let s = baseUrl.trim().replace(/\/+$/, "");
+  if (!s) return s;
+  if (s.includes("api.openai.com") && !/\/v1$/.test(s)) {
+    return `${s}/v1`;
+  }
+  return s;
+}
+
+function normalizeAnthropicBaseUrl(baseUrl: string): string {
+  let s = baseUrl.trim().replace(/\/+$/, "");
+  if (!s) return s;
+  if (s.includes("api.anthropic.com") && !/\/v1$/.test(s)) {
+    return `${s}/v1`;
+  }
   return s;
 }
 
@@ -49,20 +71,31 @@ function normalizeGoogleBaseUrl(baseUrl: string): string {
   return s;
 }
 
+function normalizeBaseUrlForKind(kind: ProviderKind, baseUrl: string): string {
+  switch (kind) {
+    case "google":
+      return normalizeGoogleBaseUrl(baseUrl);
+    case "openai":
+      return normalizeOpenAiBaseUrl(baseUrl);
+    case "anthropic":
+      return normalizeAnthropicBaseUrl(baseUrl);
+    case "openai-compatible":
+      return normalizeCompatBaseUrl(baseUrl);
+  }
+}
+
 /** Effective API root used for HTTP (includes dev-browser proxy paths). */
 export function resolveProviderBaseUrl(profile: AiProviderProfile): string {
   const kind = providerKindForProfile(profile);
-  let normalized =
-    kind === "google"
-      ? normalizeGoogleBaseUrl(profile.baseUrl)
-      : kind === "openai-compatible"
-        ? normalizeCompatBaseUrl(profile.baseUrl)
-        : profile.baseUrl.trim().replace(/\/+$/, "");
+  const normalized = normalizeBaseUrlForKind(kind, profile.baseUrl);
 
   if (import.meta.env.DEV && !isTauriWebview()) {
     const host = hostFromBaseUrl(normalized);
     if (host === "api.openai.com") {
       return `${window.location.origin}/api-proxy/openai/v1`;
+    }
+    if (host === "api.anthropic.com") {
+      return `${window.location.origin}/api-proxy/anthropic/v1`;
     }
     if (host === "api.groq.com") {
       return `${window.location.origin}/api-proxy/groq/openai/v1`;

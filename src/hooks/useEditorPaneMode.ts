@@ -10,15 +10,18 @@ export function useEditorPaneMode(
   viewRef: MutableRefObject<EditorView | null>,
 ) {
   const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
-  const [bgPreset, setBgPreset] = useState<BgPreset>(() => resolveBgPreset(editorBgPresetId));
+  const editorBgCustomColor = usePersonaStore((s) => s.settings.editorBgCustomColor);
+  const [bgPreset, setBgPreset] = useState<BgPreset>(() =>
+    resolveBgPreset(editorBgPresetId, editorBgCustomColor),
+  );
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [visualScrollAnchor, setVisualScrollAnchor] = useState<number | null>(null);
   const prevEditorModeRef = useRef(editorMode);
   const activeFilePath = useStore((s) => s.activeFilePath);
 
   useEffect(() => {
-    setBgPreset(resolveBgPreset(editorBgPresetId));
-  }, [editorBgPresetId]);
+    setBgPreset(resolveBgPreset(editorBgPresetId, editorBgCustomColor));
+  }, [editorBgPresetId, editorBgCustomColor]);
 
   useEffect(() => {
     setShowBgPicker(false);

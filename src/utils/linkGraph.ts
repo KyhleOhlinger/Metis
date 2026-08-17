@@ -59,3 +59,29 @@ export function backlinkLabels(paths: string[]): string[] {
     return name.replace(/\.md$/i, "");
   });
 }
+
+/** Rebuild incoming backlinks after a single source note changes. */
+export function patchBacklinkIndexForSource(
+  backlinkIndex: Record<string, string[]>,
+  sourcePath: string,
+  content: string,
+  noteIndex: NoteMetadata[],
+  vaultPath: string,
+): Record<string, string[]> {
+  const next: Record<string, string[]> = {};
+  for (const [target, sources] of Object.entries(backlinkIndex)) {
+    const filtered = sources.filter((s) => s !== sourcePath);
+    if (filtered.length > 0) next[target] = filtered;
+  }
+
+  for (const targetName of extractWikilinkTargets(content)) {
+    const target = findNoteByWikilinkName(targetName, noteIndex, vaultPath);
+    if (!target || target.path === sourcePath) continue;
+    const list = next[target.path] ?? [];
+    if (!list.includes(sourcePath)) {
+      next[target.path] = [...list, sourcePath].sort((a, b) => a.localeCompare(b));
+    }
+  }
+
+  return next;
+}

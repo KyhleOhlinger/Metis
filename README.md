@@ -12,7 +12,7 @@ This application takes her name for the same reason: a knowledge base should not
 
 Metis is a desktop markdown editor that stores your notes as plain `.md` files on your own filesystem — no cloud sync, no lock-in, no subscription. It pairs a powerful CodeMirror 6 editor with a clean three-pane layout, rich markdown rendering, a persona-driven AI writing assistant, and a growing set of smart writing tools.
 
-**Current version:** v0.9.14
+**Current version:** v0.9.27
 
 
 ---

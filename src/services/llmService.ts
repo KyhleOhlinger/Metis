@@ -11,14 +11,15 @@
 import {
   APICallError,
   generateText,
+  NoOutputGeneratedError,
   streamText,
   tool,
   type ToolSet,
 } from "ai";
 import { z } from "zod";
 import type { AiProviderProfile, Persona } from "../types/persona";
-import { hostFromBaseUrl } from "../utils/providerProfiles";
-import { isGoogleProvider, resolveLanguageModel } from "./providerRegistry";
+import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
+import { resolveLanguageModel } from "./providerRegistry";
 import { isTauriWebview, metisFetchForProfile, resolveProviderBaseUrl } from "./metisFetch";
 
 // ── Agent file-writing tools ──────────────────────────────────────────────────
@@ -112,6 +113,16 @@ export interface StreamCallbacks {
   onError: (error: Error) => void;
 }
 
+function createStreamErrorCapture() {
+  let streamError: unknown;
+  return {
+    onError: ({ error }: { error: unknown }) => {
+      streamError = error;
+    },
+    getStreamError: () => streamError,
+  };
+}
+
 export function streamResponse(
   persona: Persona,
   context: string,
@@ -129,6 +140,7 @@ export function streamResponse(
 
   void (async () => {
     const startedAt = Date.now();
+    const { onError: onStreamError, getStreamError } = createStreamErrorCapture();
     try {
       const result = streamText({
         model: resolveLanguageModel(profile, persona.model),
@@ -137,6 +149,7 @@ export function streamResponse(
         tools: tools && Object.keys(tools).length > 0 ? tools : undefined,
         toolChoice: tools ? "auto" : undefined,
         abortSignal: controller.signal,
+        onError: onStreamError,
       });
 
       for await (const chunk of result.textStream) {
@@ -155,7 +168,9 @@ export function streamResponse(
       }
     } catch (err) {
       if (!controller.signal.aborted) {
-        callbacks.onError(new Error(describeLlmError(err)));
+        callbacks.onError(
+          new Error(describeLlmError(err, getStreamError())),
+        );
       }
     }
   })();
@@ -236,7 +251,20 @@ function scrubKey(raw: string): string {
     .replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-***");
 }
 
-export function describeLlmError(err: unknown): string {
+export function describeLlmError(err: unknown, streamError?: unknown): string {
+  if (NoOutputGeneratedError.isInstance(err) && streamError) {
+    const underlying = describeLlmError(streamError);
+    if (underlying !== scrubKey(String(streamError))) {
+      return underlying;
+    }
+  }
+  if (NoOutputGeneratedError.isInstance(err) && err.cause instanceof Error) {
+    const fromCause = describeLlmError(err.cause);
+    if (fromCause !== scrubKey(err.cause.message)) {
+      return fromCause;
+    }
+  }
+
   if (APICallError.isInstance(err)) {
     const status = err.statusCode;
     if (status === 401) {
@@ -381,6 +409,29 @@ async function listOpenAiCompatModels(profile: AiProviderProfile): Promise<strin
   return filterChatModels((body.data ?? []).map((m) => m.id ?? "").filter(Boolean)).sort();
 }
 
+async function listAnthropicModels(profile: AiProviderProfile): Promise<string[]> {
+  const base = resolveProviderBaseUrl(profile).replace(/\/+$/, "");
+  const fetch = metisFetchForProfile(profile);
+  const res = await fetch(`${base}/models`, {
+    headers: {
+      "x-api-key": profile.apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const body = (await res.json()) as { data?: { id?: string }[] };
+  return filterChatModels((body.data ?? []).map((m) => m.id ?? "").filter(Boolean)).sort();
+}
+
+async function listProviderModels(profile: AiProviderProfile): Promise<string[]> {
+  const kind = providerKindForProfile(profile);
+  if (kind === "google") return listGoogleModels(profile);
+  if (kind === "anthropic") return listAnthropicModels(profile);
+  return listOpenAiCompatModels(profile);
+}
+
 export async function fetchProviderModels(
   profile: AiProviderProfile,
 ): Promise<{ ok: true; models: string[] } | { ok: false; error: string }> {
@@ -389,9 +440,7 @@ export async function fetchProviderModels(
   }
 
   try {
-    const models = isGoogleProvider(profile)
-      ? await listGoogleModels(profile)
-      : await listOpenAiCompatModels(profile);
+    const models = await listProviderModels(profile);
     return { ok: true, models };
   } catch (err) {
     if (APICallError.isInstance(err) && err.statusCode === 404) {

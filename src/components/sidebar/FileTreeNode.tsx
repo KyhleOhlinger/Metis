@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Image, Copy, FileDown, FileOutput } from "lucide-react";
+import { Image, Copy, FileDown, FileOutput, Pin } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, FileNode } from "../../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../../store/usePersonaStore";
@@ -11,6 +11,12 @@ import { exportNotesToPdf } from "../../services/pdfExportService";
 import { isVaultImageFile } from "../../utils/vaultImages";
 import { appConfirm, toastError, toastInfo, toastSuccess } from "../../store/useToastStore";
 import { copyTextToClipboard } from "../../utils/clipboard";
+import {
+  isNotePinned,
+  mergeVaultNavigation,
+  removeNoteFromNavigation,
+  togglePinnedNote,
+} from "../../utils/noteNavigation";
 import { dragSlot } from "./sidebarDragDrop";
 import { IconFile, IconFolder } from "./sidebarIcons";
 import { InlineInput } from "./InlineInput";
@@ -202,6 +208,25 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     });
 
     if (isNote) {
+      const personaState = usePersonaStore.getState();
+      const nav = personaState.settings.vaultNoteNavigation?.[vaultPath];
+      const pinned = isNotePinned(nav, node.path);
+      items.push({
+        label: pinned ? "Unpin note" : "Pin note",
+        icon: <Pin className="h-3.5 w-3.5" />,
+        onClick: () => {
+          const persona = usePersonaStore.getState();
+          const current = persona.settings.vaultNoteNavigation?.[vaultPath];
+          const next = togglePinnedNote(current, node.path);
+          persona.updateSettings({
+            vaultNoteNavigation: mergeVaultNavigation(
+              persona.settings.vaultNoteNavigation,
+              vaultPath,
+              next,
+            ),
+          });
+        },
+      });
       items.push({
         label: "Export…",
         icon: <FileDown className="h-3.5 w-3.5" />,
@@ -293,6 +318,18 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
         }
         try {
           await invoke("delete_path", { path: node.path, vaultPath });
+          const persona = usePersonaStore.getState();
+          const nav = persona.settings.vaultNoteNavigation?.[vaultPath];
+          if (nav && isNote) {
+            const next = removeNoteFromNavigation(nav, node.path);
+            persona.updateSettings({
+              vaultNoteNavigation: mergeVaultNavigation(
+                persona.settings.vaultNoteNavigation,
+                vaultPath,
+                next,
+              ),
+            });
+          }
           if (
             activeFilePath === node.path ||
             activeFilePath?.startsWith(node.path + "/")

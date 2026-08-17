@@ -122,6 +122,12 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api-proxy\/openai/, ""),
         configure: stripClientOriginHeaders,
       },
+      "/api-proxy/anthropic": {
+        target: "https://api.anthropic.com",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api-proxy\/anthropic/, ""),
+        configure: stripClientOriginHeaders,
+      },
       "/api-proxy/groq": {
         target: "https://api.groq.com",
         changeOrigin: true,

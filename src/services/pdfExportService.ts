@@ -55,8 +55,8 @@ function notesForFolder(noteIndex: NoteMetadata[], folderPath: string): NoteMeta
 }
 
 function exportBgPreset(): BgPreset {
-  const id = usePersonaStore.getState().settings.editorBgPresetId;
-  return resolveBgPreset(id);
+  const settings = usePersonaStore.getState().settings;
+  return resolveBgPreset(settings.editorBgPresetId, settings.editorBgCustomColor);
 }
 
 async function readNoteContents(

@@ -26,19 +26,29 @@ export function resolveLanguageModel(
   const apiKey = profile.apiKey;
   const baseURL = resolveProviderBaseUrl(profile);
 
-  switch (providerKindForProfile(profile)) {
-    case "openai":
-      return createOpenAI({ apiKey, baseURL, fetch })(modelId);
-    case "google":
-      return createGoogleGenerativeAI({ apiKey, baseURL, fetch })(modelId);
-    case "anthropic":
-      return createAnthropic({ apiKey, baseURL, fetch })(modelId);
-    case "openai-compatible":
-      return createOpenAICompatible({
+  const kind = providerKindForProfile(profile);
+  switch (kind) {
+    case "openai": {
+      // @ai-sdk/openai v4 defaults to Responses API; Metis uses Chat Completions.
+      const openai = createOpenAI({ apiKey, baseURL, fetch });
+      return openai.chat(modelId);
+    }
+    case "google": {
+      const google = createGoogleGenerativeAI({ apiKey, baseURL, fetch });
+      return google.chat(modelId);
+    }
+    case "anthropic": {
+      const anthropic = createAnthropic({ apiKey, baseURL, fetch });
+      return anthropic.messages(modelId);
+    }
+    case "openai-compatible": {
+      const compat = createOpenAICompatible({
         name: profile.id === PRESET_LITELLM ? "litellm" : profile.name,
         apiKey,
         baseURL,
         fetch,
-      })(modelId);
+      });
+      return compat.chatModel(modelId);
+    }
   }
 }

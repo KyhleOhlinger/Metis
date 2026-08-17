@@ -659,3 +659,20 @@ export function strategyLabel(s: ContextStrategy): string {
       return `🔭 ${s.selected} of ${s.scanned} notes (AI scout) · ${fmt(s.chars)} chars`;
   }
 }
+
+/** Agent run log — egress size and retrieval method (no scope label; file is shown separately). */
+export function contextEgressLabel(s: ContextStrategy): string {
+  const fmt = (n: number) =>
+    n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+
+  switch (s.type) {
+    case "single-file":
+      return `${fmt(s.chars)} chars to provider`;
+    case "direct":
+      return `Direct read · ${s.files} file${s.files !== 1 ? "s" : ""} · ${fmt(s.chars)} chars`;
+    case "tfidf":
+      return `TF-IDF · ${s.selected} of ${s.total} notes · ${fmt(s.chars)} chars`;
+    case "scout":
+      return `Scout · ${s.selected} of ${s.scanned} notes · ${fmt(s.chars)} chars`;
+  }
+}

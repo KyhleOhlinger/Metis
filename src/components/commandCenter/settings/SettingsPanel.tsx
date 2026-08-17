@@ -4,7 +4,12 @@ import type { AiProviderProfile, Settings, SettingsSectionId, StickyNoteDefaults
 import type { usePersonaStore } from "@/store/usePersonaStore";
 import { STICKY_COLOR_PRESETS } from "@/utils/stickyNotes";
 import metisIconUrl from "@/assets/metis_icon.png";
-import { BG_PRESETS } from "../../editor/bgPresets";
+import {
+  BG_PRESETS,
+  CUSTOM_PRESET_ID,
+} from "../../editor/bgPresets";
+import { AppThemeWheelPicker } from "../../editor/AppThemeWheelPicker";
+import { normalizeHex } from "@/utils/themeColors";
 import { SETTINGS_NAV } from "../../settings/settingsNav";
 import { JekyllExportSettings } from "../../settings/JekyllExportSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
@@ -74,7 +79,7 @@ export function SettingsPanel({
           </SettingsSection>
         )}
         {section === "editor" && (
-          <SettingsSection title="Editor">
+          <SettingsSection title="App theme">
             <EditorSettingsSection settings={settings} onUpdate={onUpdateSettings} />
           </SettingsSection>
         )}
@@ -180,9 +185,18 @@ function EditorSettingsSection({
   onUpdate: (patch: Partial<Settings>) => void;
 }) {
   const activeId = settings.editorBgPresetId ?? "dark";
+  const customHex = normalizeHex(settings.editorBgCustomColor ?? "#16171a") ?? "#16171a";
+
+  const applyCustomHex = (hex: string) => {
+    onUpdate({ editorBgPresetId: CUSTOM_PRESET_ID, editorBgCustomColor: hex });
+  };
+
   return (
     <div className="space-y-3 text-[11px] text-text-muted">
-      <p>Choose the default editor background. You can still change it per session from the editor toolbar.</p>
+      <p>
+        Choose the app colour theme for the sidebar, editor, Command Center, and planner. You can
+        also switch it from the header bar (empty state, notes, planner, and run log).
+      </p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {BG_PRESETS.map((p) => (
           <button
@@ -203,7 +217,35 @@ function EditorSettingsSection({
             <span className="text-xs text-text-primary">{p.label}</span>
           </button>
         ))}
+
+        <button
+          type="button"
+          onClick={() => onUpdate({ editorBgPresetId: CUSTOM_PRESET_ID })}
+          className={[
+            "flex cursor-pointer items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors",
+            activeId === CUSTOM_PRESET_ID
+              ? "border-accent bg-accent/10"
+              : "border-border bg-surface-overlay hover:border-accent/40",
+          ].join(" ")}
+        >
+          <span
+            className="h-5 w-5 shrink-0 rounded border border-white/20"
+            style={{
+              background: `conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444)`,
+            }}
+          />
+          <span className="text-xs text-text-primary">Custom colour</span>
+        </button>
       </div>
+
+      {activeId === CUSTOM_PRESET_ID && (
+        <div className="rounded-md border border-border bg-surface-overlay p-3">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-text-muted">
+            Colour wheel
+          </p>
+          <AppThemeWheelPicker color={customHex} onChange={applyCustomHex} size={200} />
+        </div>
+      )}
     </div>
   );
 }

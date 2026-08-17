@@ -4,6 +4,11 @@ import { buildBacklinkIndex } from "../utils/linkGraph";
 import { formatError } from "../utils/formatError";
 import { toastError } from "./useToastStore";
 import { resetPlannerPersistence } from "../planner/plannerPersistence";
+import { usePersonaStore } from "./usePersonaStore";
+import {
+  mergeVaultNavigation,
+  pruneVaultNavigation,
+} from "../utils/noteNavigation";
 import {
   applyNoteMeta,
   flattenAssets,
@@ -130,6 +135,19 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
 
     set((s) => {
       if (s.vaultPath !== runVaultPath) return s;
+      const validPaths = new Set(noteIndex.map((n) => n.path));
+      const persona = usePersonaStore.getState();
+      const nav = persona.settings.vaultNoteNavigation?.[runVaultPath];
+      if (nav) {
+        const pruned = pruneVaultNavigation(nav, validPaths);
+        persona.updateSettings({
+          vaultNoteNavigation: mergeVaultNavigation(
+            persona.settings.vaultNoteNavigation,
+            runVaultPath,
+            pruned,
+          ),
+        });
+      }
       return {
         noteIndex: s.noteIndex.map((n) => updatedByPath.get(n.path) ?? n),
         backlinkIndex,

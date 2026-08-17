@@ -2,7 +2,7 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
 import EditorBgPicker from "@/components/editor/EditorBgPicker";
 import { EditorSaveIndicator } from "@/components/EditorWorkspaceHeader";
-import type { BgPreset } from "@/components/editor/bgPresets";
+import { CUSTOM_PRESET_ID, type BgPreset } from "@/components/editor/bgPresets";
 
 interface EditorHeaderBarProps {
   fileName: string;
@@ -12,6 +12,7 @@ interface EditorHeaderBarProps {
   showBgPicker: boolean;
   onShowBgPickerChange: (open: boolean) => void;
   onBgPresetChange: (preset: BgPreset) => void;
+  hideModeToggle?: boolean;
 }
 
 export function EditorHeaderBar({
@@ -22,12 +23,25 @@ export function EditorHeaderBar({
   showBgPicker,
   onShowBgPickerChange,
   onBgPresetChange,
+  hideModeToggle = false,
 }: EditorHeaderBarProps) {
   const updateSettings = usePersonaStore((s) => s.updateSettings);
   const setEditorMode = useStore((s) => s.setEditorTab);
 
   const showModeToggle =
-    !isImageFile && editorMode !== "planner" && editorMode !== "agent-history";
+    !hideModeToggle &&
+    !isImageFile &&
+    editorMode !== "planner" &&
+    editorMode !== "agent-history";
+
+  const persistPreset = (p: BgPreset) => {
+    onBgPresetChange(p);
+    if (p.id === CUSTOM_PRESET_ID) {
+      updateSettings({ editorBgPresetId: CUSTOM_PRESET_ID, editorBgCustomColor: p.bg });
+    } else {
+      updateSettings({ editorBgPresetId: p.id });
+    }
+  };
 
   return (
     <div className="relative z-30 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface-raised/70 px-4 py-1.5 backdrop-blur-sm">
@@ -42,10 +56,7 @@ export function EditorHeaderBar({
             bgPreset={bgPreset}
             open={showBgPicker}
             onOpenChange={onShowBgPickerChange}
-            onSelectPreset={(p) => {
-              onBgPresetChange(p);
-              updateSettings({ editorBgPresetId: p.id });
-            }}
+            onSelectPreset={persistPreset}
           />
         </div>
 

@@ -263,42 +263,160 @@ body,
   opacity: 0.28;
 }
 
-/* ── Planner theming bridge (uses editor color preset vars) ──── */
+/* ── Editor pane theming (color preset → entire app shell) ───── */
+.editor-theme {
+  background-color: var(--editor-surface-base);
+  color: var(--editor-text-primary);
+}
+
+.editor-theme .bg-surface-base {
+  background-color: var(--editor-surface-base) !important;
+}
+
+.editor-theme .bg-surface-raised {
+  background-color: var(--editor-surface-raised) !important;
+}
+
+.editor-theme .bg-surface-raised\/70 {
+  background-color: color-mix(in srgb, var(--editor-surface-raised) 70%, transparent) !important;
+}
+
+.editor-theme .bg-surface-raised\/80 {
+  background-color: color-mix(in srgb, var(--editor-surface-raised) 80%, transparent) !important;
+}
+
+.editor-theme .hover\:bg-surface-raised\/40:hover {
+  background-color: color-mix(in srgb, var(--editor-surface-raised) 40%, transparent) !important;
+}
+
+.editor-theme .bg-surface-overlay,
+.editor-theme .bg-surface-overlay\/30,
+.editor-theme .bg-surface-overlay\/60,
+.editor-theme .bg-surface-overlay\/70 {
+  background-color: color-mix(in srgb, var(--editor-surface-overlay) 100%, transparent) !important;
+}
+
+.editor-theme .hover\:bg-surface-overlay:hover {
+  background-color: var(--editor-surface-overlay) !important;
+}
+
+.editor-theme .border-border {
+  border-color: var(--editor-border) !important;
+}
+
+.editor-theme .bg-border {
+  background-color: var(--editor-border) !important;
+}
+
+.editor-theme .text-text-primary {
+  color: var(--editor-text-primary) !important;
+}
+
+.editor-theme .text-text-secondary {
+  color: var(--editor-text-secondary) !important;
+}
+
+.editor-theme .text-text-muted {
+  color: var(--editor-text-muted) !important;
+}
+
+.editor-theme .text-accent {
+  color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .bg-accent {
+  background-color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .bg-accent\/10 {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 10%, transparent) !important;
+}
+
+.editor-theme .bg-accent\/15 {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 15%, transparent) !important;
+}
+
+.editor-theme .bg-accent\/20 {
+  background-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 20%, transparent) !important;
+}
+
+.editor-theme .border-accent {
+  border-color: var(--editor-accent, #7c3aed) !important;
+}
+
+.editor-theme .border-accent\/30 {
+  border-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 30%, transparent) !important;
+}
+
+.editor-theme .border-accent\/40 {
+  border-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 40%, transparent) !important;
+}
+
+.editor-theme .ring-accent\/35 {
+  --tw-ring-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 35%, transparent) !important;
+}
+
+.editor-theme .ring-accent\/55 {
+  --tw-ring-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 55%, transparent) !important;
+}
+
+.editor-theme .hover\:border-accent\/40:hover {
+  border-color: color-mix(in srgb, var(--editor-accent, #7c3aed) 40%, transparent) !important;
+}
+
+.editor-theme .planner-grid-header,
+.editor-theme thead.planner-grid-header-row th {
+  background-color: var(--planner-header-bg, #7f00ff) !important;
+  color: var(--planner-header-fg, #ffffff) !important;
+}
+
+.editor-theme .divide-border > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--editor-border) !important;
+}
+
+.editor-theme .border-t.border-border,
+.editor-theme .border-b.border-border,
+.editor-theme .border-l.border-border,
+.editor-theme .border-r.border-border {
+  border-color: var(--editor-border) !important;
+}
+
+/* Planner grid inherits editor pane vars when nested inside .editor-theme */
 .planner-theme {
-  background-color: var(--planner-surface-base);
-  color: var(--planner-text-primary);
+  background-color: var(--editor-surface-base);
+  color: var(--editor-text-primary);
 }
 
 .planner-theme .bg-surface-base {
-  background-color: var(--planner-surface-base) !important;
+  background-color: var(--editor-surface-base) !important;
 }
 
 .planner-theme .bg-surface-raised,
 .planner-theme .bg-surface-raised\/70 {
-  background-color: var(--planner-surface-raised) !important;
+  background-color: var(--editor-surface-raised) !important;
 }
 
 .planner-theme .bg-surface-overlay,
 .planner-theme .bg-surface-overlay\/30,
 .planner-theme .bg-surface-overlay\/60,
 .planner-theme .bg-surface-overlay\/70 {
-  background-color: color-mix(in srgb, var(--planner-surface-overlay) 100%, transparent) !important;
+  background-color: color-mix(in srgb, var(--editor-surface-overlay) 100%, transparent) !important;
 }
 
 .planner-theme .border-border {
-  border-color: var(--planner-border) !important;
+  border-color: var(--editor-border) !important;
 }
 
 .planner-theme .text-text-primary {
-  color: var(--planner-text-primary) !important;
+  color: var(--editor-text-primary) !important;
 }
 
 .planner-theme .text-text-secondary {
-  color: var(--planner-text-secondary) !important;
+  color: var(--editor-text-secondary) !important;
 }
 
 .planner-theme .text-text-muted {
-  color: var(--planner-text-muted) !important;
+  color: var(--editor-text-muted) !important;
 }
 
 /* Active planner markdown editor — drag bottom edge to resize (height persisted). */
@@ -362,7 +480,7 @@ body,
 
 .planner-markdown-preview li input[type="checkbox"] {
   margin-right: 0.45em;
-  accent-color: #7c3aed;
+  accent-color: var(--editor-accent, #7c3aed);
   vertical-align: middle;
   cursor: default;
 }

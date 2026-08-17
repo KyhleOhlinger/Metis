@@ -180,8 +180,10 @@ export interface Settings {
   spellcheckLanguage?: string;
   /** When true, the editor spellcheck linter is active. */
   spellcheckEnabled?: boolean;
-  /** Editor background preset id — matches `BG_PRESETS[].id`. */
+  /** App theme preset id — built-in `BG_PRESETS[].id` or `custom`. */
   editorBgPresetId?: string;
+  /** Background hex when `editorBgPresetId` is `custom`. */
+  editorBgCustomColor?: string;
   /** Defaults applied when inserting sticky notes from the toolbar or slash menu. */
   stickyDefaults?: StickyNoteDefaults;
   /** Absolute path to the Jekyll/Chirpy blog repository (e.g. `*.github.io`). */
@@ -201,6 +203,13 @@ export interface Settings {
    * Omitted ids use registry defaults.
    */
   keybindingOverrides?: Partial<Record<KeybindingCommandId, KeyChord | null>>;
+  /** Per-vault pinned and recently opened note paths (absolute). */
+  vaultNoteNavigation?: Record<string, VaultNoteNavigation>;
+}
+
+export interface VaultNoteNavigation {
+  pinned: string[];
+  recent: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -213,6 +222,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spellcheckLanguage: "en_US",
   spellcheckEnabled: false,
   editorBgPresetId: "dark",
+  editorBgCustomColor: "#16171a",
   stickyDefaults: {
     float: "right",
     width: "12rem",

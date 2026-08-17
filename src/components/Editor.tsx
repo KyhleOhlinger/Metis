@@ -193,17 +193,8 @@ export default function Editor() {
     });
   }, []);
 
-  if (!activeFilePath && editorMode !== "planner" && editorMode !== "agent-history") {
-    return (
-      <EditorEmptyState
-        vaultPath={vaultPath}
-        onOpenPlanner={() => setEditorMode("planner")}
-        onOpenAgentHistory={() => setEditorMode("agent-history")}
-        onCreateVault={() => useStore.getState().setPendingMenuAction("new-vault")}
-        onOpenVault={() => useStore.getState().setPendingMenuAction("open-vault-picker")}
-      />
-    );
-  }
+  const showEmpty =
+    !activeFilePath && editorMode !== "planner" && editorMode !== "agent-history";
 
   const fileName = activeFilePath
     ? activeFilePath.split("/").pop() ?? activeFilePath
@@ -214,42 +205,55 @@ export default function Editor() {
         : "Metis";
 
   return (
-    <div
-      className="flex h-full min-w-0 flex-col bg-surface-base"
-      data-color-scheme={bgPreset.isDark ? "dark" : "light"}
-    >
+    <div className="flex h-full min-w-0 flex-col">
       <EditorHeaderBar
-        fileName={fileName}
+        fileName={showEmpty ? "No note open" : fileName}
         isImageFile={isImageFile}
         editorMode={editorMode}
         bgPreset={bgPreset}
         showBgPicker={showBgPicker}
         onShowBgPickerChange={setShowBgPicker}
         onBgPresetChange={setBgPreset}
+        hideModeToggle={
+          showEmpty ||
+          isImageFile ||
+          editorMode === "planner" ||
+          editorMode === "agent-history"
+        }
       />
 
-      <EditorMainContent
-        editorMode={editorMode}
-        isImageFile={isImageFile}
-        activeFilePath={activeFilePath}
-        activeFileContent={activeFileContent}
-        vaultPath={vaultPath}
-        bgPreset={bgPreset}
-        visualScrollAnchor={visualScrollAnchor}
-        editorHostRef={editorHostRef}
-        viewRef={viewRef}
-        findBarOpen={findBarOpen}
-        findBarReplace={findBarReplace}
-        findBarRef={findBarRef}
-        spellcheckEnabled={spellcheckEnabled}
-        onToggleSpellcheck={() => updateSettings({ spellcheckEnabled: !spellcheckEnabled })}
-        onFindBarClose={() => setFindBarOpen(false)}
-        onPreviewSourceActivate={handlePreviewSourceActivate}
-        onPreviewTaskToggle={handlePreviewTaskToggle}
-        onDismissSelectionToolbar={dismissSelectionToolbar}
-        onMetadataChange={handleMetadataChange}
-        onWikilinkClick={openNoteByWikilinkNameFromStore}
-      />
+      {showEmpty ? (
+        <EditorEmptyState
+          vaultPath={vaultPath}
+          onOpenPlanner={() => setEditorMode("planner")}
+          onOpenAgentHistory={() => setEditorMode("agent-history")}
+          onCreateVault={() => useStore.getState().setPendingMenuAction("new-vault")}
+          onOpenVault={() => useStore.getState().setPendingMenuAction("open-vault-picker")}
+        />
+      ) : (
+        <EditorMainContent
+          editorMode={editorMode}
+          isImageFile={isImageFile}
+          activeFilePath={activeFilePath}
+          activeFileContent={activeFileContent}
+          vaultPath={vaultPath}
+          bgPreset={bgPreset}
+          visualScrollAnchor={visualScrollAnchor}
+          editorHostRef={editorHostRef}
+          viewRef={viewRef}
+          findBarOpen={findBarOpen}
+          findBarReplace={findBarReplace}
+          findBarRef={findBarRef}
+          spellcheckEnabled={spellcheckEnabled}
+          onToggleSpellcheck={() => updateSettings({ spellcheckEnabled: !spellcheckEnabled })}
+          onFindBarClose={() => setFindBarOpen(false)}
+          onPreviewSourceActivate={handlePreviewSourceActivate}
+          onPreviewTaskToggle={handlePreviewTaskToggle}
+          onDismissSelectionToolbar={dismissSelectionToolbar}
+          onMetadataChange={handleMetadataChange}
+          onWikilinkClick={openNoteByWikilinkNameFromStore}
+        />
+      )}
     </div>
   );
 }

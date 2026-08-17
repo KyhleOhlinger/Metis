@@ -1,14 +1,19 @@
 import { useMemo, useState } from "react";
 import { usePersonaStore } from "../../store/usePersonaStore";
 import { clearAgentRunLogOnDisk } from "../../services/agentRunLogService";
-import { strategyLabel } from "../../services/contextBuilder";
+import { contextEgressLabel } from "../../services/contextBuilder";
 import {
   AGENT_TYPE_LABELS,
   type AgentRunLogEntry,
   type AgentRunStatus,
   type AgentType,
 } from "../../types/agentRunLog";
-import { formatCostUsd, formatDurationMs } from "../../utils/modelPricing";
+import {
+  formatCostUsd,
+  formatDurationMs,
+  formatRunCostSummary,
+  formatRunTokenSummary,
+} from "../../utils/modelPricing";
 import { appConfirm, toastError, toastSuccess } from "../../store/useToastStore";
 
 function statusBadge(status: AgentRunStatus): string {
@@ -22,13 +27,25 @@ function statusBadge(status: AgentRunStatus): string {
   }
 }
 
-function formatTokens(entry: AgentRunLogEntry): string {
-  if (!entry.usage) return "—";
-  const { promptTokens, completionTokens, totalTokens } = entry.usage;
-  return `${totalTokens.toLocaleString()} (↑${promptTokens.toLocaleString()} ↓${completionTokens.toLocaleString()})`;
+function vaultRelativeFilePath(entry: AgentRunLogEntry): string | null {
+  if (!entry.activeFilePath) return null;
+  const vault = entry.vaultPath?.replace(/\/+$/, "");
+  if (vault && entry.activeFilePath.startsWith(vault)) {
+    const rel = entry.activeFilePath.slice(vault.length).replace(/^\/+/, "");
+    if (rel) return rel;
+  }
+  return entry.activeFilePath.split("/").pop() ?? entry.activeFilePath;
+}
+
+function runSubjectLabel(entry: AgentRunLogEntry): string {
+  const file = vaultRelativeFilePath(entry);
+  if (file) return file;
+  return entry.scopeLabel;
 }
 
 function RunDetail({ entry }: { entry: AgentRunLogEntry }) {
+  const filePath = vaultRelativeFilePath(entry);
+
   return (
     <div className="space-y-2 border-t border-border/60 px-4 py-3 text-[11px] text-text-muted">
       <div>
@@ -49,10 +66,18 @@ function RunDetail({ entry }: { entry: AgentRunLogEntry }) {
       )}
       {entry.contextStrategy && (
         <p>
-          <span className="font-semibold text-text-secondary">Context: </span>
-          {strategyLabel(entry.contextStrategy)}
+          <span className="font-semibold text-text-secondary">Context egress: </span>
+          {contextEgressLabel(entry.contextStrategy)}
         </p>
       )}
+      <p>
+        <span className="font-semibold text-text-secondary">Tokens: </span>
+        {formatRunTokenSummary(entry.usage)}
+      </p>
+      <p>
+        <span className="font-semibold text-text-secondary">Est. cost: </span>
+        {formatRunCostSummary(entry.estimatedCostUsd, entry.usage)}
+      </p>
       {entry.toolCalls && entry.toolCalls.length > 0 && (
         <div>
           <span className="font-semibold text-text-secondary">Tool calls</span>
@@ -70,10 +95,10 @@ function RunDetail({ entry }: { entry: AgentRunLogEntry }) {
         <span className="font-semibold text-text-secondary">Provider: </span>
         {entry.providerLabel} · {entry.model}
       </p>
-      {entry.activeFilePath && (
+      {filePath && (
         <p>
           <span className="font-semibold text-text-secondary">File: </span>
-          {entry.activeFilePath.split("/").pop()}
+          {filePath}
         </p>
       )}
     </div>
@@ -229,10 +254,10 @@ export default function AgentRunHistoryPage() {
                       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-text-muted">
                         <span>{new Date(entry.startedAt).toLocaleString()}</span>
                         <span>{formatDurationMs(entry.durationMs)}</span>
-                        <span>{entry.scopeLabel}</span>
+                        <span>{runSubjectLabel(entry)}</span>
                         <span>{entry.model}</span>
-                        <span>{formatTokens(entry)}</span>
-                        <span>{formatCostUsd(entry.estimatedCostUsd)}</span>
+                        <span>{formatRunTokenSummary(entry.usage)}</span>
+                        <span>{formatRunCostSummary(entry.estimatedCostUsd, entry.usage)}</span>
                       </div>
                     </div>
                   </button>
