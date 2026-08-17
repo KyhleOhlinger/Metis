@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef, Component } from "react";
+import { useEffect, useCallback, useState, useRef, useMemo, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -27,6 +27,7 @@ import {
 import { toastError } from "./store/useToastStore";
 import { formatError } from "./utils/formatError";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { editorPaneThemeVars, resolveBgPreset } from "./components/editor/bgPresets";
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
 // Catches any React render errors and shows a human-readable message instead of
@@ -134,6 +135,19 @@ export default function App() {
   // Widths initialised proportionally so they adapt to the launch window size
   const [sidebarWidth, setSidebarWidth] = useState(initSidebarWidth);
   const [ccWidth, setCcWidth]           = useState(initCcWidth);
+
+  const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
+  const editorBgCustomColor = usePersonaStore((s) => s.settings.editorBgCustomColor);
+  const bgPreset = useMemo(
+    () => resolveBgPreset(editorBgPresetId, editorBgCustomColor),
+    [editorBgPresetId, editorBgCustomColor],
+  );
+
+  useEffect(() => {
+    document.documentElement.style.backgroundColor = bgPreset.bg;
+    document.body.style.backgroundColor = bgPreset.bg;
+    document.body.style.color = bgPreset.fg;
+  }, [bgPreset]);
 
   // ── Live refs ─────────────────────────────────────────────────────────────
   // Kept in sync below so resize / drag handlers always see the current values
@@ -427,7 +441,11 @@ export default function App() {
 
   return (
     <AppErrorBoundary>
-    <div className="flex h-screen w-screen overflow-hidden bg-surface-base text-text-primary">
+    <div
+      className="editor-theme flex h-screen w-screen overflow-hidden text-text-primary"
+      style={editorPaneThemeVars(bgPreset)}
+      data-color-scheme={bgPreset.isDark ? "dark" : "light"}
+    >
       <ToastHost />
       <SettingsModal />
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}

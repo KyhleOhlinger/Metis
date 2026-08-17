@@ -49,6 +49,20 @@ export function formatCostUsd(cost?: number): string {
   return `$${cost.toFixed(3)}`;
 }
 
+/** Token line for run log rows — never a bare dash without context. */
+export function formatRunTokenSummary(usage?: AgentRunUsage): string {
+  if (!usage || usage.totalTokens <= 0) return "No usage recorded";
+  const { promptTokens, completionTokens, totalTokens } = usage;
+  return `${totalTokens.toLocaleString()} tok (↑${promptTokens.toLocaleString()} ↓${completionTokens.toLocaleString()})`;
+}
+
+/** Cost line for run log rows — pairs with token summary. */
+export function formatRunCostSummary(cost?: number, usage?: AgentRunUsage): string {
+  if (cost !== undefined && Number.isFinite(cost)) return formatCostUsd(cost);
+  if (!usage || usage.totalTokens <= 0) return "No cost (no usage)";
+  return "Cost unavailable";
+}
+
 export function formatDurationMs(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;

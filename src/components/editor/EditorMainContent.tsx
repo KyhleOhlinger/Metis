@@ -8,7 +8,8 @@ import MarkdownPreview from "@/components/MarkdownPreview";
 import VaultImageViewer from "@/components/VaultImageViewer";
 import DailyTaskGrid from "@/components/DailyTaskGrid";
 import AgentRunHistoryPage from "@/components/agentHistory/AgentRunHistoryPage";
-import { plannerThemeVars, type BgPreset } from "@/components/editor/bgPresets";
+import { NoteBacklinksBar } from "@/components/editor/NoteBacklinksBar";
+import { type BgPreset } from "@/components/editor/bgPresets";
 
 interface EditorMainContentProps {
   editorMode: string;
@@ -106,20 +107,25 @@ export function EditorMainContent({
         )}
 
         {editorMode === "visual" && activeFilePath && vaultPath && !isImageFile && (
-          <MarkdownPreview
-            content={activeFileContent}
-            filePath={activeFilePath}
-            vaultPath={vaultPath}
-            bgColor={bgPreset.bg}
-            textColor={bgPreset.fg}
-            scrollAnchorOffset={visualScrollAnchor}
-            onSourceActivate={onPreviewSourceActivate}
-            onTaskToggle={onPreviewTaskToggle}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <NoteBacklinksBar filePath={activeFilePath} />
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <MarkdownPreview
+                content={activeFileContent}
+                filePath={activeFilePath}
+                vaultPath={vaultPath}
+                bgColor={bgPreset.bg}
+                textColor={bgPreset.fg}
+                scrollAnchorOffset={visualScrollAnchor}
+                onSourceActivate={onPreviewSourceActivate}
+                onTaskToggle={onPreviewTaskToggle}
+              />
+            </div>
+          </div>
         )}
 
         {editorMode === "planner" && (
-          <div className="planner-theme h-full" style={plannerThemeVars(bgPreset)}>
+          <div className="h-full min-h-0">
             <DailyTaskGrid />
           </div>
         )}

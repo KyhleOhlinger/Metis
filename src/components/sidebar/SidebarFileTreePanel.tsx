@@ -2,6 +2,7 @@ import type { FileNode } from "@/store/useStore";
 import { isPinnedSpaceName } from "@/constants/vaultSpaces";
 import { InlineInput } from "./InlineInput";
 import { FileTreeNode } from "./FileTreeNode";
+import { SidebarQuickNotes } from "./SidebarQuickNotes";
 
 interface SidebarFileTreePanelProps {
   vaultPath: string | null;
@@ -42,14 +43,24 @@ export function SidebarFileTreePanel({
         />
       )}
 
+      {vaultPath && <SidebarQuickNotes vaultPath={vaultPath} />}
+
       {files.length === 0 && !rootCreating ? (
-        <div className="mt-8 flex flex-col items-center gap-2 px-4 text-center">
+        <div className="mt-6 flex flex-col items-center gap-3 px-4 text-center">
           <span className="text-2xl opacity-20">◈</span>
-          <p className="text-[11px] text-text-muted">
-            {vaultPath ? "No markdown files yet." : "Open or create a vault to start."}
-          </p>
-          {!vaultPath && (
-            <div className="mt-1 flex w-full flex-col gap-1.5">
+          {vaultPath ? (
+            <>
+              <p className="text-[11px] font-medium text-text-secondary">This vault has no notes yet</p>
+              <p className="max-w-[14rem] text-[10px] leading-relaxed text-text-muted">
+                Create a note from the toolbar above, press{" "}
+                <span className="font-mono text-text-secondary">⌘P</span> to quick-switch, or open
+                Planner from the footer.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-[11px] text-text-muted">Open or create a vault to start.</p>
+              <div className="mt-1 flex w-full flex-col gap-1.5">
               <button
                 type="button"
                 onClick={onCreateVault}
@@ -65,6 +76,7 @@ export function SidebarFileTreePanel({
                 Open Vault
               </button>
             </div>
+            </>
           )}
         </div>
       ) : (

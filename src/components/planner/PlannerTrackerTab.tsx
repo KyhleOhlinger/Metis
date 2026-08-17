@@ -151,7 +151,7 @@ export default function PlannerTrackerTab({
               {importStatus && <p className="text-[10px] text-text-muted">{importStatus}</p>}
               <div className="overflow-auto rounded-md border border-border">
                 <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
+                  <thead className="planner-grid-header-row">
                     <tr>
                       <th className="px-2 py-1 text-left">Holiday Name</th>
                       <th className="px-2 py-1 text-left">Date</th>
@@ -226,7 +226,7 @@ export default function PlannerTrackerTab({
               </div>
               <div className="overflow-auto rounded-md border border-border">
                 <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
+                  <thead className="planner-grid-header-row">
                     <tr>
                       <th className="px-2 py-1 text-left">Description</th>
                       <th className="px-2 py-1 text-left">Start Date</th>
@@ -291,7 +291,7 @@ export default function PlannerTrackerTab({
               </div>
               <div className="overflow-auto rounded-md border border-border">
                 <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
+                  <thead className="planner-grid-header-row">
                     <tr>
                       <th className="px-2 py-1 text-left">Event Name</th>
                       <th className="px-2 py-1 text-left">Start Date</th>
@@ -350,7 +350,7 @@ export default function PlannerTrackerTab({
               </div>
               <div className="overflow-auto rounded-md border border-border">
                 <table className="min-w-[900px] w-full text-[10px]">
-                  <thead className="bg-[#7F00FF] text-white">
+                  <thead className="planner-grid-header-row">
                     <tr>
                       <th className="px-2 py-1 text-left">Trip Name</th>
                       <th className="px-2 py-1 text-left">Start Date</th>

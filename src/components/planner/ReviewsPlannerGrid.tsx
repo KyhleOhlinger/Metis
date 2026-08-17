@@ -17,7 +17,7 @@ const GRID_GAP_CLASS = "gap-1.5";
 const GRID_TEMPLATE = "110px repeat(4, minmax(210px, 1fr)) minmax(3.25rem, 4rem)";
 
 const PURPLE_HEADER =
-  "flex min-h-[2.5rem] items-center justify-center rounded-md bg-[#7F00FF] px-2 py-1.5 text-center text-[11px] font-semibold text-white";
+  "planner-grid-header flex min-h-[2.5rem] items-center justify-center rounded-md px-2 py-1.5 text-center text-[11px] font-semibold";
 
 const WORK_CELL_SHELL =
   "flex min-h-0 items-stretch rounded-md border border-border bg-surface-overlay/30 p-2";

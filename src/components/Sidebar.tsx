@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
+import { Pin } from "lucide-react";
 import { useStore, VaultData } from "../store/useStore";
+import { usePersonaStore } from "../store/usePersonaStore";
 import CreateVaultModal from "./CreateVaultModal";
 import SearchPanel from "./SearchPanel";
 import { toastError } from "../store/useToastStore";
@@ -11,6 +13,11 @@ import { todayString, openOrCreateDailyNote } from "./sidebar/dailyNote";
 import { SidebarExpandedHeader } from "./sidebar/SidebarExpandedHeader";
 import { SidebarFileTreePanel } from "./sidebar/SidebarFileTreePanel";
 import { useSidebarDragDrop } from "../hooks/useSidebarDragDrop";
+import {
+  isNotePinned,
+  mergeVaultNavigation,
+  togglePinnedNote,
+} from "../utils/noteNavigation";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -60,6 +67,28 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
   const [rootCreating, setRootCreating] = useState<"note" | "folder" | null>(null);
   const [expandVersion, setExpandVersion] = useState<{ value: boolean } | null>(null);
   const allCollapsed = expandVersion?.value === false;
+
+  const vaultNav = usePersonaStore((s) =>
+    vaultPath ? s.settings.vaultNoteNavigation?.[vaultPath] : undefined,
+  );
+  const activePinned =
+    vaultPath && activeFilePath?.toLowerCase().endsWith(".md")
+      ? isNotePinned(vaultNav, activeFilePath)
+      : false;
+
+  const toggleActivePin = () => {
+    if (!vaultPath || !activeFilePath) return;
+    const persona = usePersonaStore.getState();
+    const nav = persona.settings.vaultNoteNavigation?.[vaultPath];
+    const next = togglePinnedNote(nav, activeFilePath);
+    persona.updateSettings({
+      vaultNoteNavigation: mergeVaultNavigation(
+        persona.settings.vaultNoteNavigation,
+        vaultPath,
+        next,
+      ),
+    });
+  };
 
   useSidebarDragDrop();
 
@@ -247,6 +276,22 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
               title="Open Planner"
             >
               Planner ✦
+            </button>
+          )}
+          {activeFilePath && activeFilePath.toLowerCase().endsWith(".md") && vaultPath && (
+            <button
+              type="button"
+              title={activePinned ? "Unpin note" : "Pin note"}
+              onClick={toggleActivePin}
+              className={[
+                "mb-1 flex w-full items-center justify-center gap-1 rounded border px-2 py-1 text-[10px] font-medium transition-colors",
+                activePinned
+                  ? "border-accent/50 bg-accent/15 text-accent"
+                  : "border-border text-text-muted hover:border-accent/40 hover:text-text-primary",
+              ].join(" ")}
+            >
+              <Pin size={11} />
+              {activePinned ? "Pinned" : "Pin note"}
             </button>
           )}
           {activeFilePath && (

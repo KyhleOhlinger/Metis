@@ -664,22 +664,28 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
             </Row>
           )}
 
-          {backlinkNames.length > 0 && (
-            <Row label="Backlinks">
+          <Row label="Backlinks">
+            {backlinkNames.length > 0 ? (
               <div className="flex flex-wrap gap-1">
                 {backlinkNames.map((name, i) => (
                   <button
                     key={backlinkPaths[i]}
                     onClick={() => onLinkClick?.(name)}
                     title={`Open [[${name}]]`}
-                    className="rounded border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary hover:text-accent hover:border-accent transition-colors"
+                    className="rounded border border-border bg-surface-overlay px-2 py-0.5 text-[10px] text-text-secondary hover:border-accent hover:border-accent transition-colors"
                   >
-                    [[{name}]]
+                    ↩ [[{name}]]
                   </button>
                 ))}
               </div>
-            </Row>
-          )}
+            ) : (
+              <p className="text-[10px] text-text-muted">
+                No other notes link here yet. Add{" "}
+                <span className="font-mono text-text-secondary">[[Note Name]]</span> in another note
+                to create a backlink.
+              </p>
+            )}
+          </Row>
         </div>
       )}
     </div>

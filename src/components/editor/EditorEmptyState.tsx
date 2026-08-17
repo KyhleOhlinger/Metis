@@ -1,5 +1,6 @@
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
+import { EditorEmptyQuickNotes } from "./EditorEmptyQuickNotes";
 
 function EmptyAction({
   label,
@@ -40,6 +41,8 @@ export function EditorEmptyState({
   const openSettings = () => usePersonaStore.getState().openSettings();
   const openPalette = () => useStore.getState().setPendingMenuAction("open-palette");
   const openExport = () => useStore.getState().setPendingMenuAction("export-hub");
+  const noteCount = useStore((s) => s.noteIndex.length);
+  const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
   const openSearch = () => {
     const store = useStore.getState();
     if (!store.vaultPath) return;
@@ -47,14 +50,30 @@ export function EditorEmptyState({
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface-base select-none">
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised/70 px-4 py-1.5 backdrop-blur-sm">
-        <span className="text-xs text-text-muted">No note open</span>
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
-        <p className="text-sm text-text-secondary">
-          {vaultPath ? "Open a note to start writing" : "Open or create a vault to get started"}
-        </p>
+    <div className="flex min-h-0 flex-1 flex-col select-none">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
+        <div className="text-center">
+          <p className="text-sm text-text-secondary">
+            {vaultPath
+              ? noteCount > 0
+                ? "Pick a note to start writing"
+                : "Your vault is ready — create your first note"
+              : "Open or create a vault to get started"}
+          </p>
+          {vaultPath && noteCount > 0 && (
+            <p className="mt-1 text-[11px] text-text-muted">
+              {noteCount} note{noteCount !== 1 ? "s" : ""} in vault · sidebar lists pinned and recent
+            </p>
+          )}
+          {vaultPath && plannerSetupRequired && (
+            <p className="mt-2 text-[11px] text-amber-400/90">
+              Planner setup incomplete — open Planner or Settings → Planner to finish.
+            </p>
+          )}
+        </div>
+
+        {vaultPath && <EditorEmptyQuickNotes vaultPath={vaultPath} />}
+
         <div className="flex flex-wrap items-center justify-center gap-2">
           {vaultPath ? (
             <>
@@ -73,9 +92,10 @@ export function EditorEmptyState({
             </>
           )}
         </div>
-        <p className="max-w-sm text-center text-xs text-text-muted opacity-70">
+
+        <p className="max-w-md text-center text-xs text-text-muted opacity-70">
           {vaultPath
-            ? "Notes auto-save after you edit. Use the sidebar or ⌘P to browse your vault."
+            ? "Notes auto-save after you edit. Pin favorites from the file tree context menu; recent notes appear in the sidebar."
             : "Vaults are local folders of markdown notes — nothing leaves your machine unless you use AI features."}
         </p>
       </div>

@@ -329,6 +329,7 @@
 
     <span class="nav-group-label">Editor</span>
     <a class="nav-item" href="#editor">Writing &amp; Editing</a>
+    <a class="nav-item" href="#app-theme">App theme</a>
     <a class="nav-item" href="#planner">Planner</a>
     <a class="nav-item" href="#search">Search &amp; Replace</a>
     <a class="nav-item" href="#metadata">Metadata &amp; Properties</a>
@@ -336,6 +337,7 @@
 
     <span class="nav-group-label">AI Features</span>
     <a class="nav-item" href="#ai">Command Center — AI</a>
+    <a class="nav-item" href="#agent-run-log">Agent Run Log</a>
     <a class="nav-item" href="#personas">Personas</a>
     <a class="nav-item" href="#quick-actions">Quick Actions</a>
 
@@ -393,7 +395,7 @@
         <li>Click <strong>File → Open Vault…</strong> (or <kbd>⌘O</kbd>) and pick a folder to use as your vault.</li>
         <li>Metis creates pinned <strong>Spaces</strong> — <code style="font-size:12px">daily/</code>, <code style="font-size:12px">meetings/</code>, <code style="font-size:12px">summaries/</code>, <code style="font-size:12px">handwritten/</code>, and <code style="font-size:12px">assets/</code> — automatically.</li>
         <li>Create your first note with <kbd>⌘N</kbd> or the <strong>+</strong> button in the sidebar.</li>
-        <li>To use AI features, add at least one <strong>provider profile</strong> (name, API URL, key) in <strong>Command Center → Settings → API Providers</strong>.</li>
+        <li>To use AI features, open <strong>Settings</strong> (<kbd>⌘,</kbd>) and add at least one <strong>API provider profile</strong> (name, base URL, key) under <strong>Settings → AI</strong>.</li>
       </ol>
 
       <div class="callout tip">
@@ -441,6 +443,7 @@
       <p class="section-intro">
         In the sidebar <strong style="color:var(--text)">Files</strong> view, Metis groups five default vault folders under
         <strong style="color:var(--text)">Spaces</strong>. They are created when you open or create a Metis vault and stay pinned at the top of the tree.
+        <em>This is separate from <strong>pinned notes</strong> — see <a href="#navigation">Navigation</a>.</em>
       </p>
       <ul>
         <li><strong>daily/</strong> — daily notes (<kbd>⌘D</kbd> opens today's note).</li>
@@ -493,8 +496,40 @@
       <h3>Auto-save</h3>
       <p>Notes are saved automatically 1 second after your last keystroke. The save status is shown in the editor header bar. You can also save manually with <kbd>⌘S</kbd>.</p>
 
-      <h3>Background themes</h3>
-      <p>Click the colour swatch in the editor header to switch between <strong>Dark</strong>, <strong>Black</strong>, <strong>Slate</strong>, <strong>White</strong>, and <strong>Cream</strong> — applied instantly without reloading the editor.</p>
+      <h3>Spellcheck</h3>
+      <p>Toggle spellcheck from the editor toolbar, or enable it in <strong>Settings → General</strong> (<kbd>⌘,</kbd>). Misspelled words show wavy yellow underlines; dictionaries: English (US) or English (UK).</p>
+
+      <h3>Toolbar extras</h3>
+      <ul>
+        <li><strong>Calendar</strong> — jump to Planner daily, weekly, or monthly views for a chosen date.</li>
+        <li><strong>Calculator</strong> — quick arithmetic; copy the result or insert it at the cursor.</li>
+      </ul>
+    </section>
+
+    <!-- APP THEME ───────────────────────────────────────────────────────── -->
+    <section class="section" id="app-theme">
+      <h2 class="section-title">App theme</h2>
+      <p class="section-intro">
+        <strong style="color:var(--text)">App theme</strong> colours the <strong>entire Metis shell</strong> — sidebar, editor column, Command Center, and Planner —
+        not just the editor surface. Pick a preset or choose a <strong>custom colour</strong> with the in-app hue wheel.
+      </p>
+
+      <h3>Built-in presets</h3>
+      <p>Dark · Black · Slate · Purple · Pink · White · Cream — each adjusts text, surfaces, accents, and syntax highlighting for readability.</p>
+
+      <h3>Where to change it</h3>
+      <ul>
+        <li>Click the <strong>colour swatch</strong> in the editor header (available on empty state, open notes, Planner, and Agent Run Log).</li>
+        <li>Or open <strong>Settings → App theme</strong> (<kbd>⌘,</kbd>).</li>
+      </ul>
+
+      <h3>Custom colour</h3>
+      <p>Select <strong>Custom</strong> in the picker to open the hue wheel and brightness slider. Metis derives readable text, syntax mode (dark vs light), accent colours, and planner grid headers automatically.</p>
+
+      <div class="callout tip">
+        <span>💡</span>
+        <span>Light themes (Pink, White, Cream, and custom light colours) soften planner column headers so they match the rest of the UI instead of using the default purple grid styling.</span>
+      </div>
     </section>
 
     <!-- PLANNER ─────────────────────────────────────────────────────────── -->
@@ -511,7 +546,7 @@
         <li><strong>Daily Log</strong> — Monday–Friday × four weeks grid (<code style="font-size:11px">min-w-[980px]</code>). Opening a work cell increases its column and row weight so it grows to roughly a quarter of the grid (similar to your 2×2 overlay mock); other rows and columns shrink.</li>
         <li><strong>Weekly Review</strong> — week-by-week retrospective notes with action points.</li>
         <li><strong>Monthly Review</strong> — reflection prompts and month-level review notes.</li>
-        <li><strong>Reviews</strong> — same grid pattern as Daily Log (purple rounded headers, card-style markdown cells); review period in the row header column; stored locally.</li>
+        <li><strong>Reviews</strong> — performance-review grid with editable column titles and markdown cells; stored locally.</li>
         <li><strong>Goals</strong> — create labeled sections with markdown notes (stored locally).</li>
         <li><strong>Templates</strong> — recurring planning templates (daily/weekly/monthly/interval) with recurrence day controls.</li>
         <li><strong>PTO &amp; Events</strong> — Public Holidays, PTO, Conferences, and Office Trips tracker tables.</li>
@@ -538,6 +573,8 @@
 
       <h3>PTO counter</h3>
       <p>The tracker includes a running PTO summary: <strong>PTO Remaining = Total Allocation − sum(Days Taken)</strong>.</p>
+
+      <p>Planner colours follow your active <strong>App theme</strong> preset — open the header colour picker or <strong>Settings → App theme</strong> to change them.</p>
     </section>
 
     <!-- SEARCH & REPLACE ─────────────────────────────────────────────────── -->
@@ -549,12 +586,12 @@
       </p>
 
       <h3>In-editor find &amp; replace</h3>
-      <p>Press <kbd>⌘F</kbd> to open the find panel at the top of the editor. Press <kbd>⌘H</kbd> to open find-and-replace.</p>
+      <p>Press <kbd>⌘F</kbd> to open the find panel at the top of the editor. Press <kbd>⌘R</kbd> to open find-and-replace.</p>
       <table class="shortcut-table">
         <thead><tr><th>Action</th><th>Shortcut</th></tr></thead>
         <tbody>
           <tr><td>Find in file</td><td><kbd>⌘F</kbd></td></tr>
-          <tr><td>Find and replace</td><td><kbd>⌘H</kbd></td></tr>
+          <tr><td>Find and replace</td><td><kbd>⌘R</kbd></td></tr>
           <tr><td>Next match</td><td><kbd>F3</kbd> or <kbd>Return</kbd></td></tr>
           <tr><td>Previous match</td><td><kbd>⇧F3</kbd></td></tr>
           <tr><td>Close search panel</td><td><kbd>Esc</kbd></td></tr>
@@ -601,9 +638,12 @@
           <tr><td><strong>Parent</strong></td><td>Auto-derived from the containing folder — read-only</td></tr>
           <tr><td><strong>Aliases</strong></td><td>Alternative names for the note; searched by <code>[[wikilink]]</code> autocomplete and the Command Palette</td></tr>
           <tr><td><strong>Tags</strong></td><td>Editable tag chips backed by <code>tags:</code> frontmatter</td></tr>
-          <tr><td><strong>Links</strong></td><td>Read-only list of all <code>[[wikilinks]]</code> found in the note body</td></tr>
+          <tr><td><strong>Links</strong></td><td>Read-only list of outgoing <code>[[wikilinks]]</code> in the note body</td></tr>
+          <tr><td><strong>Backlinks</strong></td><td>Notes that link <em>to</em> this file via <code>[[wikilinks]]</code> — always shown (empty hint when none). Updates live while you edit.</td></tr>
         </tbody>
       </table>
+
+      <p>In <strong>Visual mode</strong>, when backlinks exist, a compact <strong>Backlinks</strong> strip appears above the preview (the metadata panel is Source-only).</p>
 
       <div class="callout info">
         <span>ℹ️</span>
@@ -614,6 +654,14 @@
     <!-- NAVIGATION ──────────────────────────────────────────────────────── -->
     <section class="section" id="navigation">
       <h2 class="section-title">Navigation</h2>
+
+      <h3>Pinned &amp; recent notes</h3>
+      <p>Below the sidebar search area, <strong>Pinned</strong> and <strong>Recent</strong> appear as collapsible dropdowns (collapsed by default).</p>
+      <ul>
+        <li><strong>Pin</strong> — right-click a note in the file tree and choose <strong>Pin note</strong>, or use the <strong>Pin note</strong> button in the sidebar footer when a note is open.</li>
+        <li><strong>Recent</strong> — automatically tracks notes you open (up to <strong>5</strong> shown in the sidebar; older entries are still stored).</li>
+        <li>Pinned notes are excluded from the Recent list. Stale paths are removed when the vault is refreshed.</li>
+      </ul>
 
       <h3>Quick Switcher</h3>
       <p>Press <kbd>⌘P</kbd> to open the fuzzy note switcher. It searches note names and aliases, and can be filtered by status using the chips at the top.</p>
@@ -682,6 +730,30 @@
       </ul>
     </section>
 
+    <!-- AGENT RUN LOG ───────────────────────────────────────────────────── -->
+    <section class="section" id="agent-run-log">
+      <h2 class="section-title">Agent Run Log</h2>
+      <p class="section-intro">
+        A persistent audit log of AI agent runs — separate from the in-memory <strong>History</strong> accordion in the Command Center (session replay only).
+      </p>
+
+      <h3>Opening the log</h3>
+      <ul>
+        <li>Click <strong>Run log ↗</strong> in the AI tab header or History section.</li>
+        <li>From the empty editor state, click <strong>Run log</strong>.</li>
+        <li>Command Palette (<kbd>⌘P</kbd>) → <strong>Open Agent Run Log</strong>.</li>
+      </ul>
+
+      <h3>What each run records</h3>
+      <ul>
+        <li>Persona, model, provider, agent type, duration, and token usage (when reported by the provider).</li>
+        <li>Estimated cost from static per-model rates when usage is available.</li>
+        <li>Vault-relative <strong>file path</strong> and context egress label (how many notes/characters were sent).</li>
+      </ul>
+
+      <p>When <strong>Store AI history</strong> is disabled in settings, new runs are not appended. The log keeps up to 1,000 entries in app data.</p>
+    </section>
+
     <!-- PERSONAS ────────────────────────────────────────────────────────── -->
     <section class="section" id="personas">
       <h2 class="section-title">Personas</h2>
@@ -693,7 +765,7 @@
 
       <h3>Creating a persona</h3>
       <ol>
-        <li>Go to <strong>Command Center → Settings → Personas</strong>.</li>
+        <li>Go to <strong>Settings → Personas</strong> (<kbd>⌘,</kbd>) or <strong>Command Center → Settings → Personas</strong>.</li>
         <li>Click <strong>+ New Persona</strong>.</li>
         <li>Fill in a name, icon (emoji), system prompt, and choose a <strong>provider profile</strong> (configured under API Providers).</li>
         <li>Click <strong>↓ Models</strong> to fetch models for that profile's endpoint, or type a model name directly.</li>
@@ -729,7 +801,7 @@
       </table>
 
       <h3>Managing quick actions</h3>
-      <p>Go to <strong>Command Center → Settings → Quick Actions</strong> to:</p>
+      <p>Go to <strong>Command Center → Settings</strong> (⚙ tab) — <strong>Quick Actions</strong> section — to:</p>
       <ul>
         <li><strong>Add</strong> a new action with a custom label and prompt.</li>
         <li><strong>Edit</strong> the label, prompt, or assigned persona of any action.</li>
@@ -750,11 +822,11 @@
         Metis uses <strong style="color:var(--text)">provider profiles</strong> — each has a display name, base URL, API key, and optional default model.
         Most endpoints are <strong>OpenAI-compatible</strong> (OpenAI, Groq, Perplexity, Ollama, LiteLLM, Azure OpenAI, etc.).
         Official Google Gemini hosts can use a native path when configured. Add or edit profiles in
-        <strong>Command Center → Settings → API Providers</strong>.
+        <strong>Settings → AI</strong> (<kbd>⌘,</kbd>) or <strong>Command Center → Settings → API Providers</strong>.
       </p>
 
       <h3>Presets</h3>
-      <p>Quick-add buttons seed common providers (OpenAI, Gemini, Groq, Perplexity). You can duplicate or edit them, or add a fully custom URL — no app rebuild required.</p>
+      <p>Quick-add buttons seed common providers (OpenAI, Gemini, Groq, Perplexity, Anthropic, LiteLLM). You can duplicate or edit them, or add a fully custom URL — no app rebuild required.</p>
 
       <table class="provider-table">
         <thead>
@@ -781,6 +853,11 @@
             <td><span class="badge">pplx-…</span></td>
             <td>Sonar models with optional web search</td>
           </tr>
+          <tr>
+            <td>Anthropic</td>
+            <td><span class="badge">sk-ant-…</span></td>
+            <td>Claude Sonnet, Haiku, Opus</td>
+          </tr>
         </tbody>
       </table>
 
@@ -806,11 +883,16 @@
     <!-- KEYBOARD SHORTCUTS ──────────────────────────────────────────────── -->
     <section class="section" id="shortcuts">
       <h2 class="section-title">Keyboard Shortcuts</h2>
+      <p class="section-intro">
+        Defaults below. Rebind most shortcuts in <strong>Settings → Hotkeys</strong> (<kbd>⌘,</kbd>).
+        Conflicts are highlighted; press <kbd>Backspace</kbd> while recording to clear a custom binding.
+      </p>
 
       <h3>Global</h3>
       <table class="shortcut-table">
         <thead><tr><th>Action</th><th>Shortcut</th></tr></thead>
         <tbody>
+          <tr><td>Open settings</td><td><kbd>⌘,</kbd></td></tr>
           <tr><td>Open vault</td><td><kbd>⌘O</kbd></td></tr>
           <tr><td>New note</td><td><kbd>⌘N</kbd></td></tr>
           <tr><td>New folder</td><td><kbd>⌘⇧N</kbd></td></tr>
@@ -828,7 +910,8 @@
         <thead><tr><th>Action</th><th>Shortcut</th></tr></thead>
         <tbody>
           <tr><td>Find in file</td><td><kbd>⌘F</kbd></td></tr>
-          <tr><td>Find and replace</td><td><kbd>⌘H</kbd></td></tr>
+          <tr><td>Find and replace</td><td><kbd>⌘R</kbd></td></tr>
+          <tr><td>Select line</td><td><kbd>⌘L</kbd></td></tr>
           <tr><td>Next match</td><td><kbd>F3</kbd></td></tr>
           <tr><td>Previous match</td><td><kbd>⇧F3</kbd></td></tr>
           <tr><td>Bold</td><td><kbd>⌘B</kbd></td></tr>
@@ -857,6 +940,8 @@
 
     <!-- FOOTER ──────────────────────────────────────────────────────────── -->
     <div class="footer">
+      <span>Metis v0.9.28</span>
+      <span>·</span>
       <span>© 2026 Kyhle Öhlinger — MIT License</span>
       <span>·</span>
       <a href="https://github.com/kyhleOhlinger" target="_blank">github.com/kyhleOhlinger</a>

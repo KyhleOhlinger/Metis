@@ -1,7 +1,7 @@
 {
   "name": "metis",
   "private": true,
-  "version": "0.9.14",
+  "version": "0.9.28",
   "description": "A local-first, AI-augmented personal knowledge ecosystem.",
   "author": "Kyhle Öhlinger",
   "license": "MIT",
@@ -41,6 +41,9 @@
     "@tauri-apps/plugin-dialog": "^2.0.3",
     "@tauri-apps/plugin-http": "^2.5.8",
     "@types/dompurify": "^3.0.5",
+    "@uiw/color-convert": "^2.10.3",
+    "@uiw/react-color-shade-slider": "^2.10.3",
+    "@uiw/react-color-wheel": "^2.10.3",
     "ai": "^7.0.14",
     "codemirror": "^6.0.1",
     "dompurify": "^3.4.3",

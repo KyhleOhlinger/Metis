@@ -10,6 +10,7 @@ import type {
   Settings,
 } from "../types/persona";
 import { DEFAULT_SETTINGS } from "../types/persona";
+import { normalizeHex } from "./themeColors";
 
 /** Shipped Jekyll export defaults removed in v0.9.x — strip on load so settings stay blank. */
 const LEGACY_JEKYLL_SHIPPED_AUTHOR = "kyhle";
@@ -281,6 +282,10 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
       : DEFAULT_SETTINGS.quickActions,
     spellcheckEnabled,
     editorBgPresetId: cleaned.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
+    editorBgCustomColor: (() => {
+      const raw = cleaned.editorBgCustomColor ?? DEFAULT_SETTINGS.editorBgCustomColor;
+      return normalizeHex(raw ?? "") ?? DEFAULT_SETTINGS.editorBgCustomColor;
+    })(),
     stickyDefaults: (() => {
       const raw = cleaned.stickyDefaults ?? {};
       const legacy = raw as { wrap?: boolean; includeWrapBlock?: boolean };

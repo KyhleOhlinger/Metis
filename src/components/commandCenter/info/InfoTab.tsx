@@ -114,21 +114,20 @@ export function InfoTab({
           <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mb-2">
             About
           </p>
-          <div>
-            <p className="text-[11px] font-semibold text-text-primary">Metis</p>
-            <p className="text-[10px] text-text-muted mt-0.5">
-              A local-first, AI-augmented personal knowledge ecosystem.
-            </p>
+          <div className="flex flex-col items-center gap-3 text-center">
+            <img
+              src={metisIconUrl}
+              alt=""
+              className="mx-auto aspect-square w-[min(72%,10rem)] min-w-[4.5rem] max-w-[10.5rem] rounded-2xl border border-border object-cover shadow-md shadow-black/20"
+            />
+            <div>
+              <p className="text-[11px] font-semibold text-text-primary">Metis</p>
+              <p className="text-[10px] text-text-muted mt-0.5">
+                A local-first, AI-augmented personal knowledge ecosystem.
+              </p>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div className="flex flex-1 min-h-[96px] items-center justify-center px-3 py-4">
-        <img
-          src={metisIconUrl}
-          alt=""
-          className="aspect-square w-4/5 max-w-[168px] rounded-2xl border border-border object-cover shadow-md shadow-black/20"
-        />
       </div>
 
       <div className="shrink-0 border-t border-border px-3 py-2 flex justify-end">
