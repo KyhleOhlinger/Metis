@@ -363,7 +363,7 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
         </button>
         <button
           onClick={handleSave}
-          className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
+          className="rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover transition-colors"
         >
           {initial ? "Save" : "Create"}
         </button>

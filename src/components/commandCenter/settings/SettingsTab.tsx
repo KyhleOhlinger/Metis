@@ -265,7 +265,7 @@ export function SettingsTab({
             <button
               onClick={handleAddProvider}
               disabled={!draftKey.trim() || !draftUrl.trim()}
-              className="w-full rounded bg-accent py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-40"
+              className="w-full rounded bg-accent py-1 text-xs font-medium text-on-accent hover:bg-accent-hover transition-colors disabled:opacity-40"
             >
               Save provider
             </button>

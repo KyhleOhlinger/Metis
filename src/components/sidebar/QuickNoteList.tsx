@@ -42,7 +42,7 @@ export function QuickNoteList({
               className={[
                 "flex w-full items-center gap-2 rounded-md px-2 py-1 text-left transition-colors",
                 active
-                  ? "bg-accent/15 text-text-primary"
+                  ? "bg-accent/15 text-accent"
                   : "text-text-secondary hover:bg-surface-overlay hover:text-text-primary",
                 compact ? "text-[11px]" : "text-xs",
               ].join(" ")}

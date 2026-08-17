@@ -4,7 +4,7 @@ import {
   type PlannerLayoutTemplates,
   type TaskManifest,
   DEFAULT_LAYOUT_TEMPLATES,
-  PLANNER_PURPLE_HEADER,
+  PLANNER_GRID_HEADER,
   WEEKLY_TEMPLATE,
   monthEntryFor,
   weekHeader,
@@ -39,12 +39,12 @@ export default function PlannerWeeklyTab({
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-[220px_minmax(420px,1fr)] gap-1.5">
-        <div className={PLANNER_PURPLE_HEADER}>
+        <div className={PLANNER_GRID_HEADER}>
           {useMonthlyTemplateForDate(weeklyViewMonth)
             ? layoutTemplates.weeklyLeftHeader
             : DEFAULT_LAYOUT_TEMPLATES.weeklyLeftHeader}
         </div>
-        <div className={PLANNER_PURPLE_HEADER}>
+        <div className={PLANNER_GRID_HEADER}>
           {useMonthlyTemplateForDate(weeklyViewMonth)
             ? layoutTemplates.weeklyRightHeader
             : DEFAULT_LAYOUT_TEMPLATES.weeklyRightHeader}

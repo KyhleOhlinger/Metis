@@ -68,7 +68,7 @@ export function AITabInputBar({
           <button
             onClick={handleRun}
             disabled={!activePersona || !hasApiKey || !userMessage.trim() || isSystemPersonaActive}
-            className="flex-1 rounded-md bg-accent py-1.5 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex-1 rounded-md bg-accent py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             ▶ Run {activePersona?.icon ?? ""}
           </button>

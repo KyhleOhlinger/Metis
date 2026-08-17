@@ -5,7 +5,7 @@ import {
   type TaskManifest,
   DEFAULT_LAYOUT_TEMPLATES,
   MONTHLY_PROMPTS,
-  PLANNER_PURPLE_HEADER,
+  PLANNER_GRID_HEADER,
   makeMonthlyTemplateContent,
   monthEntryFor,
   monthName,
@@ -62,13 +62,13 @@ export default function PlannerMonthlyTab({
             data-monthly-row={monthDate.getMonth()}
             className="grid min-w-[920px] grid-cols-[120px_minmax(260px,1fr)_minmax(220px,1fr)] gap-1.5"
           >
-            <div className={PLANNER_PURPLE_HEADER}>{monthName(monthDate)}</div>
-            <div className={PLANNER_PURPLE_HEADER}>
+            <div className={PLANNER_GRID_HEADER}>{monthName(monthDate)}</div>
+            <div className={PLANNER_GRID_HEADER}>
               {useMonthlyTemplateForDate(monthDate)
                 ? layoutTemplates.monthlyRightHeader
                 : DEFAULT_LAYOUT_TEMPLATES.monthlyRightHeader}
             </div>
-            <div className={PLANNER_PURPLE_HEADER}>Monthly Achievements</div>
+            <div className={PLANNER_GRID_HEADER}>Monthly Achievements</div>
 
             <div className="rounded-md border border-border bg-surface-overlay/30 px-3 py-2 text-[11px] font-semibold text-text-primary">
               {monthName(monthDate)}

@@ -59,7 +59,7 @@ class AppErrorBoundary extends Component<
             {this.state.error.message}
           </pre>
           <button
-            className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-white hover:bg-accent-hover"
+            className="rounded-md bg-accent px-4 py-1.5 text-xs font-medium text-on-accent hover:bg-accent-hover"
             onClick={() => this.setState({ error: null })}
           >
             Try to recover

@@ -164,7 +164,7 @@ function ActionEditor({ initial, personas, onSave, onCancel }: ActionEditorProps
         <button
           onClick={handleSave}
           disabled={!label.trim() || !template.trim()}
-          className="rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           Save
         </button>
