@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useStore } from "@/store/useStore";
 import type { HistoryEntry } from "@/types/persona";
+import { Hint, SubsectionLabel } from "../shared/ui";
 
 interface AITabHistoryProps {
   history: HistoryEntry[];
@@ -11,50 +11,48 @@ interface AITabHistoryProps {
 export function AITabHistory({ history, onClearHistory, onRestore }: AITabHistoryProps) {
   const [showHistory, setShowHistory] = useState(false);
 
+  if (history.length === 0) return null;
+
   return (
-    <div className="shrink-0 border-t border-border">
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <button
-          onClick={() => setShowHistory((v) => !v)}
-          className="flex flex-1 items-center justify-between text-[10px] text-text-muted hover:text-text-primary transition-colors"
-        >
-          <span className="font-semibold uppercase tracking-widest">
-            History ({history.length})
-          </span>
-          <span>{showHistory ? "▾" : "▸"}</span>
-        </button>
+    <div className="shrink-0 border-t border-border px-3 py-2">
+      <div className="overflow-hidden rounded-md border border-border bg-surface-overlay">
         <button
           type="button"
-          onClick={() => useStore.getState().setEditorTab("agent-history")}
-          className="ml-2 shrink-0 text-[10px] text-accent hover:underline"
-          title="Open full run log in main view"
+          onClick={() => setShowHistory((v) => !v)}
+          className="flex w-full items-center justify-between px-2.5 py-2 text-left transition-colors hover:bg-surface-base/30"
         >
-          Run log ↗
+          <SubsectionLabel>Session history ({history.length})</SubsectionLabel>
+          <span className="text-[10px] text-text-muted">{showHistory ? "▾" : "▸"}</span>
         </button>
-      </div>
-      {history.length > 0 && showHistory && (
-        <div className="max-h-48 overflow-y-auto px-2 pb-2 space-y-1">
-          {history.slice(0, 10).map((h) => (
+        {showHistory && (
+          <div className="max-h-40 space-y-1 overflow-y-auto border-t border-border/60 px-2 pb-2 pt-1.5">
+            {history.slice(0, 10).map((h) => (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => onRestore(h)}
+                className="w-full rounded border border-border/60 bg-surface-base/40 px-2 py-1.5 text-left transition-colors hover:border-accent/30 hover:bg-surface-base/60"
+              >
+                <span className="block truncate text-[10px] font-medium text-text-secondary">
+                  {h.userMessage.slice(0, 60)}
+                  {h.userMessage.length > 60 ? "…" : ""}
+                </span>
+                <span className="text-[9px] text-text-muted">
+                  {new Date(h.timestamp).toLocaleTimeString()}
+                </span>
+              </button>
+            ))}
             <button
-              key={h.id}
-              onClick={() => onRestore(h)}
-              className="w-full rounded-md border border-border bg-surface-overlay px-2 py-1.5 text-left text-[10px] text-text-muted hover:text-text-primary hover:bg-surface-raised transition-colors"
+              type="button"
+              onClick={onClearHistory}
+              className="w-full py-1 text-center text-[10px] text-text-muted transition-colors hover:text-red-400"
             >
-              <span className="font-medium text-text-secondary truncate block">
-                {h.userMessage.slice(0, 60)}
-                {h.userMessage.length > 60 ? "…" : ""}
-              </span>
-              <span className="opacity-60">{new Date(h.timestamp).toLocaleTimeString()}</span>
+              Clear history
             </button>
-          ))}
-          <button
-            onClick={onClearHistory}
-            className="w-full text-center text-[10px] text-text-muted hover:text-red-400 transition-colors py-0.5"
-          >
-            Clear history
-          </button>
-        </div>
-      )}
+            <Hint>Last 50 runs in this session. Open Run log for full history and exports.</Hint>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -31,6 +31,8 @@ export interface SelectionQuery {
   insertAfterSelection?: boolean;
   selectionEndOffset?: number;
   personaId?: string | null;
+  /** When true, use `settings.defaultProviderProfileId` for the API call (active or pinned persona still supplies prompt/model). */
+  useDefaultProvider?: boolean;
 }
 
 interface ModelCacheEntry {
@@ -87,6 +89,7 @@ interface PersonaState {
   upsertProviderProfile: (profile: AiProviderProfile) => void;
   removeProviderProfile: (id: string) => void;
   setDefaultProviderProfileId: (id: string) => void;
+  setAllPersonasProviderProfile: (providerProfileId: string) => void;
 
   addHistory: (entry: HistoryEntry) => void;
   clearHistory: () => void;
@@ -289,6 +292,13 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
 
   setDefaultProviderProfileId: (id) => {
     get().updateSettings({ defaultProviderProfileId: id });
+  },
+
+  setAllPersonasProviderProfile: (providerProfileId) => {
+    set((s) => ({
+      personas: s.personas.map((p) => ({ ...p, providerProfileId })),
+    }));
+    get().savePersonas();
   },
 
   addHistory: (entry) => {

@@ -61,7 +61,7 @@ export default function StickyNoteDropdown({
       <div
         id={STICKY_TOOLBAR_GHOST_ID}
         style={{ opacity: 0, pointerEvents: "none" }}
-        className="fixed z-[10000] rounded-md border border-white/25 px-2.5 py-1 text-xs font-medium text-slate-900 shadow-lg transition-opacity"
+        className="fixed z-[10000] rounded-md border border-border bg-surface-overlay px-2.5 py-1 text-xs font-medium text-text-primary shadow-lg transition-opacity"
       />
     <div className="relative shrink-0">
       <button

@@ -37,7 +37,7 @@ export function AITabResponsePanel({
   return (
     <div
       ref={responseRef}
-      data-cc-scroll-region
+      data-cc-ai-response-scroll
       className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-xs text-text-secondary font-mono whitespace-pre-wrap leading-relaxed"
     >
       {!response && !error && !streaming && !statusMsg && (

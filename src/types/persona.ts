@@ -89,8 +89,8 @@ export interface QuickAction {
   /** If true: offer the plain-text response as an inline insert after the selection */
   insertAfterSelection?: boolean;
   /**
-   * ID of the persona to use for this action.
-   * `null` / `undefined` → use whichever persona is currently active.
+   * Optional persona for this action. When unset, the active persona's prompt/model are used
+   * but the API call goes through the default provider profile.
    */
   personaId?: string | null;
 }

@@ -7,18 +7,23 @@ const inputCls =
 export function JekyllExportSettings({
   settings,
   onUpdate,
+  embedded = false,
 }: {
   settings: Settings;
   onUpdate: (patch: Partial<Settings>) => void;
+  /** When true, omit outer intro (used inside ExportSettings). */
+  embedded?: boolean;
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-xs leading-relaxed text-text-secondary">
-        Defaults for sidebar or export hub Convert to Jekyll….
-        Posts are written to <code className="text-[10px]">_posts/</code> with images under{" "}
-        <code className="text-[10px]">assets/img/</code>. Leave fields blank until you configure
-        your blog.
-      </p>
+      {!embedded && (
+        <p className="text-xs leading-relaxed text-text-secondary">
+          Defaults for sidebar or export hub Convert to Jekyll….
+          Posts are written to <code className="text-[10px]">_posts/</code> with images under{" "}
+          <code className="text-[10px]">assets/img/</code>. Leave fields blank until you configure
+          your blog.
+        </p>
+      )}
 
       <div>
         <label className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">

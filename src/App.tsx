@@ -27,7 +27,7 @@ import {
 import { toastError } from "./store/useToastStore";
 import { formatError } from "./utils/formatError";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { editorPaneThemeVars, resolveBgPreset } from "./components/editor/bgPresets";
+import { editorPaneThemeVars, applyAppThemeToDocument, resolveBgPreset } from "./components/editor/bgPresets";
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
 // Catches any React render errors and shows a human-readable message instead of
@@ -53,7 +53,7 @@ class AppErrorBoundary extends Component<
   render() {
     if (this.state.error) {
       return (
-        <div className="flex h-screen w-screen flex-col items-center justify-center gap-4 bg-[#16171a] p-8 text-center">
+        <div className="editor-theme flex h-screen w-screen flex-col items-center justify-center gap-4 bg-surface-base p-8 text-center text-text-primary">
           <p className="text-sm font-semibold text-red-400">Something went wrong</p>
           <pre className="max-w-xl overflow-auto rounded-md bg-surface-overlay px-4 py-3 text-left font-mono text-xs text-text-secondary">
             {this.state.error.message}
@@ -144,9 +144,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    document.documentElement.style.backgroundColor = bgPreset.bg;
-    document.body.style.backgroundColor = bgPreset.bg;
-    document.body.style.color = bgPreset.fg;
+    applyAppThemeToDocument(bgPreset);
   }, [bgPreset]);
 
   // ── Live refs ─────────────────────────────────────────────────────────────

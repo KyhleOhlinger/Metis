@@ -2,17 +2,15 @@ import type { CSSProperties } from "react";
 import { EditorView } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
 import {
-  metisHighlightStyleDark,
-  metisHighlightStyleLight,
-} from "../editorExtensions";
-import {
   accentForegroundOn,
   accentMutedBackground,
   deriveCustomThemeFields,
+  deriveSyntaxPalette,
   deriveThemePalette,
   normalizeHex,
   withAlphaHex,
 } from "@/utils/themeColors";
+import { buildMetisHighlightStyle } from "./extensions/highlightStyles";
 
 export const CUSTOM_PRESET_ID = "custom";
 
@@ -106,7 +104,9 @@ export const highlightCompartment = new Compartment();
 export const spellcheckCompartment = new Compartment();
 
 export function highlightForPreset(p: BgPreset) {
-  return p.isDark ? metisHighlightStyleDark : metisHighlightStyleLight;
+  const tokens = themeTokensForPreset(p);
+  const palette = deriveSyntaxPalette(p.bg, p.fg, p.isDark, tokens.secondary, tokens.muted);
+  return buildMetisHighlightStyle(palette);
 }
 
 function themeTokensForPreset(p: BgPreset) {
@@ -162,6 +162,24 @@ export function editorPaneThemeVars(p: BgPreset): CSSProperties {
     "--planner-text-secondary": t.secondary,
     "--planner-text-muted": t.muted,
   } as CSSProperties;
+}
+
+/** Apply App theme CSS variables on `<html>` so body-portaled UI (toolbar dropdowns) inherits colours. */
+export function applyAppThemeToDocument(p: BgPreset): void {
+  const root = document.documentElement;
+  const vars = editorPaneThemeVars(p);
+
+  for (const [key, value] of Object.entries(vars)) {
+    if (value != null && value !== "") {
+      root.style.setProperty(key, String(value));
+    }
+  }
+
+  root.classList.add("editor-theme");
+  root.setAttribute("data-color-scheme", p.isDark ? "dark" : "light");
+  root.style.backgroundColor = p.bg;
+  document.body.style.backgroundColor = p.bg;
+  document.body.style.color = p.fg;
 }
 
 export function makeBgTheme(p: BgPreset) {

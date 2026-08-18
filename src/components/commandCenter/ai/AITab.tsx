@@ -3,6 +3,7 @@ import { useStore } from "@/store/useStore";
 import { usePersonaStore, selectProfileApiKey } from "@/store/usePersonaStore";
 import { strategyLabel } from "@/services/contextBuilder";
 import { EgressTransparency } from "../../EgressTransparency";
+import { InlineBanner } from "../shared/ui";
 import { SystemPersonaPanels } from "@/systemPersonas/SystemPersonaPanels";
 import { isSystemPersona } from "@/systemPersonas/registry";
 import { profileForPersona } from "@/utils/providerProfiles";
@@ -50,6 +51,7 @@ export function AITab({
   const insertAfterSelectionRef = useRef(false);
   const selectionEndOffsetRef = useRef(0);
   const overridePersonaIdRef = useRef<string | null>(null);
+  const useDefaultProviderRef = useRef(false);
 
   useEffect(() => {
     runTokenRef.current += 1;
@@ -95,6 +97,7 @@ export function AITab({
     runTokenRef,
     abortRef,
     overridePersonaIdRef,
+    useDefaultProviderRef,
     insertAfterSelectionRef,
     selectionEndOffsetRef,
   });
@@ -139,6 +142,7 @@ export function AITab({
     insertAfterSelectionRef.current = selectionQuery.insertAfterSelection ?? false;
     selectionEndOffsetRef.current = selectionQuery.selectionEndOffset ?? 0;
     overridePersonaIdRef.current = selectionQuery.personaId ?? null;
+    useDefaultProviderRef.current = selectionQuery.useDefaultProvider ?? false;
     if (selectionQuery.autoRun) {
       setAutoRunQueued(true);
     }
@@ -176,8 +180,10 @@ export function AITab({
       />
 
       {settings.storeAiHistory === false && (
-        <div className="shrink-0 border-b border-border bg-surface-overlay/70 px-3 py-1.5 text-[9px] text-text-muted">
-          History recording is off — new runs are not saved to History. Change this in Settings → AI & privacy.
+        <div className="shrink-0 border-b border-border px-3 py-2">
+          <InlineBanner tone="accent">
+            History recording is off — new runs are not saved here. Enable in AI settings → AI & privacy.
+          </InlineBanner>
         </div>
       )}
 

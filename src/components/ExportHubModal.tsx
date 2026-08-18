@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FileOutput, FileText, FolderOpen, Library, X } from "lucide-react";
 import { useStore } from "@/store/useStore";
+import { usePersonaStore } from "@/store/usePersonaStore";
 import { toastInfo, toastSuccess } from "@/store/useToastStore";
 import {
   exportNotesToPdf,
@@ -8,6 +9,10 @@ import {
   type PdfExportScope,
 } from "@/services/pdfExportService";
 import { isPathWithinVault, normalizePosixPath } from "@/utils/paths";
+import {
+  jekyllExportDestinationLabel,
+} from "@/utils/exportDestinations";
+import { SAVE_DIALOG_EXPORT_LABEL } from "@/utils/saveDialogExport";
 import { invoke } from "@tauri-apps/api/core";
 
 interface Props {
@@ -18,6 +23,9 @@ interface Props {
 export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
   const vaultPath = useStore((s) => s.vaultPath);
   const activeFilePath = useStore((s) => s.activeFilePath);
+  const jekyllDestination = usePersonaStore((s) =>
+    jekyllExportDestinationLabel(s.settings.jekyllBlogRoot),
+  );
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<PdfExportProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,8 +105,9 @@ export default function ExportHubModal({ onClose, onJekyllExport }: Props) {
         </div>
 
         <p className="px-4 pt-3 text-xs leading-relaxed text-text-secondary">
-          Export notes for publishing or sharing. PDF uses the Visual preview; Jekyll writes
-          Chirpy posts to your blog repository.
+          Export notes for publishing or sharing. PDF uses the Visual preview and{" "}
+          {SAVE_DIALOG_EXPORT_LABEL.toLowerCase()}. Jekyll writes Chirpy posts to{" "}
+          <span className="font-mono text-[10px]">{jekyllDestination}</span>.
         </p>
 
         <div className="space-y-4 p-4">

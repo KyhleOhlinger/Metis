@@ -288,6 +288,7 @@ export async function exportNotesToPdf(options: {
   const savePath = await invoke<string | null>("pick_save_path", {
     defaultName,
     extension: "pdf",
+    defaultDirectory: null,
   });
   if (!savePath) return null;
 

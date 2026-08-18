@@ -11,7 +11,7 @@ import {
 import { AppThemeWheelPicker } from "../../editor/AppThemeWheelPicker";
 import { normalizeHex } from "@/utils/themeColors";
 import { SETTINGS_NAV } from "../../settings/settingsNav";
-import { JekyllExportSettings } from "../../settings/JekyllExportSettings";
+import { ExportSettings } from "../../settings/ExportSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
 import { SettingsTab } from "./SettingsTab";
@@ -30,7 +30,6 @@ export function SettingsPanel({
   settings,
   upsertProviderProfile,
   removeProviderProfile,
-  setDefaultProviderProfileId,
   onUpdateSettings,
 }: {
   layout: "modal" | "embedded";
@@ -39,7 +38,6 @@ export function SettingsPanel({
   settings: StoreSettings;
   upsertProviderProfile: (profile: AiProviderProfile) => void;
   removeProviderProfile: (id: string) => void;
-  setDefaultProviderProfileId: (id: string) => void;
   onUpdateSettings: (patch: Partial<Settings>) => void;
 }) {
   const navWidth = layout === "modal" ? "w-40" : "w-32";
@@ -99,7 +97,6 @@ export function SettingsPanel({
             settings={settings}
             upsertProviderProfile={upsertProviderProfile}
             removeProviderProfile={removeProviderProfile}
-            setDefaultProviderProfileId={setDefaultProviderProfileId}
             onUpdateSettings={onUpdateSettings}
           />
         )}
@@ -109,13 +106,12 @@ export function SettingsPanel({
             settings={settings}
             upsertProviderProfile={upsertProviderProfile}
             removeProviderProfile={removeProviderProfile}
-            setDefaultProviderProfileId={setDefaultProviderProfileId}
             onUpdateSettings={onUpdateSettings}
           />
         )}
         {section === "export" && (
           <SettingsSection title="Export">
-            <JekyllExportSettings settings={settings} onUpdate={onUpdateSettings} />
+            <ExportSettings settings={settings} onUpdate={onUpdateSettings} />
           </SettingsSection>
         )}
         {section === "about" && (
