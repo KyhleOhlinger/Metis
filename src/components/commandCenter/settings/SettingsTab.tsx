@@ -4,7 +4,8 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import QuickActionsSettings from "../../QuickActionsSettings";
 import { makeProviderProfileId } from "@/utils/providerProfiles";
 import { testProviderConnection } from "@/services/llmService";
-import { FieldLabel } from "../shared/ui";
+import { ccInputCls, FieldLabel, Hint, SectionAction } from "../shared/ui";
+import { changeDefaultProviderWithPrompt } from "@/utils/defaultProviderChange";
 import { appConfirm } from "@/store/useToastStore";
 import { CollapsibleSection } from "./CollapsibleSection";
 import { PersonasSettingsSection } from "./PersonasSettingsSection";
@@ -15,7 +16,6 @@ export function SettingsTab({
   settings,
   upsertProviderProfile,
   removeProviderProfile,
-  setDefaultProviderProfileId,
   onUpdateSettings,
 }: {
   /** When set, only render AI or Personas blocks (used by SettingsPanel). */
@@ -23,7 +23,6 @@ export function SettingsTab({
   settings: ReturnType<typeof usePersonaStore.getState>["settings"];
   upsertProviderProfile: (profile: AiProviderProfile) => void;
   removeProviderProfile: (id: string) => void;
-  setDefaultProviderProfileId: (id: string) => void;
   onUpdateSettings: (patch: Partial<typeof settings>) => void;
 }) {
   const showPersonas = !filterSection || filterSection === "personas";
@@ -77,26 +76,48 @@ export function SettingsTab({
     const profile = draftProfile();
     upsertProviderProfile(profile);
     if (!settings.defaultProviderProfileId) {
-      setDefaultProviderProfileId(profile.id);
+      void handleSetDefault(profile.id);
     }
     resetDraftForm();
   }
 
+  async function handleSetDefault(profileId: string) {
+    const state = usePersonaStore.getState();
+    await changeDefaultProviderWithPrompt({
+      newProfileId: profileId,
+      currentDefaultId: state.settings.defaultProviderProfileId,
+      personas: state.personas,
+      settings: state.settings,
+      setDefaultProviderProfileId: state.setDefaultProviderProfileId,
+      setAllPersonasProviderProfile: state.setAllPersonasProviderProfile,
+    });
+  }
+
   const sectionBtnCls =
-    "rounded px-1.5 py-0.5 text-[10px] text-text-muted hover:bg-surface-overlay hover:text-text-primary transition-colors";
+    "rounded px-1.5 py-0.5 text-[10px] font-medium text-text-muted transition-colors hover:bg-surface-base/50 hover:text-text-primary";
 
   const embeddedInCommandCenter = filterSection === undefined;
+  const inputCls = `${ccInputCls} mt-0.5`;
 
   return (
     <div
       className={
         embeddedInCommandCenter
-          ? "flex-1 min-h-0 overflow-y-auto p-3 space-y-1"
-          : "space-y-1"
+          ? "flex-1 min-h-0 space-y-3 overflow-y-auto p-3"
+          : "space-y-3"
       }
       {...(embeddedInCommandCenter ? { "data-cc-scroll-region": true } : {})}
     >
-
+      {embeddedInCommandCenter && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] leading-relaxed text-text-secondary">
+            Providers, personas, quick actions, and privacy for the AI tab.
+          </p>
+          <SectionAction onClick={() => usePersonaStore.getState().openSettings("ai")}>
+            Full settings (⌘,)…
+          </SectionAction>
+        </div>
+      )}
       {/* ── Personas ─────────────────────────────────────────────────────── */}
       {showPersonas && <CollapsibleSection
         title="Personas"
@@ -131,7 +152,7 @@ export function SettingsTab({
       {/* ── AI & privacy (history) ───────────────────────────────────────── */}
       {showAi && <CollapsibleSection title="AI & privacy" defaultOpen={false}>
         <div className="space-y-3 text-[11px] text-text-muted">
-          <label className="flex items-start gap-2 cursor-pointer">
+          <label className="flex cursor-pointer items-start gap-2">
             <input
               type="checkbox"
               checked={settings.storeAiHistory !== false}
@@ -145,11 +166,11 @@ export function SettingsTab({
             </span>
           </label>
           <div>
-            <p className="font-medium text-text-primary mb-1">Max characters per history entry</p>
-            <p className="text-[10px] leading-relaxed mb-1.5">
-              Large scopes can produce very long replies. Extra text is trimmed before storing.
-              Use <span className="font-mono">0</span> for no limit.
-            </p>
+            <FieldLabel>Max characters per history entry</FieldLabel>
+            <Hint>
+              Large scopes can produce very long replies. Extra text is trimmed before storing. Use{" "}
+              <span className="font-mono">0</span> for no limit.
+            </Hint>
             <input
               type="number"
               min={0}
@@ -161,7 +182,7 @@ export function SettingsTab({
                   onUpdateSettings({ aiHistoryMaxResponseChars: n });
                 }
               }}
-              className="w-28 rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+              className={`${ccInputCls} mt-1.5 w-28`}
             />
           </div>
         </div>
@@ -181,17 +202,17 @@ export function SettingsTab({
         }
       >
         <div className="space-y-3">
-        <p className="text-[10px] text-text-muted leading-relaxed">
-          Add any OpenAI-compatible API (OpenAI, Anthropic via <code className="text-[9px]">/v1</code>, Groq, Ollama, Azure, LiteLLM, etc.).
-          Enter the provider name, base URL, and API key. Optional default model is used when creating new personas.
-        </p>
+        <Hint>
+          Add any OpenAI-compatible API (OpenAI, Groq, Ollama, Azure, LiteLLM, etc.). Enter the
+          provider name, base URL, and API key.
+        </Hint>
 
         {profiles.map((p) => (
           <ProviderProfilesSection
             key={p.id}
             profile={p}
             isDefault={settings.defaultProviderProfileId === p.id}
-            onSetDefault={() => setDefaultProviderProfileId(p.id)}
+            onSetDefault={() => void handleSetDefault(p.id)}
             onSave={upsertProviderProfile}
             onRemove={async () => {
               const ok = await appConfirm(
@@ -204,25 +225,25 @@ export function SettingsTab({
         ))}
 
         {showAddForm && (
-          <div className="rounded-md border border-border bg-surface-overlay p-3 space-y-2">
+          <div className="space-y-2 rounded-md border border-border bg-surface-base/40 p-2.5">
             <div className="flex items-center justify-between">
               <FieldLabel>New provider</FieldLabel>
-              <button onClick={resetDraftForm} className="text-[10px] text-text-muted hover:text-text-primary">
+              <button type="button" onClick={resetDraftForm} className="text-[10px] text-text-muted hover:text-text-primary">
                 ✕
               </button>
             </div>
             <div>
-              <label className="text-[10px] text-text-muted">Name</label>
+              <FieldLabel>Name</FieldLabel>
               <input
                 type="text"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 placeholder="e.g. Anthropic, Local Ollama"
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-[10px] text-text-muted">Base URL</label>
+              <FieldLabel>Base URL</FieldLabel>
               <input
                 type="text"
                 value={draftUrl}
@@ -231,11 +252,11 @@ export function SettingsTab({
                   setDraftTestStatus({ phase: "idle" });
                 }}
                 placeholder="https://api.openai.com/v1"
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-[10px] text-text-muted">API key</label>
+              <FieldLabel>API key</FieldLabel>
               <input
                 type="password"
                 value={draftKey}
@@ -244,17 +265,19 @@ export function SettingsTab({
                   setDraftTestStatus({ phase: "idle" });
                 }}
                 placeholder="Required"
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className={inputCls}
               />
             </div>
             <div>
-              <label className="text-[10px] text-text-muted">Default model <span className="opacity-60">(optional)</span></label>
+              <FieldLabel>
+                Default model <span className="font-normal opacity-60">(optional)</span>
+              </FieldLabel>
               <input
                 type="text"
                 value={draftModel}
                 onChange={(e) => setDraftModel(e.target.value)}
                 placeholder="e.g. gpt-4o, claude-sonnet-4-20250514"
-                className="mt-0.5 w-full rounded border border-border bg-surface-base px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+                className={inputCls}
               />
             </div>
             <TestConnectionRow
@@ -277,14 +300,10 @@ export function SettingsTab({
         )}
 
         {settings.allowedAiHosts.length > 0 && (
-          <p className="text-[9px] text-text-muted opacity-60">
-            Allowed hosts: {settings.allowedAiHosts.join(", ")}
-          </p>
+          <Hint>Allowed hosts: {settings.allowedAiHosts.join(", ")}</Hint>
         )}
 
-        <p className="text-[10px] text-text-muted opacity-50 leading-relaxed">
-          Keys are stored locally in the app data directory. Custom base URLs are allowed at runtime (no app rebuild).
-        </p>
+        <Hint>Keys are stored locally in the app data directory.</Hint>
         </div>
       </CollapsibleSection>}
     </div>

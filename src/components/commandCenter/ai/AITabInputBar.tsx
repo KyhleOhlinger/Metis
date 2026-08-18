@@ -3,6 +3,7 @@ import type { PendingWrite } from "../agent/pendingWrite.types";
 import type { ContextStrategy } from "@/services/contextBuilder";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { getDisplayChord, aiRunChordMatches } from "@/services/keybindingRuntime";
+import { ccTextareaCls } from "../shared/ui";
 
 interface AITabInputBarProps {
   userMessage: string;
@@ -54,7 +55,7 @@ export function AITabInputBar({
         }
         disabled={!activePersona || streaming || isSystemPersonaActive}
         rows={3}
-        className="w-full resize-none rounded-md border border-border bg-surface-overlay px-2 py-1.5 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed"
+        className={`${ccTextareaCls} disabled:cursor-not-allowed disabled:opacity-40`}
       />
       <div className="flex items-center gap-1.5">
         {streaming ? (

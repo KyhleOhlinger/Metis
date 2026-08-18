@@ -3,7 +3,7 @@
  *
  * Quick actions are read from the persona store so users can customise them in
  * Settings → Quick Actions.  Each action can optionally be pinned to a specific
- * persona; if none is set the currently active persona is used.
+ * persona; if none is set the active persona is used with the default API provider.
  */
 
 import { useEffect, useRef } from "react";
@@ -76,8 +76,8 @@ export default function SelectionToolbar({ onDismiss }: Props) {
       autoRun: !action.custom,
       insertAfterSelection: action.insertAfterSelection,
       selectionEndOffset: action.insertAfterSelection ? selectionEndOffset : undefined,
-      // Pass the action's dedicated persona (null means "use active persona")
       personaId: action.personaId ?? null,
+      useDefaultProvider: !action.personaId,
     });
     onDismiss();
   }

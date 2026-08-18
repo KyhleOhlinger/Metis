@@ -391,7 +391,9 @@ pub async fn pick_save_path(
     window: tauri::WebviewWindow,
     default_name: String,
     extension: String,
+    default_directory: Option<String>,
 ) -> Option<String> {
+    use std::path::PathBuf;
     use std::sync::mpsc;
     use tauri_plugin_dialog::DialogExt;
 
@@ -406,14 +408,22 @@ pub async fn pick_save_path(
 
     let (tx, rx) = mpsc::channel::<Option<String>>();
 
-    window
+    let mut dialog = window
         .app_handle()
         .dialog()
         .file()
         .set_parent(&window)
         .set_file_name(&default)
-        .add_filter("Export", &[ext.as_str()])
-        .save_file(move |result| {
+        .add_filter("Export", &[ext.as_str()]);
+
+    if let Some(dir) = default_directory {
+        let path = PathBuf::from(dir);
+        if path.is_dir() {
+            dialog = dialog.set_directory(path);
+        }
+    }
+
+    dialog.save_file(move |result| {
             let path = result.map(|fp| {
                 let mut p = fp.to_string();
                 if !ext.is_empty() && !p.to_lowercase().ends_with(&format!(".{ext}")) {

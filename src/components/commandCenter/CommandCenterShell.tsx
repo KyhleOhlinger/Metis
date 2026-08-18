@@ -62,8 +62,9 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   const [showNewPersonaModal, setShowNewPersonaModal] = useState(false);
 
   useEffect(() => {
+    if (tab !== "ai") return;
     const id = requestAnimationFrame(() => {
-      const el = document.querySelector("[data-cc-scroll-region]");
+      const el = document.querySelector("[data-cc-ai-response-scroll]");
       if (el instanceof HTMLElement) {
         el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
       }
@@ -181,7 +182,6 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
               settings={personaSlice.settings}
               upsertProviderProfile={personaSlice.upsertProviderProfile}
               removeProviderProfile={personaSlice.removeProviderProfile}
-              setDefaultProviderProfileId={personaSlice.setDefaultProviderProfileId}
               onUpdateSettings={personaSlice.updateSettings}
             />
           )}

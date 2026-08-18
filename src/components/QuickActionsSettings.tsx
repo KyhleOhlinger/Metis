@@ -130,7 +130,7 @@ function ActionEditor({ initial, personas, onSave, onCancel }: ActionEditorProps
           onChange={(e) => setPersonaId(e.target.value)}
           className={inputCls}
         >
-          <option value="">Active Persona (default)</option>
+          <option value="">Active persona · default provider</option>
           {personas
             .filter((p) => !p.disabled)
             .map((p) => (
@@ -140,7 +140,8 @@ function ActionEditor({ initial, personas, onSave, onCancel }: ActionEditorProps
             ))}
         </select>
         <p className="mt-0.5 text-[9px] text-text-muted opacity-60">
-          "Active Persona" uses whichever agent is selected in the Command Center at the time.
+          Default uses the active persona&apos;s prompt and model with the default API provider.
+          Pick a persona to pin both prompt and provider.
         </p>
       </div>
 
@@ -246,9 +247,9 @@ export default function QuickActionsSettings({
 
   // Resolve linked persona name for display
   function personaBadge(pid?: string | null) {
-    if (!pid) return null;
+    if (!pid) return "Default provider";
     const p = personas.find((p) => p.id === pid);
-    return p ? `${p.icon} ${p.name}` : null;
+    return p ? `${p.icon} ${p.name}` : "Unknown persona";
   }
 
   // ── Drag-and-drop ─────────────────────────────────────────────────────────
@@ -335,7 +336,7 @@ export default function QuickActionsSettings({
 
       <p className="text-[10px] text-text-muted opacity-70 leading-relaxed">
         These actions appear in the floating toolbar when you highlight text in the editor.
-        Each can be linked to a dedicated persona. Drag ⠿ to reorder.
+        By default they use the active persona with the default API provider. Drag ⠿ to reorder.
       </p>
 
       {/* Action list */}
@@ -392,7 +393,7 @@ export default function QuickActionsSettings({
 
                 {/* Persona badge */}
                 <span className="shrink-0 rounded bg-surface-raised px-1.5 py-0.5 text-[9px] text-text-muted">
-                  {personaBadge(action.personaId) ?? "Active Persona"}
+                  {personaBadge(action.personaId)}
                 </span>
 
                 {/* Edit / delete buttons */}

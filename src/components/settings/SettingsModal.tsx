@@ -13,7 +13,6 @@ export default function SettingsModal() {
     settings,
     upsertProviderProfile,
     removeProviderProfile,
-    setDefaultProviderProfileId,
     updateSettings,
   } = usePersonaStore(
     useShallow((s) => ({
@@ -24,7 +23,6 @@ export default function SettingsModal() {
       settings: s.settings,
       upsertProviderProfile: s.upsertProviderProfile,
       removeProviderProfile: s.removeProviderProfile,
-      setDefaultProviderProfileId: s.setDefaultProviderProfileId,
       updateSettings: s.updateSettings,
     })),
   );
@@ -74,7 +72,6 @@ export default function SettingsModal() {
           settings={settings}
           upsertProviderProfile={upsertProviderProfile}
           removeProviderProfile={removeProviderProfile}
-          setDefaultProviderProfileId={setDefaultProviderProfileId}
           onUpdateSettings={updateSettings}
         />
       </div>

@@ -5,6 +5,7 @@ import {
   egressEstimateSummary,
   type EgressEstimate,
 } from "../services/contextBuilder";
+import { Hint, InlineBanner, SubsectionLabel } from "./commandCenter/shared/ui";
 
 interface Props {
   scope: ExecutionScope;
@@ -89,35 +90,35 @@ export function EgressTransparency({
 
   if (!hasApiKey) {
     return (
-      <div className="shrink-0 border-b border-border bg-surface-overlay/30 px-3 py-2">
-        <p className="text-[9px] font-semibold uppercase tracking-widest text-text-muted/70 mb-1">
-          Data sent to AI
-        </p>
-        <p className="text-[10px] text-text-muted italic">
-          Configure an API key in Settings to preview what will be sent for this scope.
-        </p>
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <InlineBanner>
+          <SubsectionLabel>Data sent to AI</SubsectionLabel>
+          <p className="mt-1">
+            Configure an API key in settings to preview what will be sent for this scope.
+          </p>
+        </InlineBanner>
       </div>
     );
   }
 
   return (
-    <div className="shrink-0 border-b border-border bg-surface-overlay/30 px-3 py-2">
-      <p className="text-[9px] font-semibold uppercase tracking-widest text-text-muted/70 mb-1">
-        Data sent to AI
-      </p>
-      {loading && !estimate ? (
-        <p className="text-[10px] text-text-muted italic">Estimating scope…</p>
-      ) : estimate ? (
-        <p className="text-[10px] text-text-muted leading-relaxed">
-          {egressEstimateSummary(estimate)}
-        </p>
-      ) : (
-        <p className="text-[10px] text-text-muted italic">Could not estimate scope.</p>
-      )}
-      <p className="mt-1 text-[9px] text-text-muted/60 leading-relaxed">
-        Only notes in the selected scope are considered. Your prompt and system prompt are included separately.
-        Metis never uploads your whole disk — only scoped <code className="font-mono text-[8px]">.md</code> content.
-      </p>
+    <div className="shrink-0 border-b border-border px-3 py-2">
+      <InlineBanner>
+        <SubsectionLabel>Data sent to AI</SubsectionLabel>
+        {loading && !estimate ? (
+          <p className="mt-1 italic">Estimating scope…</p>
+        ) : estimate ? (
+          <p className="mt-1 text-text-secondary">{egressEstimateSummary(estimate)}</p>
+        ) : (
+          <p className="mt-1 italic">Could not estimate scope.</p>
+        )}
+        <div className="mt-1.5">
+          <Hint>
+            Only notes in the selected scope are considered. Your prompt and system prompt are
+            included separately.
+          </Hint>
+        </div>
+      </InlineBanner>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { streamResponse, agentFileTools, type ParsedToolCall } from "@/services/
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
 import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { isSystemPersona } from "@/systemPersonas/registry";
-import { profileForPersona } from "@/utils/providerProfiles";
+import { profileForPersona, findProviderProfile } from "@/utils/providerProfiles";
 import { sanitizeAgentNoteRelativePath } from "@/utils/paths";
 import {
   mapParsedToolCalls,
@@ -35,6 +35,7 @@ export type AgentRunUi = {
   runTokenRef: MutableRefObject<number>;
   abortRef: MutableRefObject<AbortController | null>;
   overridePersonaIdRef: MutableRefObject<string | null>;
+  useDefaultProviderRef: MutableRefObject<boolean>;
   insertAfterSelectionRef: MutableRefObject<boolean>;
   selectionEndOffsetRef: MutableRefObject<number>;
 };
@@ -60,6 +61,7 @@ export function useAgentRun(ui: AgentRunUi) {
     runTokenRef,
     abortRef,
     overridePersonaIdRef,
+    useDefaultProviderRef,
     insertAfterSelectionRef,
     selectionEndOffsetRef,
   } = ui;
@@ -83,11 +85,19 @@ export function useAgentRun(ui: AgentRunUi) {
   const runPersona = overridePersonaIdRef.current
     ? (allPersonas.find((p) => p.id === overridePersonaIdRef.current) ?? activePersona)
     : activePersona;
-  overridePersonaIdRef.current = null; // consume — only affects this run
+  overridePersonaIdRef.current = null;
 
-  const runProfile = runPersona
-    ? profileForPersona(liveSettings, runPersona)
-    : undefined;
+  const useDefaultProvider = useDefaultProviderRef.current;
+  useDefaultProviderRef.current = false;
+
+  let runProfile = runPersona ? profileForPersona(liveSettings, runPersona) : undefined;
+  if (useDefaultProvider && liveSettings.defaultProviderProfileId) {
+    const defaultProfile = findProviderProfile(
+      liveSettings,
+      liveSettings.defaultProviderProfileId,
+    );
+    if (defaultProfile) runProfile = defaultProfile;
+  }
 
   const runMessage = userMessage.trim();
   if (!runPersona || !runProfile?.apiKey?.trim() || !runMessage || streaming) return;
@@ -336,6 +346,7 @@ export function useAgentRun(ui: AgentRunUi) {
     runTokenRef,
     abortRef,
     overridePersonaIdRef,
+    useDefaultProviderRef,
     insertAfterSelectionRef,
     selectionEndOffsetRef,
   ]);

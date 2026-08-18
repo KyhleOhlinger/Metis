@@ -10,11 +10,8 @@ import {
   type PlannerStorageMode,
 } from "@/planner/plannerPersistence";
 import { appConfirm, toastError, toastSuccess } from "@/store/useToastStore";
-import { KV, Section } from "../shared/ui";
+import { FieldLabel, Hint, KV, Section, ccSelectCls } from "../shared/ui";
 import { PlannerSyncIndicator } from "@/components/planner/PlannerSyncIndicator";
-
-const selectCls =
-  "mt-1 w-full rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary";
 
 export function PlannerInfoSection() {
   const vaultPath = useStore((s) => s.vaultPath);
@@ -62,7 +59,7 @@ export function PlannerInfoSection() {
   if (!vaultPath) {
     return (
       <Section title="Planner">
-        <p className="text-[10px] text-text-muted">Open a vault to configure planner storage.</p>
+        <Hint>Open a vault to configure planner storage.</Hint>
       </Section>
     );
   }
@@ -113,14 +110,14 @@ export function PlannerInfoSection() {
 
   return (
     <Section title="Planner">
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <div>
-          <label className="block text-[10px] text-text-muted">Storage mode</label>
+          <FieldLabel>Storage mode</FieldLabel>
           <select
             value={plannerMode}
             disabled={busy}
             onChange={(e) => void handleModeChange(e.target.value as PlannerStorageMode)}
-            className={selectCls}
+            className={ccSelectCls}
           >
             <option value="shared">Shared planner</option>
             <option value="vault">Vault planner</option>
@@ -128,7 +125,7 @@ export function PlannerInfoSection() {
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] text-text-muted">Status</span>
+          <FieldLabel>Status</FieldLabel>
           <PlannerSyncIndicator />
         </div>
 
@@ -143,7 +140,7 @@ export function PlannerInfoSection() {
           </button>
         )}
 
-        <KV label="Active path" value={pathsLoading ? "Loading…" : activeDir || "—"} mono />
+        <KV label="Active path" value={pathsLoading ? "Loading…" : activeDir || "—"} mono stacked />
         {plannerMode === "shared" && (
           <>
             <KV label="Last vault backup" value={formatMirrorSyncTime(mirrorSyncedAt)} />
