@@ -5,6 +5,7 @@ import { useStore, NoteMetadata } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { STATUS_COLORS } from "../constants";
 import { toastError } from "../store/useToastStore";
+import { openAgentRunLog } from "@/utils/openAgentRunLog";
 
 interface PaletteAction {
   id: string;
@@ -49,7 +50,7 @@ export default function CommandPalette({ onClose }: Props) {
         label: "Open Agent Run Log",
         hint: "workspace",
         run: () => {
-          setEditorTab("agent-history");
+          openAgentRunLog();
           onClose();
         },
       },

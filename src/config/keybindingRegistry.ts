@@ -32,7 +32,8 @@ export type KeybindingCommandId =
   | "select-line"
   | "line-start"
   | "line-end"
-  | "ai-run";
+  | "ai-run"
+  | "agent-run-log";
 
 export interface KeybindingDefinition {
   id: KeybindingCommandId;
@@ -241,6 +242,14 @@ export const KEYBINDING_REGISTRY: KeybindingDefinition[] = [
     category: "AI",
     scope: "app",
     defaultChord: { mod: true, key: "Enter" },
+    rebindable: true,
+  },
+  {
+    id: "agent-run-log",
+    label: "Open agent run log",
+    category: "AI",
+    scope: "app",
+    defaultChord: { mod: true, shift: true, key: "l" },
     rebindable: true,
   },
 ];
