@@ -26,6 +26,7 @@ export function AITab({
   onSelectPersona, onAddHistory, onClearHistory, onNewPersona, onOpenSettings,
 }: AITabProps) {
   const [scope, setScope] = useState<ExecutionScope>(initialScope ?? { type: "current-file" });
+  const [includeImages, setIncludeImages] = useState(false);
 
   useEffect(() => {
     if (initialScope) setScope(initialScope);
@@ -80,6 +81,7 @@ export function AITab({
     userMessage,
     streaming,
     scope,
+    includeImages,
     activePersona,
     activeFileContent,
     activeFilePath,
@@ -194,6 +196,9 @@ export function AITab({
         activeFilePath={activeFilePath}
         folders={folders}
         noteFiles={noteFiles}
+        includeImages={includeImages}
+        setIncludeImages={setIncludeImages}
+        showIncludeImages={!isSystemPersonaActive}
       />
 
       <EgressTransparency
@@ -204,6 +209,7 @@ export function AITab({
         activeFileContent={activeFileContent}
         activeFilePath={activeFilePath}
         vaultPath={vaultPath}
+        includeImages={includeImages}
         hidden={isSystemPersonaActive || streaming}
       />
 

@@ -5,6 +5,7 @@ import {
   egressEstimateSummary,
   type EgressEstimate,
 } from "../services/contextBuilder";
+import { MAX_AGENT_VISION_IMAGES } from "../services/agentVisionContext";
 import { Hint, InlineBanner, SubsectionLabel } from "./commandCenter/shared/ui";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
   activeFileContent: string;
   activeFilePath: string | null;
   vaultPath: string | null;
+  includeImages?: boolean;
   hidden?: boolean;
 }
 
@@ -27,6 +29,7 @@ export function EgressTransparency({
   activeFileContent,
   activeFilePath,
   vaultPath,
+  includeImages = false,
   hidden,
 }: Props) {
   const [estimate, setEstimate] = useState<EgressEstimate | null>(null);
@@ -57,6 +60,7 @@ export function EgressTransparency({
         activeFileContent,
         activeFilePath,
         vaultPath,
+        includeImages,
       )
         .then((est) => {
           if (!cancelled) setEstimate(est);
@@ -83,6 +87,7 @@ export function EgressTransparency({
     activeFileContent,
     activeFilePath,
     vaultPath,
+    includeImages,
     hasApiKey,
   ]);
 
@@ -114,8 +119,9 @@ export function EgressTransparency({
         )}
         <div className="mt-1.5">
           <Hint>
-            Only notes in the selected scope are considered. Your prompt and system prompt are
-            included separately.
+            {includeImages
+              ? `Only notes in the selected scope are considered. Referenced vault images will be attached (max ${MAX_AGENT_VISION_IMAGES}) so a vision model can see them. Your prompt and system prompt are included separately.`
+              : "Only notes in the selected scope are considered. Check Include images on the Scope card to attach referenced vault images. Your prompt and system prompt are included separately."}
           </Hint>
         </div>
       </InlineBanner>

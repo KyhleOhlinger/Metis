@@ -1,7 +1,9 @@
 import { useCallback, useRef, type MutableRefObject } from "react";
 import { usePersonaStore } from "@/store/usePersonaStore";
+import { useStore } from "@/store/useStore";
 import { streamResponse, agentFileTools, type ParsedToolCall } from "@/services/llmService";
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
+import { loadAgentVisionImages } from "@/services/agentVisionContext";
 import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { isSystemPersona } from "@/systemPersonas/registry";
 import { profileForPersona, findProviderProfile } from "@/utils/providerProfiles";
@@ -18,6 +20,7 @@ export type AgentRunUi = {
   userMessage: string;
   streaming: boolean;
   scope: ExecutionScope;
+  includeImages: boolean;
   activePersona: Persona | undefined;
   activeFileContent: string;
   activeFilePath: string | null;
@@ -45,6 +48,7 @@ export function useAgentRun(ui: AgentRunUi) {
     userMessage,
     streaming,
     scope,
+    includeImages,
     activePersona,
     activeFileContent,
     activeFilePath,
@@ -112,6 +116,7 @@ export function useAgentRun(ui: AgentRunUi) {
         activeFileContent,
         activeFilePath,
         vaultPath,
+        includeImages,
       );
       if (!(await confirmEgressBeforeRun(egress))) return;
     } catch {
@@ -122,6 +127,7 @@ export function useAgentRun(ui: AgentRunUi) {
   // Freeze mutable run inputs so async steps and callbacks can't drift.
   const runToken = ++runTokenRef.current;
   const runScope = scope;
+  const runIncludeImages = includeImages;
   const runActiveFilePath = activeFilePath;
   const runActiveFileContent = activeFileContent;
   const runCursorOffset = cursorOffset;
@@ -183,6 +189,25 @@ export function useAgentRun(ui: AgentRunUi) {
     setError(`Failed to build context: ${String(e)}`);
     setStreaming(false);
     return;
+  }
+
+  let visionImages: Awaited<ReturnType<typeof loadAgentVisionImages>>["images"] = [];
+  if (runIncludeImages && vaultPath) {
+    try {
+      const loaded = await loadAgentVisionImages({
+        markdown: context,
+        vaultPath,
+        notePath: runActiveFilePath,
+        assetIndex: useStore.getState().assetIndex,
+        noteIndex: useStore.getState().noteIndex,
+        onStatus: (msg) => setStatusMsg(msg),
+      });
+      if (runToken !== runTokenRef.current) return;
+      visionImages = loaded.images;
+    } catch {
+      if (runToken !== runTokenRef.current) return;
+      // Text context still proceeds if image attachment fails.
+    }
   }
 
   setStatusMsg("");
@@ -298,7 +323,12 @@ export function useAgentRun(ui: AgentRunUi) {
       onError: (err) => {
         if (runToken !== runTokenRef.current) return;
         setStreaming(false);
-        setError(err.message);
+        const visionHint =
+          visionImages.length > 0 && /400|404|vision|image|multimodal/i.test(err.message)
+            ? " Use a vision-capable model on this persona (e.g. gpt-4o, gemini-2.0-flash, claude-sonnet)."
+            : "";
+        const errorMessage = `${err.message}${visionHint}`;
+        setError(errorMessage);
         const snap = activeRunRef.current;
         if (snap?.profile) {
           void recordAgentRun({
@@ -311,7 +341,7 @@ export function useAgentRun(ui: AgentRunUi) {
             activeFilePath: snap.activeFilePath,
             vaultPath: snap.vaultPath,
             userMessage: snap.userMessage,
-            errorMessage: err.message,
+            errorMessage,
             contextStrategy: snap.strategy,
           });
         }
@@ -319,6 +349,7 @@ export function useAgentRun(ui: AgentRunUi) {
       },
     },
     agentFileTools,
+    visionImages,
   );
   if (runToken !== runTokenRef.current) {
     controller.abort();
@@ -331,6 +362,7 @@ export function useAgentRun(ui: AgentRunUi) {
     userMessage,
     streaming,
     scope,
+    includeImages,
     activeFileContent,
     activeFilePath,
     vaultPath,
