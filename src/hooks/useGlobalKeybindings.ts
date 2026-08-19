@@ -5,6 +5,7 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import { toastError } from "@/store/useToastStore";
 import { formatError } from "@/utils/formatError";
 import { eventMatchesChord } from "@/utils/keyChord";
+import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { getChordsForCommand } from "@/services/keybindingRuntime";
 import type { KeybindingCommandId } from "@/config/keybindingRegistry";
 
@@ -32,6 +33,7 @@ const APP_COMMAND_IDS: KeybindingCommandId[] = [
   "quick-switcher",
   "vault-search",
   "find",
+  "agent-run-log",
 ];
 
 function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEvent): void {
@@ -90,6 +92,9 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
       }
       break;
     }
+    case "agent-run-log":
+      openAgentRunLog();
+      break;
     default:
       break;
   }

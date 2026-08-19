@@ -1,6 +1,6 @@
 [package]
 name = "metis"
-version = "0.9.45"
+version = "0.9.48"
 edition = "2021"
 description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]

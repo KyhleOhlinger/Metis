@@ -47,9 +47,12 @@ export function AITabHistory({ history, onClearHistory, onRestore }: AITabHistor
               onClick={onClearHistory}
               className="w-full py-1 text-center text-[10px] text-text-muted transition-colors hover:text-red-400"
             >
-              Clear history
+              Clear session history
             </button>
-            <Hint>Last 50 runs in this session. Open Run log for full history and exports.</Hint>
+            <Hint>
+              Session replay only (last 50). Use <span className="text-text-secondary">Run log ↗</span>{" "}
+              above the agent chips or <span className="font-mono">⌘⇧L</span> for the full log.
+            </Hint>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
-import { useStore } from "@/store/useStore";
 import { SYSTEM_PERSONA_IDS } from "@/systemPersonas/registry";
 import type { Persona } from "@/types/persona";
+import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { SectionAction, SubsectionLabel } from "../shared/ui";
 
 interface AITabPersonaBarProps {
@@ -60,54 +60,64 @@ export function AITabPersonaBar({
   const hasPersonas = systemChips.length > 0 || customChips.length > 0;
 
   return (
-    <div className="max-h-36 shrink-0 space-y-2 border-b border-border px-3 py-2.5">
+    <div className="shrink-0 border-b border-border px-3 py-2.5">
       <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <SubsectionLabel>Agents</SubsectionLabel>
+          <button
+            type="button"
+            onClick={() => openAgentRunLog()}
+            title="Open full agent run log in main view (⌘⇧L)"
+            className="rounded-full px-2 py-0.5 text-[10px] font-medium text-accent/90 transition-colors hover:bg-surface-overlay hover:text-accent"
+          >
+            Run log ↗
+          </button>
+        </div>
+
         {!hasPersonas && (
           <p className="text-[10px] text-text-muted">
             No personas yet — create one or open settings to configure agents.
           </p>
         )}
-        {systemChips.length > 0 && (
-          <div>
-            <SubsectionLabel>System</SubsectionLabel>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              {systemChips.map((p) => (
-                <PersonaChip
-                  key={p.id}
-                  persona={p}
-                  active={activePersonaId === p.id}
-                  streaming={streaming}
-                  onSelect={() => onSelectPersona(p.id)}
-                />
-              ))}
-            </div>
+
+        {hasPersonas && (
+          <div className="max-h-28 space-y-2 overflow-y-auto pr-0.5">
+            {systemChips.length > 0 && (
+              <div>
+                <SubsectionLabel>System</SubsectionLabel>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {systemChips.map((p) => (
+                    <PersonaChip
+                      key={p.id}
+                      persona={p}
+                      active={activePersonaId === p.id}
+                      streaming={streaming}
+                      onSelect={() => onSelectPersona(p.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+            {customChips.length > 0 && (
+              <div>
+                <SubsectionLabel>Custom</SubsectionLabel>
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {customChips.map((p) => (
+                    <PersonaChip
+                      key={p.id}
+                      persona={p}
+                      active={activePersonaId === p.id}
+                      streaming={streaming}
+                      onSelect={() => onSelectPersona(p.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
-        {customChips.length > 0 && (
-          <div>
-            <SubsectionLabel>Custom</SubsectionLabel>
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              {customChips.map((p) => (
-                <PersonaChip
-                  key={p.id}
-                  persona={p}
-                  active={activePersonaId === p.id}
-                  streaming={streaming}
-                  onSelect={() => onSelectPersona(p.id)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+
         <div className="flex flex-wrap items-center gap-1 border-t border-border/60 pt-2">
-          <button
-            type="button"
-            onClick={() => useStore.getState().setEditorTab("agent-history")}
-            title="Open agent run log in main view"
-            className={actionBtnCls}
-          >
-            Run log ↗
-          </button>
           <button type="button" onClick={onNewPersona} title="New persona" className={actionBtnCls}>
             + New persona
           </button>

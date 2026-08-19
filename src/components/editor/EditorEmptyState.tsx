@@ -26,7 +26,6 @@ function EmptyAction({
 interface EditorEmptyStateProps {
   vaultPath: string | null;
   onOpenPlanner: () => void;
-  onOpenAgentHistory: () => void;
   onOpenVault?: () => void;
   onCreateVault?: () => void;
 }
@@ -34,7 +33,6 @@ interface EditorEmptyStateProps {
 export function EditorEmptyState({
   vaultPath,
   onOpenPlanner,
-  onOpenAgentHistory,
   onOpenVault,
   onCreateVault,
 }: EditorEmptyStateProps) {
@@ -80,7 +78,6 @@ export function EditorEmptyState({
               <EmptyAction label="Quick switcher" hint="⌘P" onClick={openPalette} />
               <EmptyAction label="Search vault" hint="⌘⇧F" onClick={openSearch} />
               <EmptyAction label="Planner" onClick={onOpenPlanner} />
-              <EmptyAction label="Run log" onClick={onOpenAgentHistory} />
               <EmptyAction label="Export…" onClick={openExport} />
               <EmptyAction label="Settings" hint="⌘," onClick={openSettings} />
             </>

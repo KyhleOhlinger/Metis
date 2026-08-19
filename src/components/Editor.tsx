@@ -226,7 +226,6 @@ export default function Editor() {
         <EditorEmptyState
           vaultPath={vaultPath}
           onOpenPlanner={() => setEditorMode("planner")}
-          onOpenAgentHistory={() => setEditorMode("agent-history")}
           onCreateVault={() => useStore.getState().setPendingMenuAction("new-vault")}
           onOpenVault={() => useStore.getState().setPendingMenuAction("open-vault-picker")}
         />
