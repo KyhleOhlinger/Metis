@@ -26,6 +26,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AiProviderProfile, Persona, ExecutionScope } from "../types/persona";
 import { curatedSmallModelId, generateCompletion } from "./llmService";
 import { isGoogleProvider } from "./providerRegistry";
+import { countImageMarkdownRefs, MAX_AGENT_VISION_IMAGES } from "./agentVisionContext";
 
 // ── Model context limits ──────────────────────────────────────────────────────
 // Approximate token context windows for common models. Unknown ids use
@@ -465,6 +466,10 @@ export interface EgressEstimate {
   scopeLabel: string;
   requiresConfirm: boolean;
   providerLabel: string;
+  /** Image markdown refs in current/specific-file scope (0 if unknown). */
+  estimatedImageCount: number;
+  /** Folder/vault runs may attach referenced images after notes are selected. */
+  imagesMayBeAttached: boolean;
 }
 
 function fmtChars(n: number): string {
@@ -535,6 +540,7 @@ export async function estimateContextEgress(
   activeFileContent: string,
   activeFilePath: string | null,
   vaultPath: string | null,
+  includeImages = false,
 ): Promise<EgressEstimate> {
   const overhead = persona.systemPrompt.length + userMessage.length + 500;
   const budget = charBudget(persona.model, overhead);
@@ -542,6 +548,7 @@ export async function estimateContextEgress(
 
   if (scope.type === "current-file") {
     const chars = activeFileContent.length;
+    const imageCount = includeImages ? countImageMarkdownRefs(activeFileContent) : 0;
     return {
       noteCount: 1,
       totalCharsInScope: chars,
@@ -552,17 +559,20 @@ export async function estimateContextEgress(
       scopeLabel: activeFilePath?.split("/").pop() ?? "Current file",
       requiresConfirm: false,
       providerLabel,
+      estimatedImageCount: imageCount,
+      imagesMayBeAttached: imageCount > 0,
     };
   }
 
   if (scope.type === "specific-file") {
-    let chars = 0;
+    let content = "";
     try {
-      const content = await invoke<string>("get_file_content", { path: scope.filePath });
-      chars = content.length;
+      content = await invoke<string>("get_file_content", { path: scope.filePath });
     } catch {
-      chars = 0;
+      content = "";
     }
+    const chars = content.length;
+    const imageCount = includeImages ? countImageMarkdownRefs(content) : 0;
     return {
       noteCount: 1,
       totalCharsInScope: chars,
@@ -573,6 +583,8 @@ export async function estimateContextEgress(
       scopeLabel: scope.filePath.split("/").pop() ?? "File",
       requiresConfirm: false,
       providerLabel,
+      estimatedImageCount: imageCount,
+      imagesMayBeAttached: imageCount > 0,
     };
   }
 
@@ -594,6 +606,8 @@ export async function estimateContextEgress(
       scopeLabel,
       requiresConfirm: false,
       providerLabel,
+      estimatedImageCount: 0,
+      imagesMayBeAttached: false,
     };
   }
 
@@ -626,6 +640,8 @@ export async function estimateContextEgress(
     requiresConfirm:
       noteCount > 0 &&
       (scope.type === "full-vault" || scope.type === "specific-folder"),
+    estimatedImageCount: 0,
+    imagesMayBeAttached: includeImages && noteCount > 0,
     ...planned,
   };
 }
@@ -635,10 +651,22 @@ export function egressEstimateSummary(est: EgressEstimate): string {
   if (est.noteCount === 0) {
     return `Scope: ${est.scopeLabel} — no notes found.`;
   }
+  let imageNote = "";
+  if (est.estimatedImageCount > 0) {
+    const n = Math.min(est.estimatedImageCount, MAX_AGENT_VISION_IMAGES);
+    imageNote =
+      ` Up to ${n} referenced vault image${n !== 1 ? "s" : ""} may be attached as vision context` +
+      (est.estimatedImageCount > MAX_AGENT_VISION_IMAGES
+        ? ` (max ${MAX_AGENT_VISION_IMAGES}).`
+        : ".");
+  } else if (est.imagesMayBeAttached) {
+    imageNote = ` Referenced vault images in selected notes may be attached (max ${MAX_AGENT_VISION_IMAGES}).`;
+  }
   return (
     `Scope: ${est.scopeLabel} — ${est.noteCount} note${est.noteCount !== 1 ? "s" : ""}, ` +
     `~${fmtChars(est.estimatedContextChars)} chars to provider (${tier}). ` +
-    `(${fmtChars(est.totalCharsInScope)} chars total in scope; model budget ~${fmtChars(est.budgetChars)}.)`
+    `(${fmtChars(est.totalCharsInScope)} chars total in scope; model budget ~${fmtChars(est.budgetChars)}.)` +
+    imageNote
   );
 }
 

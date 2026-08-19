@@ -10,6 +10,9 @@ interface AITabScopeSelectorProps {
   activeFilePath: string | null;
   folders: { path: string; name: string }[];
   noteFiles: { path: string; label: string }[];
+  includeImages: boolean;
+  setIncludeImages: (value: boolean) => void;
+  showIncludeImages: boolean;
 }
 
 export function AITabScopeSelector({
@@ -19,11 +22,30 @@ export function AITabScopeSelector({
   activeFilePath,
   folders,
   noteFiles,
+  includeImages,
+  setIncludeImages,
+  showIncludeImages,
 }: AITabScopeSelectorProps) {
   return (
     <div className="shrink-0 border-b border-border px-3 py-2.5">
       <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-2">
-        <SubsectionLabel>Scope</SubsectionLabel>
+        <div className="flex items-center justify-between gap-2">
+          <SubsectionLabel>Scope</SubsectionLabel>
+          {showIncludeImages && (
+            <label
+              className="flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted"
+              title="When checked, vault images referenced in scoped notes are sent so a vision model can see them"
+            >
+              <input
+                type="checkbox"
+                checked={includeImages}
+                onChange={(e) => setIncludeImages(e.target.checked)}
+                className="rounded border-border"
+              />
+              <span>Include images</span>
+            </label>
+          )}
+        </div>
         <div className="flex flex-wrap gap-1">
           {(["current-file", "specific-folder", "full-vault"] as const).map((t) => (
             <SegmentButton

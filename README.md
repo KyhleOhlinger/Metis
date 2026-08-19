@@ -127,6 +127,7 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - **Custom personas** — create personas with custom system prompts, models, and providers
 - **Persona chip groups** — System and Custom chips are visually separated
 - **Scoped context** — run against the current file, a specific file, a folder, or your full vault
+- **Note images as vision context** — optional **Include images** checkbox on the AI Scope card; when checked, `![[photo.png]]` / `![](assets/…)` embeds in scoped notes are attached (vision-capable model required; max 8 images per run)
 - **Egress transparency** — folder, vault, and file scopes show an estimate of what will be sent before you confirm
 - **Agent Run Log** — persistent history of AI runs (runtime, tokens, estimated cost) in the main editor view
 - **Streaming responses** — output appears word-by-word in real-time; a spinning "thinking" indicator displays while the model processes your request
@@ -271,7 +272,7 @@ Metis/
 4. Switch to the **AI ✦** tab to select a persona and run your first prompt.
 5. When creating or editing a persona, click **↓ Models** to fetch the latest available models from the provider and pick from a dropdown.
 
-API keys are stored in your OS app-data directory (`~/Library/Application Support/com.metis.desktop/` on macOS) and are never sent anywhere other than your chosen AI provider. Only the specific note content needed for each task is ever transmitted — your full vault is never sent in a single call.
+API keys are stored in your OS app-data directory (`~/Library/Application Support/com.metis.desktop/` on macOS) and are never sent anywhere other than your chosen AI provider. Only the scoped notes (and, if **Include images** is checked, vault images those notes embed) needed for each task are transmitted — your full vault is never sent in a single call.
 
 Developer architecture docs live in the [**Metis.wiki**](https://github.com/ko800r/Metis/wiki) repository (see [Metis-Architecture](https://github.com/ko800r/Metis/wiki/Metis-Architecture)). File-level history: `specs/CHANGELOG.md`.
 

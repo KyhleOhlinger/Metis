@@ -4,6 +4,10 @@
  * All provider I/O goes through official @ai-sdk/* packages or
  * openai-compatible URLs — no native provider REST in Metis.
  *
+ * Agent chat is text-only unless `streamResponse` is given vault images
+ * (referenced embeds in scoped notes). Handwriting OCR uses
+ * `generateVisionCompletion` separately.
+ *
  * SECURITY: Only task-scoped content is sent to the cloud. API keys live in
  * app-data settings. Requests target URLs from user-configured profiles only.
  */
@@ -107,6 +111,12 @@ function mapSdkUsage(usage: {
   return { promptTokens, completionTokens, totalTokens };
 }
 
+export interface AgentVisionImagePart {
+  fileName: string;
+  mimeType: string;
+  dataBase64: string;
+}
+
 export interface StreamCallbacks {
   onChunk: (text: string) => void;
   onDone: (fullText: string, toolCalls: ParsedToolCall[], meta: LlmCompletionMeta) => void;
@@ -123,6 +133,23 @@ function createStreamErrorCapture() {
   };
 }
 
+function buildUserPayload(
+  context: string,
+  userMessage: string,
+  images: AgentVisionImagePart[],
+): string {
+  const contextBlock = context.trim()
+    ? `<context>\n${context.trim()}\n</context>\n\n`
+    : "";
+  const imageBlock =
+    images.length > 0
+      ? `<attached-images>\n${images
+          .map((img, i) => `${i + 1}. ${img.fileName} (${img.mimeType})`)
+          .join("\n")}\n</attached-images>\n\nThe images listed above are attached as visual input in the same order. Use them when the notes reference those files.\n\n`
+      : "";
+  return `${contextBlock}${imageBlock}${userMessage}`;
+}
+
 export function streamResponse(
   persona: Persona,
   context: string,
@@ -130,22 +157,37 @@ export function streamResponse(
   profile: AiProviderProfile,
   callbacks: StreamCallbacks,
   tools: ToolSet | undefined = agentFileTools,
+  images: AgentVisionImagePart[] = [],
 ): AbortController {
   const controller = new AbortController();
 
-  const contextBlock = context.trim()
-    ? `<context>\n${context.trim()}\n</context>\n\n`
-    : "";
-  const userPayload = `${contextBlock}${userMessage}`;
+  const userPayload = buildUserPayload(context, userMessage, images);
 
   void (async () => {
     const startedAt = Date.now();
     const { onError: onStreamError, getStreamError } = createStreamErrorCapture();
     try {
+      const imageParts = images.map((img) => ({
+        type: "image" as const,
+        image: `data:${img.mimeType};base64,${img.dataBase64}`,
+        mediaType: img.mimeType,
+      }));
       const result = streamText({
         model: resolveLanguageModel(profile, persona.model),
         system: persona.systemPrompt,
-        prompt: userPayload,
+        ...(imageParts.length > 0
+          ? {
+              messages: [
+                {
+                  role: "user" as const,
+                  content: [
+                    { type: "text" as const, text: userPayload },
+                    ...imageParts,
+                  ],
+                },
+              ],
+            }
+          : { prompt: userPayload }),
         tools: tools && Object.keys(tools).length > 0 ? tools : undefined,
         toolChoice: tools ? "auto" : undefined,
         abortSignal: controller.signal,
