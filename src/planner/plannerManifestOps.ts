@@ -91,13 +91,19 @@ export function setWeeklyReview(manifest: TaskManifest, monday: Date, content: s
 export function setMonthlyReview(
   manifest: TaskManifest,
   monday: Date,
-  patch: { content?: string; achievements?: string },
-  dateCompleted: string,
+  patch: { content?: string; achievements?: string; date_completed?: string | null },
 ): TaskManifest {
   const year = String(monday.getFullYear());
   const month = monthName(monday);
   const yearEntry = getYearEntry(manifest, year);
   const monthEntry = yearEntry[month] ?? makeEmptyMonthEntry();
+  const prev = monthEntry.monthly_review;
+  const dateCompleted =
+    patch.date_completed === undefined
+      ? prev.date_completed
+      : patch.date_completed === null
+        ? undefined
+        : patch.date_completed;
   return {
     ...manifest,
     [year]: {
@@ -105,7 +111,7 @@ export function setMonthlyReview(
       [month]: {
         ...monthEntry,
         monthly_review: {
-          ...monthEntry.monthly_review,
+          ...prev,
           ...(patch.content !== undefined ? { content: patch.content } : {}),
           ...(patch.achievements !== undefined ? { achievements: patch.achievements } : {}),
           date_completed: dateCompleted,

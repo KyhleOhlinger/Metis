@@ -15,7 +15,10 @@ export function usePlannerGoals(
     saveGoals(goalSections);
   }, [goalSections, hydrationComplete]);
 
-  const updateGoalSection = (id: string, patch: Partial<Pick<GoalSection, "title" | "content">>) => {
+  const updateGoalSection = (
+    id: string,
+    patch: Partial<Pick<GoalSection, "title" | "content" | "targetDate" | "archived">>,
+  ) => {
     setGoalSections((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   };
 
@@ -27,5 +30,30 @@ export function usePlannerGoals(
     setGoalSections((prev) => prev.filter((s) => s.id !== id));
   };
 
-  return { updateGoalSection, addGoalSection, removeGoalSection };
+  const moveGoalSection = (id: string, dir: -1 | 1) => {
+    setGoalSections((prev) => {
+      const i = prev.findIndex((s) => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      const [row] = next.splice(i, 1);
+      next.splice(j, 0, row!);
+      return next;
+    });
+  };
+
+  const reorderGoalSection = (fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    setGoalSections((prev) => {
+      const from = prev.findIndex((s) => s.id === fromId);
+      const to = prev.findIndex((s) => s.id === toId);
+      if (from < 0 || to < 0) return prev;
+      const next = [...prev];
+      const [row] = next.splice(from, 1);
+      next.splice(to, 0, row!);
+      return next;
+    });
+  };
+
+  return { updateGoalSection, addGoalSection, removeGoalSection, moveGoalSection, reorderGoalSection };
 }

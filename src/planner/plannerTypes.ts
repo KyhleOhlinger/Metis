@@ -104,6 +104,8 @@ export type GoalSection = {
   id: string;
   title: string;
   content: string;
+  targetDate?: string;
+  archived?: boolean;
 };
 
 export type ReviewTableRow = {

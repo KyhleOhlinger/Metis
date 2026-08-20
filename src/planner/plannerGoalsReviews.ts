@@ -42,6 +42,8 @@ export function loadGoals(): GoalSection[] {
         id: typeof row.id === "string" ? row.id : makeRowId(),
         title: row.title,
         content: typeof row.content === "string" ? row.content : "",
+        targetDate: typeof row.targetDate === "string" ? row.targetDate : undefined,
+        archived: row.archived === true,
       });
     }
     return out.length ? out : defaultGoalSections();

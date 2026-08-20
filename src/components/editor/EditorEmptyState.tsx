@@ -44,7 +44,7 @@ export function EditorEmptyState({
   const openSearch = () => {
     const store = useStore.getState();
     if (!store.vaultPath) return;
-    store.setSidebarView("search");
+    store.setPendingMenuAction("open-search");
   };
 
   return (

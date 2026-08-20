@@ -17,16 +17,18 @@ export interface PlannerTabBarProps {
 
 export default function PlannerTabBar({ tab, onTabChange }: PlannerTabBarProps) {
   return (
-    <div className="mt-2 flex items-center gap-1.5">
+    <div className="mt-2 flex flex-wrap items-center gap-0.5">
       {TABS.map(([id, label]) => (
         <button
           key={id}
+          type="button"
           onClick={() => onTabChange(id)}
+          aria-current={tab === id ? "page" : undefined}
           className={[
-            "rounded border px-2.5 py-1 text-[10px] font-medium transition-colors",
+            "rounded-md px-2.5 py-1 text-[10px] font-medium transition-colors",
             tab === id
-              ? "border-accent/40 bg-accent/20 text-accent"
-              : "border-border bg-surface-overlay text-text-secondary hover:text-text-primary",
+              ? "bg-accent/20 text-accent"
+              : "text-text-muted hover:bg-surface-overlay hover:text-text-primary",
           ].join(" ")}
         >
           {label}

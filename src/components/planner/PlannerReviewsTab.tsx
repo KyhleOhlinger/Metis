@@ -26,14 +26,7 @@ export default function PlannerReviewsTab({
 }: PlannerReviewsTabProps) {
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-semibold text-text-primary">Reviews</p>
-          <p className="mt-0.5 max-w-xl text-[10px] text-text-muted">
-            Same grid pattern as Daily Log: <code className="text-[9px]">gap-1.5</code> gutters, purple rounded column and
-            row headers, and card-style markdown cells (saved in <code className="text-[9px]">reviews.json</code>).
-          </p>
-        </div>
+      <div className="flex justify-end">
         <button
           type="button"
           onClick={onAddRow}

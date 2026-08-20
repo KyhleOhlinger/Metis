@@ -6,9 +6,9 @@ import {
   applyTrackerOverrides,
   getTracker,
   getYearEntry,
-  lastFridayOfMonth,
   makeEmptyMonthEntry,
   mondaysInCalendarMonth,
+  monthEntryFor,
   monthName,
   monthStart,
   parseWeekStartFromKey,
@@ -95,18 +95,27 @@ export function usePlannerManifest(
   };
 
   const updateMonthlyReview = (monday: Date, content: string) => {
-    const monthLastFriday = lastFridayOfMonth(monday);
     setManifest((prev) => {
-      const updated = setMonthlyReview(prev, monday, { content }, toIsoDate(monthLastFriday));
+      const updated = setMonthlyReview(prev, monday, { content });
       saveManifest(updated);
       return updated;
     });
   };
 
   const updateMonthlyAchievements = (monday: Date, achievements: string) => {
-    const monthLastFriday = lastFridayOfMonth(monday);
     setManifest((prev) => {
-      const updated = setMonthlyReview(prev, monday, { achievements }, toIsoDate(monthLastFriday));
+      const updated = setMonthlyReview(prev, monday, { achievements });
+      saveManifest(updated);
+      return updated;
+    });
+  };
+
+  const toggleMonthlyComplete = (monday: Date) => {
+    setManifest((prev) => {
+      const current = monthEntryFor(prev, monday).monthly_review.date_completed;
+      const updated = setMonthlyReview(prev, monday, {
+        date_completed: current ? null : toIsoDate(new Date()),
+      });
       saveManifest(updated);
       return updated;
     });
@@ -133,5 +142,6 @@ export function usePlannerManifest(
     updateWeeklyReview,
     updateMonthlyReview,
     updateMonthlyAchievements,
+    toggleMonthlyComplete,
   };
 }

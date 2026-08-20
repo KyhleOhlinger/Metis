@@ -2,6 +2,7 @@ import { type MutableRefObject } from "react";
 import type { EditorView } from "@codemirror/view";
 import { PLANNER_GRID_HEADER } from "@/planner/plannerStorage";
 import PlannerMarkdownCell from "./PlannerMarkdownCell";
+import { appConfirm } from "@/store/useToastStore";
 
 /** One review row — mirrors `ReviewTableRow` in DailyTaskGrid (kept separate to avoid circular imports). */
 export type ReviewsPlannerRow = {
@@ -177,7 +178,14 @@ function ReviewsPlannerDataRow({
       <div className="flex min-h-[96px] items-center justify-center">
         <button
           type="button"
-          onClick={() => onRemoveRow(row.id)}
+          onClick={async () => {
+            const ok = await appConfirm("Remove this review row? This cannot be undone.", {
+              title: "Remove review",
+              confirmLabel: "Remove",
+              danger: true,
+            });
+            if (ok) onRemoveRow(row.id);
+          }}
           className="rounded border border-border px-2 py-1 text-[9px] text-red-300 hover:text-red-200"
         >
           Remove

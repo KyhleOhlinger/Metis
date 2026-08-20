@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { PlannerTab } from "@/planner/plannerStorage";
 import {
   dayNameFromDate,
@@ -8,6 +8,7 @@ import {
   weekKey,
 } from "@/planner/plannerStorage";
 import type { PlannerNavigateTarget } from "@/store/plannerNavigation";
+import type { TrackerFocus } from "@/planner/usePlannerTracker";
 
 export function usePlannerNavigation(options: {
   plannerNavigateTo: PlannerNavigateTarget | null;
@@ -16,11 +17,12 @@ export function usePlannerNavigation(options: {
   tab: PlannerTab;
   setTab: (tab: PlannerTab) => void;
   anchorWeek: Date;
-  setAnchorWeek: React.Dispatch<React.SetStateAction<Date>>;
+  setAnchorWeek: Dispatch<SetStateAction<Date>>;
   dailyExpandedCellKey: string | null;
-  setDailyExpandedCellKey: React.Dispatch<React.SetStateAction<string | null>>;
-  setActivePlannerFieldKey: React.Dispatch<React.SetStateAction<string | null>>;
+  setDailyExpandedCellKey: Dispatch<SetStateAction<string | null>>;
+  setActivePlannerFieldKey: Dispatch<SetStateAction<string | null>>;
   monthlyReviewYear: number;
+  setTrackerFocus: (focus: TrackerFocus) => void;
 }) {
   const {
     plannerNavigateTo,
@@ -33,6 +35,7 @@ export function usePlannerNavigation(options: {
     setDailyExpandedCellKey,
     setActivePlannerFieldKey,
     monthlyReviewYear,
+    setTrackerFocus,
   } = options;
 
   useEffect(() => {
@@ -51,6 +54,16 @@ export function usePlannerNavigation(options: {
         } else {
           setDailyExpandedCellKey(null);
         }
+        requestAnimationFrame(() => {
+          const root = plannerScrollRef.current;
+          const sel = day
+            ? `[data-daily-cell="${weekKey(monday)}_${day}"]`
+            : "[data-daily-today]";
+          root?.querySelector<HTMLElement>(sel)?.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+          });
+        });
       }
     } else if (target.kind === "weekly") {
       const d = parseIsoDateLocal(target.dateIso);
@@ -66,6 +79,11 @@ export function usePlannerNavigation(options: {
         const row = el?.querySelector<HTMLElement>(`[data-monthly-row="${target.monthIndex}"]`);
         row?.scrollIntoView({ block: "start" });
       });
+    } else if (target.kind === "tab") {
+      setTab(target.tab);
+    } else if (target.kind === "tracker") {
+      setTab("tracker");
+      setTrackerFocus(target.focus ?? null);
     }
 
     clearPlannerNavigateTo();
@@ -76,6 +94,7 @@ export function usePlannerNavigation(options: {
     setTab,
     setAnchorWeek,
     setDailyExpandedCellKey,
+    setTrackerFocus,
   ]);
 
   useEffect(() => {
@@ -91,6 +110,14 @@ export function usePlannerNavigation(options: {
           return;
         }
       }
+      if (tab === "tracker") {
+        const row = el.querySelector<HTMLElement>("[data-tracker-focus]");
+        if (row) {
+          row.scrollIntoView({ block: "nearest" });
+          row.querySelector<HTMLInputElement>("input, select")?.focus();
+          return;
+        }
+      }
       el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
     });
   }, [tab, dailyExpandedCellKey, monthlyReviewYear, plannerScrollRef]);
@@ -99,8 +126,4 @@ export function usePlannerNavigation(options: {
     if (tab !== "daily") setDailyExpandedCellKey(null);
     setActivePlannerFieldKey(null);
   }, [tab, setDailyExpandedCellKey, setActivePlannerFieldKey]);
-
-  useEffect(() => {
-    setDailyExpandedCellKey(null);
-  }, [options.anchorWeek, setDailyExpandedCellKey]);
 }

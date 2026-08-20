@@ -71,6 +71,7 @@ pub fn run() {
             planner::planner_restore_shared_from_vault,
             agent_run_log::load_agent_run_log,
             agent_run_log::append_agent_run_log,
+            agent_run_log::load_agent_run_transcript,
             agent_run_log::clear_agent_run_log,
             ai_context::get_file_summaries,
             ai_context::get_files_content,

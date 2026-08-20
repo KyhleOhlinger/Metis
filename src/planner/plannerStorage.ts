@@ -7,3 +7,6 @@ export * from "./plannerManifestOps";
 export * from "./plannerGoalsReviews";
 export * from "./plannerTemplatesEngine";
 export * from "./plannerTrackerSync";
+export * from "./plannerUpcoming";
+export * from "./plannerExportMarkdown";
+export * from "./dailyWeekSpan";

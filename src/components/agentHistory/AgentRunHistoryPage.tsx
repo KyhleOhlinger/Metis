@@ -32,6 +32,7 @@ import {
   formatRunTokenSummary,
 } from "../../utils/modelPricing";
 import { appConfirm, toastError, toastSuccess } from "../../store/useToastStore";
+import { RunTranscriptActions } from "./RunTranscriptActions";
 
 function statusBadge(status: AgentRunStatus): string {
   switch (status) {
@@ -72,6 +73,14 @@ function RunDetail({
           <span className="font-semibold text-text-secondary">Response preview</span>
           <p className="mt-0.5 whitespace-pre-wrap break-words">{entry.responsePreview}</p>
         </div>
+      )}
+      {(showPrompt || showResponse) && (
+        <RunTranscriptActions
+          runId={entry.id}
+          hasTranscript={entry.hasTranscript}
+          showRequest={showPrompt}
+          showResponse={showResponse}
+        />
       )}
       {showResponse && entry.errorMessage && (
         <div>
@@ -431,7 +440,7 @@ export default function AgentRunHistoryPage() {
             <p className="mt-1 max-w-sm text-[11px] text-text-muted/70">
               {activeFilters
                 ? "Try adjusting search, date range, status, or agent type."
-                : "Runs from the Command Center AI tab appear here with runtime, token usage, and estimated cost."}
+                : "Runs from the Command Center AI tab appear here. Expand a run to load the full request or response from its sidecar transcript."}
             </p>
           </div>
         ) : (

@@ -35,6 +35,7 @@ export interface PlannerDailyTabProps {
   onNavigateToTracker: (focus: { type: TrackerFocusType; id: string }) => void;
   isOnOrAfterToday: (date: Date) => boolean;
   toolbarViewRef: MutableRefObject<EditorView | null>;
+  onWeekHeaderClick: (monday: Date) => void;
 }
 
 export default function PlannerDailyTab({
@@ -52,28 +53,33 @@ export default function PlannerDailyTab({
   onNavigateToTracker,
   isOnOrAfterToday,
   toolbarViewRef,
+  onWeekHeaderClick,
 }: PlannerDailyTabProps) {
   return (
     <div
       ref={shellRef}
       className={[
-        "grid min-w-[980px] gap-1.5",
+        "grid gap-1.5",
         dailyGridWeighted ? "min-h-0 flex-1" : "",
       ].join(" ")}
       style={{
+        minWidth: `${110 + visibleWeeks.length * 210}px`,
         gridTemplateColumns: dailyGridTemplateColumns,
         ...(dailyGridTemplateRows ? { gridTemplateRows: dailyGridTemplateRows } : {}),
       }}
     >
       <div style={{ gridColumn: 1, gridRow: 1 }} aria-hidden />
       {visibleWeeks.map((monday, wi) => (
-        <div
+        <button
           key={`hdr-${monday.toISOString()}`}
+          type="button"
           style={{ gridColumn: wi + 2, gridRow: 1 }}
-          className={PLANNER_GRID_HEADER}
+          className={`${PLANNER_GRID_HEADER} cursor-pointer hover:text-accent`}
+          title="Open Weekly Review for this week"
+          onClick={() => onWeekHeaderClick(monday)}
         >
           {weekHeader(monday)}
-        </div>
+        </button>
       ))}
 
       {DAY_NAMES.map((day, di) => (
@@ -111,13 +117,15 @@ export default function PlannerDailyTab({
             const didLabel = useTemplateLabels
               ? layoutTemplates.dailySecondaryLabel
               : DEFAULT_LAYOUT_TEMPLATES.dailySecondaryLabel;
-            const specialBlockClass = dailyGridWeighted
-              ? "flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto py-2 text-center text-[12px] font-semibold text-green-400"
-              : "flex h-[158px] items-center justify-center text-center text-[12px] font-semibold text-green-400";
+              const specialBlockClass = dailyGridWeighted
+              ? "flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto py-2 text-center text-[12px] font-semibold text-accent"
+              : "flex h-[158px] items-center justify-center text-center text-[12px] font-semibold text-accent";
 
             return (
               <div
                 key={`${monday.toISOString()}-${day}`}
+                data-daily-cell={cellFocusKey}
+                data-daily-today={isTodayCell ? "" : undefined}
                 style={{ gridColumn: wi + 2, gridRow: di + 2 }}
                 className={[
                   "rounded-md border border-border bg-surface-overlay/30 p-2",
@@ -137,17 +145,18 @@ export default function PlannerDailyTab({
                 }}
               >
                 {cell.officeTripBanner && (
-                  <div className="mb-2 shrink-0 rounded border border-sky-400/40 bg-sky-500/10 px-2 py-1 text-[10px] text-sky-200">
+                  <div className="mb-2 shrink-0 rounded border border-accent/40 bg-accent/10 px-2 py-1 text-[10px] text-text-primary">
                     <div className="font-semibold">{cell.officeTripBanner}</div>
                     {cell.officeTripEventId && (
                       <button
+                        type="button"
                         onClick={() =>
                           onNavigateToTracker({
                             type: "trip",
                             id: cell.officeTripEventId!,
                           })
                         }
-                        className="mt-1 underline underline-offset-2 text-sky-200"
+                        className="mt-1 text-accent underline underline-offset-2"
                       >
                         Edit Event
                       </button>
@@ -166,7 +175,7 @@ export default function PlannerDailyTab({
                         label: nextStatus === "work" ? undefined : SPECIAL_LABELS[nextStatus],
                       });
                     }}
-                    className="w-full rounded border border-border bg-surface-raised px-1.5 py-1 text-[10px] text-text-secondary"
+                    className="w-auto max-w-full rounded border border-border bg-surface-raised px-1 py-0.5 text-[9px] leading-tight text-text-secondary"
                   >
                     <option value="work">Work</option>
                     <option value="holiday">Public Holiday</option>
@@ -183,13 +192,14 @@ export default function PlannerDailyTab({
                       <div>{cell.label ?? SPECIAL_LABELS[cell.status as Exclude<TaskStatus, "work">]}</div>
                       {trackerControlled && (
                         <button
+                          type="button"
                           onClick={() =>
                             onNavigateToTracker({
                               type: cell.trackerSourceType!,
                               id: cell.trackerSourceId!,
                             })
                           }
-                          className="mt-2 text-[10px] underline underline-offset-2 text-accent"
+                          className="mt-2 text-[10px] text-accent underline underline-offset-2"
                         >
                           Edit Event
                         </button>

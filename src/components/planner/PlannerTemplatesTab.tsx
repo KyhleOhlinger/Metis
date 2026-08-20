@@ -9,6 +9,23 @@ import type {
 import { DAY_NAMES, recurrenceLabel } from "@/planner/plannerStorage";
 import type { PendingTemplateAction } from "@/planner/usePlanTemplates";
 import PlannerMarkdownCell from "./PlannerMarkdownCell";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import { SegmentButton } from "../commandCenter/shared/ui";
+
+function TemplateField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block min-w-0">
+      <span className="text-[9px] font-medium text-text-muted">{label}</span>
+      <div className="mt-0.5">{children}</div>
+    </label>
+  );
+}
+
+const fieldCls =
+  "w-full rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary";
+const fieldOverlayCls =
+  "w-full rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary";
 
 export interface PlannerTemplatesTabProps {
   templates: PlanTemplate[];
@@ -103,55 +120,76 @@ export default function PlannerTemplatesTab({
   onActivateField,
   toolbarViewRef,
 }: PlannerTemplatesTabProps) {
+  const [pane, setPane] = useState<"plan" | "layout">("plan");
   return (
     <div className="rounded-md border border-border bg-surface-overlay/30 p-2">
+      <div className="mb-2 flex items-center gap-1">
+        <SegmentButton active={pane === "plan"} onClick={() => setPane("plan")}>
+          Plan templates
+        </SegmentButton>
+        <SegmentButton active={pane === "layout"} onClick={() => setPane("layout")}>
+          Layout
+        </SegmentButton>
+      </div>
+      {pane === "plan" && (
+        <>
       <p className="text-[11px] font-semibold text-text-primary">Template Cadence</p>
       <p className="mt-0.5 text-[10px] text-text-muted">
         Auto-populates empty "What do I want to do" entries by cadence.
       </p>
       <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_140px_140px_140px_140px]">
-        <input
-          value={templateName}
-          onChange={(e) => setTemplateName(e.target.value)}
-          placeholder="Template name (optional)"
-          className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-        />
-        <select
-          value={templateCadence}
-          onChange={(e) => setTemplateCadence(e.target.value as TemplateCadence)}
-          className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-        >
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-          <option value="interval">Interval (days)</option>
-        </select>
-        <input
-          type="date"
-          value={templateStartDate}
-          onChange={(e) => setTemplateStartDate(e.target.value)}
-          className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary"
-        />
-        <input
-          type="number"
-          min={1}
-          value={templateIntervalDaysInput}
-          disabled={templateCadence !== "interval"}
-          onChange={(e) => setTemplateIntervalDaysInput(e.target.value)}
-          className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-        />
-        <select
-          value={templateRecurrenceDay}
-          disabled={templateCadence === "daily"}
-          onChange={(e) => setTemplateRecurrenceDay(e.target.value as DayName)}
-          className="rounded border border-border bg-surface-raised px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-        >
-          {DAY_NAMES.map((day) => (
-            <option key={day} value={day}>
-              {day}
-            </option>
-          ))}
-        </select>
+        <TemplateField label="Name">
+          <input
+            value={templateName}
+            onChange={(e) => setTemplateName(e.target.value)}
+            placeholder="Optional"
+            className={fieldCls}
+          />
+        </TemplateField>
+        <TemplateField label="Cadence">
+          <select
+            value={templateCadence}
+            onChange={(e) => setTemplateCadence(e.target.value as TemplateCadence)}
+            className={fieldCls}
+          >
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="interval">Interval (days)</option>
+          </select>
+        </TemplateField>
+        <TemplateField label="Start date">
+          <input
+            type="date"
+            value={templateStartDate}
+            onChange={(e) => setTemplateStartDate(e.target.value)}
+            className={fieldCls}
+          />
+        </TemplateField>
+        <TemplateField label="Interval (days)">
+          <input
+            type="number"
+            min={1}
+            value={templateIntervalDaysInput}
+            disabled={templateCadence !== "interval"}
+            onChange={(e) => setTemplateIntervalDaysInput(e.target.value)}
+            className={`${fieldCls} disabled:opacity-50`}
+          />
+        </TemplateField>
+        <TemplateField label="Recurs on">
+          <select
+            value={templateRecurrenceDay}
+            disabled={templateCadence === "daily"}
+            onChange={(e) => setTemplateRecurrenceDay(e.target.value as DayName)}
+            className={`${fieldCls} disabled:opacity-50`}
+          >
+            {DAY_NAMES.map((day) => (
+              <option key={day} value={day}>
+                {day}
+              </option>
+            ))}
+          </select>
+        </TemplateField>
       </div>
       <div className="mt-2 flex items-start gap-2">
         <div className="min-h-[64px] flex-1">
@@ -166,6 +204,7 @@ export default function PlannerTemplatesTab({
           />
         </div>
         <button
+          type="button"
           onClick={onAddTemplate}
           className="rounded border border-accent/40 bg-accent/20 px-3 py-1.5 text-[10px] font-semibold text-accent"
         >
@@ -177,25 +216,28 @@ export default function PlannerTemplatesTab({
           {templates.map((t) => (
             <div
               key={t.id}
-              className="flex items-center justify-between rounded border border-border bg-surface-raised px-2 py-1 text-[10px]"
+              className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-surface-raised px-2 py-1 text-[10px]"
             >
-              <span className="truncate text-text-secondary">
+              <span className="min-w-0 truncate text-text-secondary">
                 {t.name} · {recurrenceLabel(t)}
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
+                  type="button"
                   onClick={() => onStartEditTemplate(t)}
                   className="rounded border border-border px-1.5 py-0.5 text-text-secondary hover:text-text-primary"
                 >
                   Edit
                 </button>
                 <button
+                  type="button"
                   onClick={() => onToggleTemplate(t.id)}
                   className="rounded border border-border px-1.5 py-0.5 text-text-secondary hover:text-text-primary"
                 >
                   {t.enabled ? "Disable" : "Enable"}
                 </button>
                 <button
+                  type="button"
                   onClick={() => onDeleteTemplate(t.id)}
                   className="rounded border border-red-400/40 px-1.5 py-0.5 text-red-300"
                 >
@@ -226,12 +268,14 @@ export default function PlannerTemplatesTab({
               className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
             />
             <button
+              type="button"
               onClick={onConfirmTemplateAction}
               className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
             >
               Confirm
             </button>
             <button
+              type="button"
               onClick={onCancelTemplateAction}
               className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
             >
@@ -244,47 +288,57 @@ export default function PlannerTemplatesTab({
         <div className="mt-2 rounded border border-border bg-surface-raised p-2">
           <p className="text-[10px] font-semibold text-text-primary">Edit Template</p>
           <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_140px_140px_140px_140px]">
-            <input
-              value={editTemplateName}
-              onChange={(e) => setEditTemplateName(e.target.value)}
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-            />
-            <select
-              value={editTemplateCadence}
-              onChange={(e) => setEditTemplateCadence(e.target.value as TemplateCadence)}
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="interval">Interval (days)</option>
-            </select>
-            <input
-              type="date"
-              value={editTemplateStartDate}
-              onChange={(e) => setEditTemplateStartDate(e.target.value)}
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary"
-            />
-            <input
-              type="number"
-              min={1}
-              value={editTemplateIntervalDaysInput}
-              disabled={editTemplateCadence !== "interval"}
-              onChange={(e) => setEditTemplateIntervalDaysInput(e.target.value)}
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-            />
-            <select
-              value={editTemplateRecurrenceDay}
-              disabled={editTemplateCadence === "daily"}
-              onChange={(e) => setEditTemplateRecurrenceDay(e.target.value as DayName)}
-              className="rounded border border-border bg-surface-overlay px-2 py-1 text-[10px] text-text-primary disabled:opacity-50"
-            >
-              {DAY_NAMES.map((day) => (
-                <option key={day} value={day}>
-                  {day}
-                </option>
-              ))}
-            </select>
+            <TemplateField label="Name">
+              <input
+                value={editTemplateName}
+                onChange={(e) => setEditTemplateName(e.target.value)}
+                className={fieldOverlayCls}
+              />
+            </TemplateField>
+            <TemplateField label="Cadence">
+              <select
+                value={editTemplateCadence}
+                onChange={(e) => setEditTemplateCadence(e.target.value as TemplateCadence)}
+                className={fieldOverlayCls}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="interval">Interval (days)</option>
+              </select>
+            </TemplateField>
+            <TemplateField label="Start date">
+              <input
+                type="date"
+                value={editTemplateStartDate}
+                onChange={(e) => setEditTemplateStartDate(e.target.value)}
+                className={fieldOverlayCls}
+              />
+            </TemplateField>
+            <TemplateField label="Interval (days)">
+              <input
+                type="number"
+                min={1}
+                value={editTemplateIntervalDaysInput}
+                disabled={editTemplateCadence !== "interval"}
+                onChange={(e) => setEditTemplateIntervalDaysInput(e.target.value)}
+                className={`${fieldOverlayCls} disabled:opacity-50`}
+              />
+            </TemplateField>
+            <TemplateField label="Recurs on">
+              <select
+                value={editTemplateRecurrenceDay}
+                disabled={editTemplateCadence === "daily"}
+                onChange={(e) => setEditTemplateRecurrenceDay(e.target.value as DayName)}
+                className={`${fieldOverlayCls} disabled:opacity-50`}
+              >
+                {DAY_NAMES.map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </TemplateField>
           </div>
           <div className="mt-2 min-h-[64px] w-full">
             <PlannerMarkdownCell
@@ -299,12 +353,14 @@ export default function PlannerTemplatesTab({
           </div>
           <div className="mt-2 flex items-center gap-1.5">
             <button
+              type="button"
               onClick={onSaveTemplateEdits}
               className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
             >
               Save
             </button>
             <button
+              type="button"
               onClick={onCancelEditTemplate}
               className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary"
             >
@@ -313,7 +369,10 @@ export default function PlannerTemplatesTab({
           </div>
         </div>
       )}
-      <div className="mt-3 rounded-md border border-border bg-surface-raised p-2">
+        </>
+      )}
+      {pane === "layout" && (
+      <div className="rounded-md border border-border bg-surface-raised p-2">
         <p className="text-[11px] font-semibold text-text-primary">
           Review & Block Templates (applies from today onward)
         </p>
@@ -423,6 +482,7 @@ export default function PlannerTemplatesTab({
             </div>
           </label>
           <button
+            type="button"
             onClick={onApplyMonthlyPromptTemplate}
             className="mt-2 rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
           >
@@ -430,6 +490,7 @@ export default function PlannerTemplatesTab({
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }

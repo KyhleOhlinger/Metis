@@ -9,6 +9,8 @@ import {
   plannerAdaptiveHighlightStyle,
   plannerMarkdownVisualExtensions,
 } from "./editorExtensions";
+import { makeSpellcheckExt } from "./editor/editorSpellcheck";
+import { usePersonaStore } from "@/store/usePersonaStore";
 
 const plannerCmBaseTheme = EditorView.theme(
   {
@@ -140,8 +142,11 @@ export default function PlannerCodeMirrorField({
   onEditorFocusRef.current = onEditorFocus;
   const onEditorBlurRef = useRef(onEditorBlur);
   onEditorBlurRef.current = onEditorBlur;
+  const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
+  const spellcheckLang = usePersonaStore((s) => s.settings.spellcheckLanguage ?? "en_US");
   const sizeCompartmentRef = useRef(new Compartment());
   const fontCompartmentRef = useRef(new Compartment());
+  const spellcheckCompartmentRef = useRef(new Compartment());
   const fillHeightRef = useRef(fillHeight);
   fillHeightRef.current = fillHeight;
   const resizableRef = useRef(resizable);
@@ -180,6 +185,7 @@ export default function PlannerCodeMirrorField({
         sizeCompartmentRef.current.of(
           makeSizeTheme(minHeightRef.current, fillHeightRef.current, resizableRef.current),
         ),
+        spellcheckCompartmentRef.current.of(makeSpellcheckExt(spellcheckEnabled, spellcheckLang)),
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;
           const text = update.state.doc.toString();
@@ -235,6 +241,16 @@ export default function PlannerCodeMirrorField({
       ],
     });
   }, [minHeightPx, fillHeight, resizable, fontSizePx]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: spellcheckCompartmentRef.current.reconfigure(
+        makeSpellcheckExt(spellcheckEnabled, spellcheckLang),
+      ),
+    });
+  }, [spellcheckEnabled, spellcheckLang]);
 
   useEffect(() => {
     const view = viewRef.current;
