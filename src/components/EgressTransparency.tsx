@@ -95,34 +95,38 @@ export function EgressTransparency({
 
   if (!hasApiKey) {
     return (
-      <div className="shrink-0 border-b border-border px-3 py-2">
+      <div className="shrink-0 border-b border-border px-3 py-1.5">
         <InlineBanner>
-          <SubsectionLabel>Data sent to AI</SubsectionLabel>
-          <p className="mt-1">
-            Configure an API key in settings to preview what will be sent for this scope.
-          </p>
+          <div className="max-h-16 overflow-y-auto">
+            <SubsectionLabel>Data sent to AI</SubsectionLabel>
+            <p className="mt-1">
+              Configure an API key in settings to preview what will be sent for this scope.
+            </p>
+          </div>
         </InlineBanner>
       </div>
     );
   }
 
   return (
-    <div className="shrink-0 border-b border-border px-3 py-2">
+    <div className="shrink-0 border-b border-border px-3 py-1.5">
       <InlineBanner>
-        <SubsectionLabel>Data sent to AI</SubsectionLabel>
-        {loading && !estimate ? (
-          <p className="mt-1 italic">Estimating scope…</p>
-        ) : estimate ? (
-          <p className="mt-1 text-text-secondary">{egressEstimateSummary(estimate)}</p>
-        ) : (
-          <p className="mt-1 italic">Could not estimate scope.</p>
-        )}
-        <div className="mt-1.5">
-          <Hint>
-            {includeImages
-              ? `Only notes in the selected scope are considered. Referenced vault images will be attached (max ${MAX_AGENT_VISION_IMAGES}) so a vision model can see them. Your prompt and system prompt are included separately.`
-              : "Only notes in the selected scope are considered. Check Include images on the Scope card to attach referenced vault images. Your prompt and system prompt are included separately."}
-          </Hint>
+        <div className="max-h-16 overflow-y-auto pr-0.5">
+          <SubsectionLabel>Data sent to AI</SubsectionLabel>
+          {loading && !estimate ? (
+            <p className="mt-1 italic">Estimating scope…</p>
+          ) : estimate ? (
+            <p className="mt-1 text-text-secondary">{egressEstimateSummary(estimate)}</p>
+          ) : (
+            <p className="mt-1 italic">Could not estimate scope.</p>
+          )}
+          <div className="mt-1">
+            <Hint>
+              {includeImages
+                ? `Only notes in the selected scope are considered. Referenced vault images will be attached (max ${MAX_AGENT_VISION_IMAGES}) so a vision model can see them. Your prompt and system prompt are included separately.`
+                : "Only notes in the selected scope are considered. Check Include images on the Scope card to attach referenced vault images. Your prompt and system prompt are included separately."}
+            </Hint>
+          </div>
         </div>
       </InlineBanner>
     </div>

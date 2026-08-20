@@ -6,6 +6,7 @@ import { usePersonaStore } from "../store/usePersonaStore";
 import { STATUS_COLORS } from "../constants";
 import { toastError } from "../store/useToastStore";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
+import { toIsoDate } from "@/planner/plannerStorage";
 
 interface PaletteAction {
   id: string;
@@ -27,9 +28,10 @@ export default function CommandPalette({ onClose }: Props) {
   const noteIndex = useStore((s) => s.noteIndex);
   const setActiveFile = useStore((s) => s.setActiveFile);
   const openPlannerTab = useStore((s) => s.openPlannerTab);
+  const navigatePlannerTo = useStore((s) => s.navigatePlannerTo);
   const setEditorTab = useStore((s) => s.setEditorTab);
   const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
-  const setSidebarView = useStore((s) => s.setSidebarView);
+  const requestCommandCenter = useStore((s) => s.requestCommandCenter);
   const openSettings = usePersonaStore((s) => s.openSettings);
 
   const commandMode = query.startsWith(">");
@@ -37,11 +39,166 @@ export default function CommandPalette({ onClose }: Props) {
   const actions: PaletteAction[] = useMemo(
     () => [
       {
+        id: "vault-search",
+        label: "Search vault",
+        hint: "⌘⇧F",
+        run: () => {
+          setPendingMenuAction("open-search");
+          onClose();
+        },
+      },
+      {
+        id: "new-note",
+        label: "New note",
+        hint: "⌘N",
+        run: () => {
+          setPendingMenuAction("new-note");
+          onClose();
+        },
+      },
+      {
+        id: "new-folder",
+        label: "New folder",
+        hint: "⌘⇧N",
+        run: () => {
+          setPendingMenuAction("new-folder");
+          onClose();
+        },
+      },
+      {
+        id: "daily-note",
+        label: "Open daily note",
+        hint: "⌘D",
+        run: () => {
+          setPendingMenuAction("daily-note");
+          onClose();
+        },
+      },
+      {
         id: "planner",
         label: "Open Planner",
         hint: "workspace",
         run: () => {
           openPlannerTab();
+          onClose();
+        },
+      },
+      {
+        id: "planner-week",
+        label: "Planner: this week",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "daily", dateIso: toIsoDate(new Date()) });
+          onClose();
+        },
+      },
+      {
+        id: "planner-weekly",
+        label: "Planner: Weekly Review",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "weekly" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-monthly",
+        label: "Planner: Monthly Review",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "monthly" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-pto",
+        label: "Planner: PTO & Events",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "tracker" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-goals",
+        label: "Planner: Goals",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "goals" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-templates",
+        label: "Planner: Templates",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "templates" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-reviews",
+        label: "Planner: Reviews",
+        hint: "workspace",
+        run: () => {
+          navigatePlannerTo({ kind: "tab", tab: "reviews" });
+          onClose();
+        },
+      },
+      {
+        id: "planner-export-week",
+        label: "Export planner week",
+        hint: "markdown",
+        run: () => {
+          openPlannerTab();
+          setPendingMenuAction("planner-export-week");
+          onClose();
+        },
+      },
+      {
+        id: "planner-export-month",
+        label: "Export planner month",
+        hint: "markdown",
+        run: () => {
+          openPlannerTab();
+          setPendingMenuAction("planner-export-month");
+          onClose();
+        },
+      },
+      {
+        id: "source",
+        label: "Switch to Source",
+        hint: "view",
+        run: () => {
+          setEditorTab("source");
+          onClose();
+        },
+      },
+      {
+        id: "visual",
+        label: "Switch to Visual",
+        hint: "view",
+        run: () => {
+          setEditorTab("visual");
+          onClose();
+        },
+      },
+      {
+        id: "focus-ai",
+        label: "Focus Command Center AI",
+        hint: "AI",
+        run: () => {
+          requestCommandCenter("ai");
+          onClose();
+        },
+      },
+      {
+        id: "focus-cc-info",
+        label: "Focus Command Center Info",
+        hint: "workspace",
+        run: () => {
+          requestCommandCenter("info");
           onClose();
         },
       },
@@ -55,14 +212,6 @@ export default function CommandPalette({ onClose }: Props) {
         },
       },
       {
-        id: "export",
-        label: "Export…",
-        run: () => {
-          setPendingMenuAction("export-hub");
-          onClose();
-        },
-      },
-      {
         id: "settings",
         label: "Open Settings",
         hint: "⌘,",
@@ -72,32 +221,87 @@ export default function CommandPalette({ onClose }: Props) {
         },
       },
       {
-        id: "vault-search",
-        label: "Search Vault",
-        hint: "⌘⇧F",
+        id: "settings-theme",
+        label: "Open Settings: App theme",
+        hint: "⌘,",
         run: () => {
-          setSidebarView("search");
+          openSettings("editor");
           onClose();
         },
       },
       {
-        id: "source",
-        label: "Switch to Source",
+        id: "settings-planner",
+        label: "Open Settings: Planner",
+        hint: "⌘,",
         run: () => {
-          setEditorTab("source");
+          openSettings("planner");
           onClose();
         },
       },
       {
-        id: "visual",
-        label: "Switch to Visual",
+        id: "settings-hotkeys",
+        label: "Open Settings: Hotkeys",
+        hint: "⌘,",
         run: () => {
-          setEditorTab("visual");
+          openSettings("hotkeys");
+          onClose();
+        },
+      },
+      {
+        id: "settings-ai",
+        label: "Open Settings: AI",
+        hint: "⌘,",
+        run: () => {
+          openSettings("ai");
+          onClose();
+        },
+      },
+      {
+        id: "settings-export",
+        label: "Open Settings: Export",
+        hint: "⌘,",
+        run: () => {
+          openSettings("export");
+          onClose();
+        },
+      },
+      {
+        id: "export",
+        label: "Export…",
+        hint: "file",
+        run: () => {
+          setPendingMenuAction("export-hub");
+          onClose();
+        },
+      },
+      {
+        id: "open-vault",
+        label: "Open vault",
+        hint: "⌘O",
+        run: () => {
+          setPendingMenuAction("open-vault-picker");
+          onClose();
+        },
+      },
+      {
+        id: "new-vault",
+        label: "Create vault",
+        hint: "file",
+        run: () => {
+          setPendingMenuAction("new-vault");
           onClose();
         },
       },
     ],
-    [onClose, openSettings, openPlannerTab, setEditorTab, setPendingMenuAction, setSidebarView],
+    [
+      onClose,
+      openSettings,
+      openPlannerTab,
+      navigatePlannerTo,
+      setEditorTab,
+      setPendingMenuAction,
+      requestCommandCenter,
+    ],
   );
 
   const actionQuery = commandMode ? query.slice(1).trim() : "";

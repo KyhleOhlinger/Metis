@@ -23,6 +23,58 @@ export interface AgentRunToolCall {
   path?: string;
 }
 
+/** Full request/response body stored beside the index in `agent-run-transcripts/`. */
+export interface AgentRunTranscriptToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface AgentRunTranscript {
+  id: string;
+  userMessage: string;
+  response: string;
+  errorMessage?: string;
+  /** Retrieved vault context sent with the request (no image bytes). */
+  context?: string;
+  /** Persona system prompt snapshot at run time. */
+  systemPrompt?: string;
+  /** Image filenames attached as vision input (not the pixels). */
+  attachedImages?: string[];
+  toolCalls?: AgentRunTranscriptToolCall[];
+}
+
+export interface AgentRunLogEntry {
+  id: string;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  status: AgentRunStatus;
+
+  personaId: string;
+  personaName: string;
+  agentType: AgentType;
+  model: string;
+  providerProfileId: string;
+  providerLabel: string;
+
+  scope: ExecutionScope;
+  scopeLabel: string;
+  activeFilePath: string | null;
+  vaultPath: string | null;
+
+  userMessage: string;
+  responsePreview: string;
+  errorMessage?: string;
+
+  contextStrategy?: ContextStrategy;
+  toolCalls?: AgentRunToolCall[];
+
+  usage?: AgentRunUsage;
+  estimatedCostUsd?: number;
+  /** True when a sidecar transcript exists under app data. */
+  hasTranscript?: boolean;
+}
+
 export interface AgentRunLogEntry {
   id: string;
   startedAt: number;

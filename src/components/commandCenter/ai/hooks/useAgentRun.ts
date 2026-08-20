@@ -11,6 +11,7 @@ import { sanitizeAgentNoteRelativePath } from "@/utils/paths";
 import {
   mapParsedToolCalls,
   recordAgentRun,
+  toTranscriptToolCalls,
 } from "@/services/agentRunLogService";
 import type { ExecutionScope, Persona, HistoryEntry } from "@/types/persona";
 import type { ContextStrategy } from "@/services/contextBuilder";
@@ -77,6 +78,8 @@ export function useAgentRun(ui: AgentRunUi) {
     scope: ExecutionScope;
     userMessage: string;
     strategy: ContextStrategy | null;
+    context: string;
+    attachedImages: string[];
     activeFilePath: string | null;
     vaultPath: string | null;
   } | null>(null);
@@ -147,6 +150,8 @@ export function useAgentRun(ui: AgentRunUi) {
     scope: runScope,
     userMessage: runMessage,
     strategy: null,
+    context: "",
+    attachedImages: [],
     activeFilePath: runActiveFilePath,
     vaultPath,
   };
@@ -166,7 +171,10 @@ export function useAgentRun(ui: AgentRunUi) {
     if (runToken !== runTokenRef.current) return;
     context = result.context;
     setStrategy(result.strategy);
-    if (activeRunRef.current) activeRunRef.current.strategy = result.strategy;
+    if (activeRunRef.current) {
+      activeRunRef.current.strategy = result.strategy;
+      activeRunRef.current.context = result.context;
+    }
   } catch (e) {
     if (runToken !== runTokenRef.current) return;
     const snap = activeRunRef.current;
@@ -182,6 +190,8 @@ export function useAgentRun(ui: AgentRunUi) {
         vaultPath: snap.vaultPath,
         userMessage: snap.userMessage,
         errorMessage: `Failed to build context: ${String(e)}`,
+        context: snap.context,
+        systemPrompt: snap.persona.systemPrompt,
         contextStrategy: snap.strategy,
       });
     }
@@ -204,6 +214,9 @@ export function useAgentRun(ui: AgentRunUi) {
       });
       if (runToken !== runTokenRef.current) return;
       visionImages = loaded.images;
+      if (activeRunRef.current) {
+        activeRunRef.current.attachedImages = loaded.images.map((img) => img.fileName);
+      }
     } catch {
       if (runToken !== runTokenRef.current) return;
       // Text context still proceeds if image attachment fails.
@@ -239,8 +252,12 @@ export function useAgentRun(ui: AgentRunUi) {
             vaultPath: snap.vaultPath,
             userMessage: snap.userMessage,
             response: text,
+            context: snap.context,
+            systemPrompt: snap.persona.systemPrompt,
+            attachedImages: snap.attachedImages,
             contextStrategy: snap.strategy,
             toolCalls: mapParsedToolCalls(toolCalls, snap.activeFilePath),
+            transcriptToolCalls: toTranscriptToolCalls(toolCalls),
             meta,
           });
         }
@@ -342,6 +359,9 @@ export function useAgentRun(ui: AgentRunUi) {
             vaultPath: snap.vaultPath,
             userMessage: snap.userMessage,
             errorMessage,
+            context: snap.context,
+            systemPrompt: snap.persona.systemPrompt,
+            attachedImages: snap.attachedImages,
             contextStrategy: snap.strategy,
           });
         }
@@ -396,6 +416,9 @@ export function useAgentRun(ui: AgentRunUi) {
         activeFilePath: snap.activeFilePath,
         vaultPath: snap.vaultPath,
         userMessage: snap.userMessage,
+        context: snap.context,
+        systemPrompt: snap.persona.systemPrompt,
+        attachedImages: snap.attachedImages,
         contextStrategy: snap.strategy,
       });
     }

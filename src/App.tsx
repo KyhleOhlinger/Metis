@@ -282,11 +282,23 @@ export default function App() {
       case "export-hub":
         setExportHubOpen(true);
         break;
+      case "new-note":
+      case "new-folder":
+        setSidebarOpen(true);
+        return;
+      case "daily-note":
+        setSidebarOpen(true);
+        openDailyNote();
+        break;
+      case "open-search":
+        setSidebarOpen(true);
+        useStore.getState().setSidebarView("search");
+        break;
       default:
         return;
     }
     setPendingMenuAction(null);
-  }, [pendingMenuAction, setPendingMenuAction]);
+  }, [pendingMenuAction, setPendingMenuAction, openDailyNote]);
 
   // Vault restoration — runs whenever vaultPath is null (initial load or HMR).
   //

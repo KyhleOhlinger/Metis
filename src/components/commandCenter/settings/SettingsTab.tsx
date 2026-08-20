@@ -162,7 +162,8 @@ export function SettingsTab({
             <span>
               <span className="font-medium text-text-primary">Store conversation history</span>
               {" "}
-              in this session (last 50 runs). Turn off to avoid keeping assistant replies in memory.
+              in this session (last 50 runs) and in the Agent Run Log (preview index plus full
+              request/response sidecars). Turn off to skip storing assistant replies.
             </span>
           </label>
           <div>

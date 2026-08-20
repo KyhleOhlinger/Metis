@@ -38,6 +38,7 @@ export interface MetisState {
   sidebarView: "files" | "search";
   editorNavigateTo: EditorNavigateTarget | null;
   plannerNavigateTo: PlannerNavigateTarget | null;
+  commandCenterRequest: "info" | "info-planner" | "ai" | "settings" | null;
   setEditorTab: (tab: "source" | "visual" | "planner" | "agent-history") => void;
   openPlannerTab: () => void;
   setPlannerSetupModalOpen: (open: boolean) => void;
@@ -68,6 +69,8 @@ export interface MetisState {
   clearEditorNavigateTo: () => void;
   navigatePlannerTo: (target: PlannerNavigateTarget) => void;
   clearPlannerNavigateTo: () => void;
+  requestCommandCenter: (tab: "info" | "info-planner" | "ai" | "settings") => void;
+  clearCommandCenterRequest: () => void;
 }
 
 export const metisInitialState = {
@@ -100,4 +103,5 @@ export const metisInitialState = {
   sidebarView: "files" as const,
   editorNavigateTo: null,
   plannerNavigateTo: null,
+  commandCenterRequest: null,
 };

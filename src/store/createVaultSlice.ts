@@ -56,6 +56,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       activeFolderPath: null,
       editorNavigateTo: null,
       plannerNavigateTo: null,
+      commandCenterRequest: null,
     });
     setTimeout(() => get().enrichNoteIndex(), 0);
   },
@@ -196,6 +197,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       sidebarView: "files",
       editorNavigateTo: null,
       plannerNavigateTo: null,
+      commandCenterRequest: null,
     });
   },
 });

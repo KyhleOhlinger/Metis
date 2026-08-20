@@ -20,12 +20,13 @@ export function useDailyGridLayout(
   const dailyGridWeighted =
     dailyExpandedParsed !== null && dailyGridWeightedWeekIdx >= 0 && dailyGridWeightedDayIdx >= 0;
 
+  const weekCount = Math.max(1, visibleWeeks.length);
   const dailyGridTemplateColumns =
     dailyGridWeighted && dailyGridWeightedWeekIdx >= 0
-      ? `110px ${[0, 1, 2, 3]
-          .map((i) => (i === dailyGridWeightedWeekIdx ? "minmax(0, 4fr)" : "minmax(0, 1fr)"))
-          .join(" ")}`
-      : `110px repeat(4, minmax(210px, 1fr))`;
+      ? `110px ${Array.from({ length: weekCount }, (_, i) =>
+          i === dailyGridWeightedWeekIdx ? "minmax(0, 4fr)" : "minmax(0, 1fr)",
+        ).join(" ")}`
+      : `110px repeat(${weekCount}, minmax(210px, 1fr))`;
 
   const dailyGridTemplateRows =
     dailyGridWeighted && dailyGridWeightedDayIdx >= 0

@@ -81,7 +81,7 @@ export function AITabPersonaBar({
         )}
 
         {hasPersonas && (
-          <div className="max-h-28 space-y-2 overflow-y-auto pr-0.5">
+          <div className="space-y-2">
             {systemChips.length > 0 && (
               <div>
                 <SubsectionLabel>System</SubsectionLabel>

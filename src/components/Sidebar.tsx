@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
-import { Pin } from "lucide-react";
+import { Pin, Search } from "lucide-react";
 import { useStore, VaultData } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import CreateVaultModal from "./CreateVaultModal";
@@ -183,6 +183,15 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
                   <line x1="8" y1="14" x2="8.01" y2="14" /><line x1="12" y1="14" x2="12.01" y2="14" /><line x1="16" y1="14" x2="16.01" y2="14" />
                 </svg>
               </CollapsedBtn>
+              <CollapsedBtn
+                title="Search vault (Cmd+Shift+F)"
+                onClick={() => {
+                  onToggle();
+                  setTimeout(() => setSidebarView("search"), 210);
+                }}
+              >
+                <Search size={12} />
+              </CollapsedBtn>
               <div className="my-1 w-4 border-t border-border" />
             </>
           )}
@@ -244,11 +253,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
           onCollapseSidebar={onToggle}
         />
 
-        {sidebarView === "search" ? (
-          <div className="min-h-0 flex-1">
-            <SearchPanel />
-          </div>
-        ) : (
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <SidebarFileTreePanel
             vaultPath={vaultPath}
             files={files}
@@ -260,7 +265,22 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
             onCreateVault={() => setShowCreateVault(true)}
             onOpenVault={() => void handleOpenVault()}
           />
-        )}
+          {sidebarView === "search" && (
+            <div
+              className="absolute inset-0 z-20 flex flex-col bg-surface-raised shadow-lg ring-1 ring-inset ring-border"
+              role="dialog"
+              aria-label="Vault search"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setSidebarView("files");
+                }
+              }}
+            >
+              <SearchPanel />
+            </div>
+          )}
+        </div>
 
         <div className="border-t border-border px-3 py-1.5">
           {vaultPath && (

@@ -13,7 +13,17 @@ const MAX_PERSISTED_JSON_BYTES: usize = 2 * 1024 * 1024;
 
 /// Write app-data JSON with size cap and owner-only permissions on Unix.
 pub fn write_private_json_file(path: &Path, json: &str) -> Result<(), String> {
-    if json.len() > MAX_PERSISTED_JSON_BYTES {
+    write_private_json_file_capped(path, json, MAX_PERSISTED_JSON_BYTES)
+}
+
+/// Same as [`write_private_json_file`] with a caller-chosen byte cap.
+/// Used for agent-run transcripts, which are larger than settings/personas JSON.
+pub fn write_private_json_file_capped(
+    path: &Path,
+    json: &str,
+    max_bytes: usize,
+) -> Result<(), String> {
+    if json.len() > max_bytes {
         return Err("Payload too large.".into());
     }
     fs::write(path, json.as_bytes()).map_err(|e| format!("Failed to write file: {e}"))?;

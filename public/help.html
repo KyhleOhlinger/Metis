@@ -600,7 +600,7 @@
       <p>The in-editor search panel supports <strong>case-sensitive</strong> and <strong>regex</strong> toggles, plus <strong>Replace</strong> and <strong>Replace All</strong> buttons.</p>
 
       <h3>Vault-wide search &amp; replace</h3>
-      <p>Press <kbd>⌘⇧F</kbd> or click the <strong>search icon</strong> in the sidebar header to open the vault-wide search panel. This replaces the file tree with a full-text search view.</p>
+      <p>Press <kbd>⌘⇧F</kbd> or click the <strong>search icon</strong> in the sidebar header to open vault-wide search. The panel overlays the file tree (the tree stays underneath). Type <kbd>&gt;</kbd> in the command palette and choose <strong>Search vault</strong>.</p>
       <ul>
         <li>Type a query — results update automatically after a short debounce (300 ms). Searches both <strong>file names</strong> and <strong>file contents</strong>.</li>
         <li>Toggle <strong>case-sensitive</strong> (Aa) and <strong>regex</strong> (.*) modes using the icons next to the search input.</li>
@@ -617,7 +617,7 @@
         </span>
       </div>
 
-      <p>To return to the file tree, click the <strong>back arrow</strong> at the top of the search panel, press <kbd>Esc</kbd>, or click the search icon again.</p>
+      <p>To close search and see the file tree, click the <strong>back arrow</strong> at the top of the overlay, press <kbd>Esc</kbd> (while search is focused), or click the search icon again.</p>
     </section>
 
     <!-- METADATA ────────────────────────────────────────────────────────── -->
@@ -664,7 +664,7 @@
       </ul>
 
       <h3>Quick Switcher</h3>
-      <p>Press <kbd>⌘P</kbd> to open the fuzzy note switcher. It searches note names and aliases, and can be filtered by status using the chips at the top.</p>
+      <p>Press <kbd>⌘P</kbd> to open the fuzzy note switcher. It searches note names and aliases, and can be filtered by status using the chips at the top. Type <kbd>&gt;</kbd> for commands: search vault, new note, daily note, planner, Command Center AI/Info, settings sections, export, and more.</p>
 
       <h3>Wikilinks</h3>
       <p>Type <kbd>[[</kbd> in Source mode to open a live autocomplete dropdown of all notes in your vault (searching both names and aliases). In Visual mode, wikilinks are clickable and navigate to the linked note.</p>
@@ -749,9 +749,10 @@
         <li>Persona, model, provider, agent type, duration, and token usage (when reported by the provider).</li>
         <li>Estimated cost from static per-model rates when usage is available.</li>
         <li>Vault-relative <strong>file path</strong> and context egress label (how many notes/characters were sent).</li>
+        <li>Expand a run and click <strong>Show full request</strong> or <strong>Show full response</strong> to load the sidecar transcript (system prompt, retrieved context, full reply). Older runs logged before this feature only have short previews.</li>
       </ul>
 
-      <p>When <strong>Store AI history</strong> is disabled in settings, new runs are not appended. The log keeps up to 1,000 entries in app data.</p>
+      <p>When <strong>Store conversation history</strong> is disabled in settings, new runs are not appended. The index keeps up to 1,000 entries in app data; matching full transcripts live in <code>agent-run-transcripts/</code>.</p>
     </section>
 
     <!-- PERSONAS ────────────────────────────────────────────────────────── -->

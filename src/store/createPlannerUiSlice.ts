@@ -12,6 +12,8 @@ export type PlannerUiSlice = Pick<
   | "setPlannerSyncStatus"
   | "navigatePlannerTo"
   | "clearPlannerNavigateTo"
+  | "requestCommandCenter"
+  | "clearCommandCenterRequest"
   | "setPendingMenuAction"
   | "setSidebarView"
 >;
@@ -54,6 +56,10 @@ export const createPlannerUiSlice: StateCreator<MetisState, [], [], PlannerUiSli
   },
 
   clearPlannerNavigateTo: () => set({ plannerNavigateTo: null }),
+
+  requestCommandCenter: (tab) => set({ commandCenterRequest: tab }),
+
+  clearCommandCenterRequest: () => set({ commandCenterRequest: null }),
 
   setPendingMenuAction: (action) => set({ pendingMenuAction: action }),
 

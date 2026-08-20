@@ -56,6 +56,7 @@ export default function PlannerMarkdownPreview({
       }),
     [content],
   );
+  const empty = !content.trim();
 
   useEffect(() => {
     const root = rootRef.current;
@@ -90,13 +91,15 @@ export default function PlannerMarkdownPreview({
         "planner-markdown-preview block w-full overflow-auto rounded border border-border bg-surface-raised text-left",
         fillHeight ? "min-h-0 flex-1 self-stretch" : "self-start",
         onClick ? "cursor-text hover:ring-1 hover:ring-accent/25" : "",
-        !html ? "text-text-muted opacity-60" : "",
+        empty ? "text-text-muted opacity-60" : "",
         className,
       ]
         .filter(Boolean)
         .join(" ")}
       style={{ ...sizeStyle, fontSize: `${fontSizePx}px`, lineHeight: fontSizePx <= 10 ? 1.42 : 1.45 }}
-      dangerouslySetInnerHTML={html ? { __html: html } : undefined}
-    />
+      dangerouslySetInnerHTML={!empty && html ? { __html: html } : undefined}
+    >
+      {empty ? "Click to edit" : undefined}
+    </div>
   );
 }

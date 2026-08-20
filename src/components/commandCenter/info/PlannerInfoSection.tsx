@@ -58,9 +58,11 @@ export function PlannerInfoSection() {
 
   if (!vaultPath) {
     return (
-      <Section title="Planner">
-        <Hint>Open a vault to configure planner storage.</Hint>
-      </Section>
+      <div id="cc-info-planner">
+        <Section title="Planner">
+          <Hint>Open a vault to configure planner storage.</Hint>
+        </Section>
+      </div>
     );
   }
 
@@ -109,6 +111,7 @@ export function PlannerInfoSection() {
   };
 
   return (
+    <div id="cc-info-planner">
     <Section title="Planner">
       <div className="space-y-2.5">
         <div>
@@ -149,5 +152,6 @@ export function PlannerInfoSection() {
         )}
       </div>
     </Section>
+    </div>
   );
 }

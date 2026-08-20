@@ -267,12 +267,12 @@ export default function SearchPanel() {
         <button
           onClick={() => setSidebarView("files")}
           className="rounded p-0.5 text-text-muted transition-colors hover:text-text-primary"
-          title="Back to files"
+          title="Close search (Esc)"
         >
           <ArrowLeft size={14} />
         </button>
         <span className="text-xs font-semibold text-text-secondary">
-          Search
+          Search vault
         </span>
       </div>
 

@@ -122,6 +122,8 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
           vaultPath,
           userMessage: trigger,
           response: text,
+          context: orphanContext,
+          systemPrompt: activePersona.systemPrompt,
           contextStrategy: { type: "single-file", chars: orphanContext.length },
           meta,
         });
@@ -148,6 +150,8 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
           vaultPath,
           userMessage: trigger,
           errorMessage: err.message,
+          context: orphanContext,
+          systemPrompt: activePersona.systemPrompt,
           contextStrategy: { type: "single-file", chars: orphanContext.length },
         });
       },
@@ -228,6 +232,8 @@ const handleTaskScan = useCallback(async () => {
           vaultPath,
           userMessage: trigger,
           response: text,
+          context: taskContext,
+          systemPrompt: activePersona.systemPrompt,
           contextStrategy: { type: "single-file", chars: taskContext.length },
           meta,
         });
@@ -254,6 +260,8 @@ const handleTaskScan = useCallback(async () => {
           vaultPath,
           userMessage: trigger,
           errorMessage: err.message,
+          context: taskContext,
+          systemPrompt: activePersona.systemPrompt,
           contextStrategy: { type: "single-file", chars: taskContext.length },
         });
       },
@@ -337,6 +345,7 @@ const handleTaskSync = useCallback(async () => {
           vaultPath,
           userMessage: "Task sync (todo.md ↔ source notes)",
           response: `Updated ${updatedNotes} note(s); synced ${tasksByNote.length} task note(s).`,
+          systemPrompt: activePersona.systemPrompt,
         });
       }
     }
@@ -359,6 +368,7 @@ const handleTaskSync = useCallback(async () => {
           vaultPath,
           userMessage: "Task sync (todo.md ↔ source notes)",
           errorMessage: String(e),
+          systemPrompt: activePersona.systemPrompt,
         });
       }
     }
@@ -498,6 +508,8 @@ const handleTaskSync = useCallback(async () => {
         vaultPath,
         userMessage: ocrTrigger,
         response: lines.join("\n"),
+        systemPrompt: activePersona.systemPrompt,
+        attachedImages: images.map((img) => img.fileName),
         meta: {
           durationMs: totalDurationMs || Date.now() - startedAt,
           usage:
@@ -523,6 +535,8 @@ const handleTaskSync = useCallback(async () => {
         vaultPath,
         userMessage: ocrTrigger,
         errorMessage: String(e),
+        systemPrompt: activePersona.systemPrompt,
+        attachedImages: images.map((img) => img.fileName),
       });
     } finally {
       setStreaming(false);

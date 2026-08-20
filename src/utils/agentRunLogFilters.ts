@@ -53,7 +53,7 @@ export function runEntryBodyPreview(entry: AgentRunLogEntry, scope: AgentRunSear
 }
 
 export function runDetailAllowsExpand(scope: AgentRunSearchScope): boolean {
-  return scope === "all";
+  return scope !== "title";
 }
 
 export function runRowShowsMetadata(scope: AgentRunSearchScope): boolean {
