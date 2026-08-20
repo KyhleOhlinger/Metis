@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { DEFAULT_QUICK_ACTIONS, type QuickAction } from "../types/persona";
+import { Hint, SegmentButton, SubsectionLabel } from "./commandCenter/shared/ui";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ export default function QuickActionsSettings({
 } = {}) {
   const {
     settings, personas,
-    upsertQuickAction, deleteQuickAction, reorderQuickActions,
+    upsertQuickAction, deleteQuickAction, reorderQuickActions, updateSettings,
   } = usePersonaStore(
     useShallow((s) => ({
       settings: s.settings,
@@ -199,8 +200,10 @@ export default function QuickActionsSettings({
       upsertQuickAction: s.upsertQuickAction,
       deleteQuickAction: s.deleteQuickAction,
       reorderQuickActions: s.reorderQuickActions,
+      updateSettings: s.updateSettings,
     })),
   );
+  const scopeDefault = settings.quickActionScopeDefault ?? "none";
 
   const quickActions = settings.quickActions?.length
     ? settings.quickActions
@@ -338,6 +341,29 @@ export default function QuickActionsSettings({
         These actions appear in the floating toolbar when you highlight text in the editor.
         By default they use the active persona with the default API provider. Drag ⠿ to reorder.
       </p>
+
+      <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-1.5">
+        <SubsectionLabel>Selection action scope</SubsectionLabel>
+        <div className="flex flex-wrap gap-1">
+          <SegmentButton
+            active={scopeDefault === "none"}
+            onClick={() => updateSettings({ quickActionScopeDefault: "none" })}
+          >
+            No Selection
+          </SegmentButton>
+          <SegmentButton
+            active={scopeDefault === "persona"}
+            onClick={() => updateSettings({ quickActionScopeDefault: "persona" })}
+          >
+            Persona scope
+          </SegmentButton>
+        </div>
+        <Hint>
+          {scopeDefault === "none"
+            ? "Highlight actions send the prompt only — no File, Folder, or Vault notes. Switches the AI tab to No Selection."
+            : "Highlight actions keep the AI tab’s current scope (No Selection, File, Folder, or Vault)."}
+        </Hint>
+      </div>
 
       {/* Action list */}
       <div className="space-y-1">

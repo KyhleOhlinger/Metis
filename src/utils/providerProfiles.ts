@@ -280,6 +280,8 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
     quickActions: cleaned.quickActions?.length
       ? cleaned.quickActions
       : DEFAULT_SETTINGS.quickActions,
+    quickActionScopeDefault:
+      cleaned.quickActionScopeDefault === "persona" ? "persona" : "none",
     spellcheckEnabled,
     editorBgPresetId: cleaned.editorBgPresetId ?? DEFAULT_SETTINGS.editorBgPresetId,
     editorBgCustomColor: (() => {

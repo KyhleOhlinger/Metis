@@ -28,6 +28,8 @@ const TRANSCRIPT_ERROR_MAX = 50_000;
 
 export function formatScopeLabel(scope: ExecutionScope): string {
   switch (scope.type) {
+    case "none":
+      return "No Selection";
     case "current-file":
       return "Current file";
     case "specific-file":

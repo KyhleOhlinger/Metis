@@ -51,11 +51,15 @@ export interface Persona {
 // ── Execution scope ───────────────────────────────────────────────────────────
 
 export type ExecutionScope =
+  | { type: "none" }
   | { type: "current-file" }
   /** Dragged directly from the file tree — run on this file regardless of which note is open */
   | { type: "specific-file"; filePath: string }
   | { type: "specific-folder"; folderPath: string }
   | { type: "full-vault" };
+
+/** Vault notes attached when a selection quick action auto-runs. */
+export type QuickActionScopeDefault = "none" | "persona";
 
 // ── History ───────────────────────────────────────────────────────────────────
 
@@ -164,6 +168,11 @@ export interface Settings {
   /** Floating selection-toolbar actions — persisted so users can customise them */
   quickActions: QuickAction[];
   /**
+   * Scope used when a selection quick action runs.
+   * `none` — prompt only (No Selection). `persona` — keep the AI tab File/Folder/Vault/None picker.
+   */
+  quickActionScopeDefault?: QuickActionScopeDefault;
+  /**
    * When false, new AI runs are not appended to the in-memory history list.
    * Existing entries remain until cleared or the app restarts.
    */
@@ -217,6 +226,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultProviderProfileId: "preset-openai",
   allowedAiHosts: [],
   quickActions: DEFAULT_QUICK_ACTIONS,
+  quickActionScopeDefault: "none",
   storeAiHistory: true,
   aiHistoryMaxResponseChars: 32_000,
   spellcheckLanguage: "en_US",
