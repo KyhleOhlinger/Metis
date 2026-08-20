@@ -691,7 +691,7 @@
       <h3>Running a prompt</h3>
       <ol>
         <li>Select a persona chip at the top of the AI tab.</li>
-        <li>Choose a <strong>scope</strong> — File, Folder, or Full Vault.</li>
+        <li>Choose a <strong>scope</strong> — No Selection, File, Folder, or Full Vault. <strong>No Selection</strong> sends the prompt only (no vault notes).</li>
         <li>For <strong>Folder</strong> or <strong>Vault</strong> scope, read the <strong>Data sent to AI</strong> estimate (note count, approximate characters, planned filter tier).</li>
         <li>Type your prompt and press <kbd>⌘↵</kbd> or click <strong>Run</strong>. Metis asks you to confirm before sending folder/vault context to your provider.</li>
         <li>A spinning indicator with "<em>{Persona} is thinking…</em>" appears while the model processes your request. The response then streams in real-time. If the AI calls an agent file tool, a review step appears before any changes are written to disk.</li>
@@ -804,6 +804,7 @@
       <h3>Managing quick actions</h3>
       <p>Go to <strong>Command Center → Settings</strong> (⚙ tab) — <strong>Quick Actions</strong> section — to:</p>
       <ul>
+        <li>Choose the default <strong>Selection action scope</strong>: <strong>No Selection</strong> (prompt only, the default) or <strong>Persona scope</strong> (keep the AI tab’s current File/Folder/Vault/None picker).</li>
         <li><strong>Add</strong> a new action with a custom label and prompt.</li>
         <li><strong>Edit</strong> the label, prompt, or assigned persona of any action.</li>
         <li><strong>Reorder</strong> actions by dragging the grip handle on the left.</li>

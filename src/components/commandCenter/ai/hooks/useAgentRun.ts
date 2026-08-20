@@ -109,6 +109,8 @@ export function useAgentRun(ui: AgentRunUi) {
   const runMessage = userMessage.trim();
   if (!runPersona || !runProfile?.apiKey?.trim() || !runMessage || streaming) return;
 
+  const attachImages = includeImages && scope.type !== "none";
+
   if (!isSystemPersona(runPersona.id)) {
     try {
       const egress = await estimateContextEgress(
@@ -119,7 +121,7 @@ export function useAgentRun(ui: AgentRunUi) {
         activeFileContent,
         activeFilePath,
         vaultPath,
-        includeImages,
+        attachImages,
       );
       if (!(await confirmEgressBeforeRun(egress))) return;
     } catch {
@@ -130,7 +132,7 @@ export function useAgentRun(ui: AgentRunUi) {
   // Freeze mutable run inputs so async steps and callbacks can't drift.
   const runToken = ++runTokenRef.current;
   const runScope = scope;
-  const runIncludeImages = includeImages;
+  const runIncludeImages = attachImages;
   const runActiveFilePath = activeFilePath;
   const runActiveFileContent = activeFileContent;
   const runCursorOffset = cursorOffset;

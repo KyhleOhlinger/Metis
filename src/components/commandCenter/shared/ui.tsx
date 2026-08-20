@@ -58,15 +58,18 @@ export function SegmentButton({
   children,
   onClick,
   disabled,
+  title,
 }: {
   active: boolean;
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       disabled={disabled}
       className={[

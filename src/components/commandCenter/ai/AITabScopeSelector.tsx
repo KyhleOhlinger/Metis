@@ -31,7 +31,7 @@ export function AITabScopeSelector({
       <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <SubsectionLabel>Scope</SubsectionLabel>
-          {showIncludeImages && (
+          {showIncludeImages && scope.type !== "none" && (
             <label
               className="flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted"
               title="When checked, vault images referenced in scoped notes are sent so a vision model can see them"
@@ -47,23 +47,34 @@ export function AITabScopeSelector({
           )}
         </div>
         <div className="flex flex-wrap gap-1">
-          {(["current-file", "specific-folder", "full-vault"] as const).map((t) => (
+          {(
+            [
+              { type: "none", label: "No Selection" },
+              { type: "current-file", label: "File" },
+              { type: "specific-folder", label: "Folder" },
+              { type: "full-vault", label: "Vault" },
+            ] as const
+          ).map((seg) => (
             <SegmentButton
-              key={t}
+              key={seg.type}
+              title={seg.type === "none" ? "Prompt only — no vault notes attached" : undefined}
               active={
-                scope.type === t || (t === "current-file" && scope.type === "specific-file")
+                scope.type === seg.type ||
+                (seg.type === "current-file" && scope.type === "specific-file")
               }
               onClick={() => {
-                if (t === "specific-folder" && folders.length > 0) {
+                if (seg.type === "none") {
+                  setScope({ type: "none" });
+                } else if (seg.type === "specific-folder" && folders.length > 0) {
                   setScope({ type: "specific-folder", folderPath: folders[0].path });
-                } else if (t === "current-file") {
+                } else if (seg.type === "current-file") {
                   setScope({ type: "current-file" });
-                } else if (t === "full-vault") {
+                } else if (seg.type === "full-vault") {
                   setScope({ type: "full-vault" });
                 }
               }}
             >
-              {t === "current-file" ? "File" : t === "specific-folder" ? "Folder" : "Vault"}
+              {seg.label}
             </SegmentButton>
           ))}
         </div>

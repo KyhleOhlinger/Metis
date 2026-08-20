@@ -36,6 +36,7 @@ export function EgressTransparency({
   const [loading, setLoading] = useState(false);
 
   const showForScope =
+    scope.type === "none" ||
     scope.type === "specific-folder" ||
     scope.type === "full-vault" ||
     scope.type === "current-file" ||
@@ -44,7 +45,7 @@ export function EgressTransparency({
   const hasApiKey = Boolean(profile?.apiKey?.trim());
 
   useEffect(() => {
-    if (hidden || !showForScope || !persona || !hasApiKey || !profile) {
+    if (hidden || !showForScope || !persona || !hasApiKey || !profile || scope.type === "none") {
       setEstimate(null);
       return;
     }
@@ -92,6 +93,26 @@ export function EgressTransparency({
   ]);
 
   if (hidden || !showForScope || !persona) return null;
+
+  if (scope.type === "none") {
+    return (
+      <div className="shrink-0 border-b border-border px-3 py-1.5">
+        <InlineBanner>
+          <div className="max-h-16 overflow-y-auto pr-0.5">
+            <SubsectionLabel>Data sent to AI</SubsectionLabel>
+            <p className="mt-1 text-text-secondary">
+              Scope: No Selection — prompt only, no vault notes attached.
+            </p>
+            <div className="mt-1">
+              <Hint>
+                Your prompt and system prompt are sent. No File, Folder, or Vault notes, and no note images.
+              </Hint>
+            </div>
+          </div>
+        </InlineBanner>
+      </div>
+    );
+  }
 
   if (!hasApiKey) {
     return (

@@ -96,6 +96,7 @@ function charBudget(model: string, overheadChars = 0): number {
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export type ContextStrategy =
+  | { type: "none"; chars: number }
   | { type: "single-file"; chars: number }
   | { type: "direct"; files: number; chars: number }
   | { type: "tfidf"; total: number; selected: number; chars: number }
@@ -138,6 +139,10 @@ export async function buildSmartContext(
   vaultPath: string | null,
   onStatus?: (msg: string) => void,
 ): Promise<SmartContextResult> {
+  if (scope.type === "none") {
+    return { context: "", strategy: { type: "none", chars: 0 } };
+  }
+
   // ── Single-file scope — bypass all tiering ──────────────────────────────
   if (scope.type === "current-file") {
     const content = activeFileContent || "(empty note)";
@@ -546,6 +551,22 @@ export async function estimateContextEgress(
   const budget = charBudget(persona.model, overhead);
   const providerLabel = profile.name?.trim() || profile.baseUrl;
 
+  if (scope.type === "none") {
+    return {
+      noteCount: 0,
+      totalCharsInScope: 0,
+      estimatedContextChars: 0,
+      plannedTier: "direct",
+      budgetChars: budget,
+      extraScoutApiCall: false,
+      scopeLabel: "No Selection",
+      requiresConfirm: false,
+      providerLabel,
+      estimatedImageCount: 0,
+      imagesMayBeAttached: false,
+    };
+  }
+
   if (scope.type === "current-file") {
     const chars = activeFileContent.length;
     const imageCount = includeImages ? countImageMarkdownRefs(activeFileContent) : 0;
@@ -648,6 +669,9 @@ export async function estimateContextEgress(
 
 export function egressEstimateSummary(est: EgressEstimate): string {
   const tier = plannedTierLabel(est.plannedTier, est.extraScoutApiCall);
+  if (est.scopeLabel === "No Selection") {
+    return "Scope: No Selection — prompt only, no vault notes attached.";
+  }
   if (est.noteCount === 0) {
     return `Scope: ${est.scopeLabel} — no notes found.`;
   }
@@ -677,6 +701,8 @@ export function strategyLabel(s: ContextStrategy): string {
     n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   switch (s.type) {
+    case "none":
+      return "Prompt only · no vault notes";
     case "single-file":
       return `📄 Current file · ${fmt(s.chars)} chars`;
     case "direct":
@@ -694,6 +720,8 @@ export function contextEgressLabel(s: ContextStrategy): string {
     n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
 
   switch (s.type) {
+    case "none":
+      return "Prompt only · no vault notes";
     case "single-file":
       return `${fmt(s.chars)} chars to provider`;
     case "direct":

@@ -145,6 +145,9 @@ export function AITab({
     selectionEndOffsetRef.current = selectionQuery.selectionEndOffset ?? 0;
     overridePersonaIdRef.current = selectionQuery.personaId ?? null;
     useDefaultProviderRef.current = selectionQuery.useDefaultProvider ?? false;
+    if ((settings.quickActionScopeDefault ?? "none") === "none") {
+      setScope({ type: "none" });
+    }
     if (selectionQuery.autoRun) {
       setAutoRunQueued(true);
     }

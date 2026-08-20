@@ -39,6 +39,9 @@ export function scopeLabelFor(
   scope: ExecutionScope,
   activeFilePath: string | null,
 ): string {
+  if (scope.type === "none") {
+    return "No Selection (prompt only)";
+  }
   if (scope.type === "current-file") {
     return activeFilePath
       ? (activeFilePath.split("/").pop() ?? "Current File")
