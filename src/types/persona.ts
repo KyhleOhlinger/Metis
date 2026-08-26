@@ -214,6 +214,13 @@ export interface Settings {
   keybindingOverrides?: Partial<Record<KeybindingCommandId, KeyChord | null>>;
   /** Per-vault pinned and recently opened note paths (absolute). */
   vaultNoteNavigation?: Record<string, VaultNoteNavigation>;
+  /**
+   * When false, skip GitHub source version checks on launch.
+   * Default true — Metis never downloads installers; this only compares `package.json` versions.
+   */
+  sourceUpdateCheckEnabled?: boolean;
+  /** Latest GitHub semver the user dismissed; banner returns when GitHub is newer. */
+  sourceUpdateDismissedVersion?: string;
 }
 
 export interface VaultNoteNavigation {
@@ -233,6 +240,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spellcheckEnabled: false,
   editorBgPresetId: "dark",
   editorBgCustomColor: "#16171a",
+  sourceUpdateCheckEnabled: true,
   stickyDefaults: {
     float: "right",
     width: "12rem",

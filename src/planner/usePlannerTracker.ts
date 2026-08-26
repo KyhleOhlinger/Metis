@@ -9,6 +9,7 @@ import {
   type TaskManifest,
   type TrackerData,
   HOLIDAY_REGIONS,
+  ptoDayCountsFromRange,
   getTracker,
   saveManifest,
 } from "@/planner/plannerStorage";
@@ -30,15 +31,16 @@ export function usePlannerTracker(
   const [importing, setImporting] = useState(false);
 
   const tracker = useMemo(() => getTracker(manifest), [manifest]);
-  const ptoRemaining = useMemo(
-    () =>
-      Math.max(
+  const ptoRemaining = useMemo(() => {
+    const holidays = tracker.public_holidays.map((holiday) => holiday.date);
+    return (
+      tracker.pto_stats.total_allocation -
+      tracker.pto.reduce(
+        (sum, row) => sum + ptoDayCountsFromRange(row.startDate, row.endDate, holidays).daysTaken,
         0,
-        tracker.pto_stats.total_allocation -
-          tracker.pto.reduce((sum, row) => sum + Math.max(0, Number(row.daysTaken) || 0), 0),
-      ),
-    [tracker],
-  );
+      )
+    );
+  }, [tracker]);
   const importRegions = HOLIDAY_REGIONS[importCountry] ?? [];
 
   useEffect(() => {
@@ -96,7 +98,23 @@ export function usePlannerTracker(
   const updatePto = (id: string, patch: Partial<PtoEntry>) => {
     updateTracker((current) => ({
       ...current,
-      pto: current.pto.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+      pto: current.pto.map((row) => {
+        if (row.id !== id) return row;
+        const next: PtoEntry = { ...row, ...patch };
+        if (patch.startDate === undefined && patch.endDate === undefined) return next;
+        if (next.startDate && next.endDate && next.startDate > next.endDate) {
+          if (patch.startDate !== undefined) next.endDate = next.startDate;
+          else next.startDate = next.endDate;
+        }
+        const { daysTotal, daysTaken } = ptoDayCountsFromRange(
+          next.startDate,
+          next.endDate,
+          current.public_holidays.map((holiday) => holiday.date),
+        );
+        next.daysTotal = daysTotal;
+        next.daysTaken = daysTaken;
+        return next;
+      }),
     }));
   };
 

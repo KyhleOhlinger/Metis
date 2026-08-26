@@ -9,6 +9,7 @@ import type {
 } from "@/planner/plannerStorage";
 import {
   HOLIDAY_COUNTRIES,
+  ptoDayCountsFromRange,
   isLongWeekendHoliday,
   makeRowId,
   parseIsoDateLocal,
@@ -92,7 +93,12 @@ export default function PlannerTrackerTab({
 }: PlannerTrackerTabProps) {
   const [filter, setFilter] = useState<TrackerFilter>("upcoming");
   const total = Math.max(0, tracker.pto_stats.total_allocation);
-  const remainingPct = total > 0 ? Math.min(100, (ptoRemaining / total) * 100) : 0;
+  const overAllocated = ptoRemaining < 0;
+  const remainingPct = overAllocated ? 100 : total > 0 ? Math.min(100, (ptoRemaining / total) * 100) : 0;
+  const holidayDates = useMemo(
+    () => tracker.public_holidays.map((holiday) => holiday.date),
+    [tracker.public_holidays],
+  );
 
   const holidays = useMemo(
     () =>
@@ -157,7 +163,13 @@ export default function PlannerTrackerTab({
 
   return (
     <div className="space-y-3">
-      <div className="rounded-md border border-accent/40 bg-accent/10 p-3">
+      <div
+        className={
+          overAllocated
+            ? "rounded-md border border-red-500/30 bg-red-500/10 p-3"
+            : "rounded-md border border-accent/40 bg-accent/10 p-3"
+        }
+      >
         <p className="text-[11px] font-semibold text-text-primary">PTO Counter</p>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">
           <label className="text-text-secondary">
@@ -177,20 +189,26 @@ export default function PlannerTrackerTab({
               className="ml-2 w-20 rounded border border-border bg-surface-raised px-2 py-1 text-[11px] text-text-primary"
             />
           </label>
-          <span className="font-semibold text-text-primary">
+          <span className={overAllocated ? "font-semibold text-red-400" : "font-semibold text-text-primary"}>
             PTO Remaining: {ptoRemaining}
             {total > 0 ? ` / ${total}` : ""}
           </span>
+          {overAllocated && (
+            <span className="text-red-400">Over allocation by {Math.abs(ptoRemaining)}</span>
+          )}
         </div>
         <div
-          className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-overlay"
+          className={`mt-2 h-1.5 overflow-hidden rounded-full ${overAllocated ? "bg-red-500/20" : "bg-surface-overlay"}`}
           role="meter"
-          aria-label="PTO remaining"
-          aria-valuemin={0}
+          aria-label={overAllocated ? "PTO remaining, over allocation" : "PTO remaining"}
+          aria-valuemin={Math.min(0, ptoRemaining)}
           aria-valuemax={total}
           aria-valuenow={ptoRemaining}
         >
-          <div className="h-full rounded-full bg-accent" style={{ width: `${remainingPct}%` }} />
+          <div
+            className={`h-full rounded-full ${overAllocated ? "bg-red-400" : "bg-accent"}`}
+            style={{ width: `${remainingPct}%` }}
+          />
         </div>
       </div>
 
@@ -348,22 +366,27 @@ export default function PlannerTrackerTab({
           <button
             type="button"
             onClick={() =>
-              updateTracker((current) => ({
-                ...current,
-                pto: [
-                  ...current.pto,
-                  {
-                    id: makeRowId(),
-                    description: "",
-                    startDate: toIsoDate(today),
-                    endDate: toIsoDate(today),
-                    daysTotal: 1,
-                    daysTaken: 1,
-                    status: "Coming Up",
-                    notes: "",
-                  },
-                ],
-              }))
+              updateTracker((current) => {
+                const startDate = toIsoDate(today);
+                const holidays = current.public_holidays.map((holiday) => holiday.date);
+                const { daysTotal, daysTaken } = ptoDayCountsFromRange(startDate, startDate, holidays);
+                return {
+                  ...current,
+                  pto: [
+                    ...current.pto,
+                    {
+                      id: makeRowId(),
+                      description: "",
+                      startDate,
+                      endDate: startDate,
+                      daysTotal,
+                      daysTaken,
+                      status: "Coming Up",
+                      notes: "",
+                    },
+                  ],
+                };
+              })
             }
             className={addRowBtnCls}
           >
@@ -377,8 +400,12 @@ export default function PlannerTrackerTab({
                 <th className="px-2 py-1 text-left">Description</th>
                 <th className="px-2 py-1 text-left">Start Date</th>
                 <th className="px-2 py-1 text-left">End Date</th>
-                <th className="px-2 py-1 text-left">Day(s) Total</th>
-                <th className="px-2 py-1 text-left">Days Taken</th>
+                <th className="px-2 py-1 text-left" title="Full time off: every calendar day from start to end (weekends + PTO + public holidays)">
+                  Day(s) Total
+                </th>
+                <th className="px-2 py-1 text-left" title="Actual PTO used: weekdays in the range, excluding weekends and public holidays">
+                  Days Taken
+                </th>
                 <th className="px-2 py-1 text-left">Status</th>
                 <th className="px-2 py-1 text-left">Notes</th>
                 <th className="px-2 py-1 text-left" />
@@ -392,40 +419,65 @@ export default function PlannerTrackerTab({
                   </td>
                 </tr>
               )}
-              {ptoRows.map((row) => (
-                <tr
-                  key={row.id}
-                  data-tracker-row={`pto-${row.id}`}
-                  data-tracker-focus={trackerFocus?.type === "pto" && trackerFocus.id === row.id ? "" : undefined}
-                  className={rowCls("pto", row.id)}
-                >
-                  <td className="px-2 py-1"><input value={row.description} onChange={(e) => updatePto(row.id, { description: e.target.value })} className={cellInputCls} /></td>
-                  <td className="px-2 py-1"><input type="date" value={row.startDate} onChange={(e) => updatePto(row.id, { startDate: e.target.value })} className={cellInputCls} /></td>
-                  <td className="px-2 py-1"><input type="date" value={row.endDate} onChange={(e) => updatePto(row.id, { endDate: e.target.value })} className={cellInputCls} /></td>
-                  <td className="px-2 py-1"><input type="number" min={1} value={row.daysTotal} onChange={(e) => updatePto(row.id, { daysTotal: Math.max(1, Number(e.target.value) || 1) })} className={`${cellInputCls} w-20`} /></td>
-                  <td className="px-2 py-1"><input type="number" min={0} value={row.daysTaken} onChange={(e) => updatePto(row.id, { daysTaken: Math.max(0, Number(e.target.value) || 0) })} className={`${cellInputCls} w-20`} /></td>
-                  <td className="px-2 py-1">
-                    <select value={row.status} onChange={(e) => updatePto(row.id, { status: e.target.value as TrackerStatus })} className={cellInputCls}>
-                      <option value="Coming Up">Coming Up</option>
-                      <option value="Complete">Complete</option>
-                      <option value="Pending">Pending</option>
-                    </select>
-                  </td>
-                  <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updatePto(row.id, { notes: e.target.value })} className={cellInputCls} /></td>
-                  <td className="px-2 py-1">
-                    <button
-                      onClick={async () => {
-                        if (!(await confirmDelete())) return;
-                        updateTracker((current) => ({ ...current, pto: current.pto.filter((r) => r.id !== row.id) }));
-                      }}
-                      type="button"
-                      className={deleteBtnCls}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {ptoRows.map((row) => {
+                const { daysTotal, daysTaken } = ptoDayCountsFromRange(
+                  row.startDate,
+                  row.endDate,
+                  holidayDates,
+                );
+                return (
+                  <tr
+                    key={row.id}
+                    data-tracker-row={`pto-${row.id}`}
+                    data-tracker-focus={trackerFocus?.type === "pto" && trackerFocus.id === row.id ? "" : undefined}
+                    className={rowCls("pto", row.id)}
+                  >
+                    <td className="px-2 py-1"><input value={row.description} onChange={(e) => updatePto(row.id, { description: e.target.value })} className={cellInputCls} /></td>
+                    <td className="px-2 py-1"><input type="date" value={row.startDate} onChange={(e) => updatePto(row.id, { startDate: e.target.value })} className={cellInputCls} /></td>
+                    <td className="px-2 py-1"><input type="date" value={row.endDate} onChange={(e) => updatePto(row.id, { endDate: e.target.value })} className={cellInputCls} /></td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={daysTotal}
+                        readOnly
+                        title="Full time off: weekends + PTO + public holidays"
+                        className={`${cellInputCls} w-20 text-text-secondary`}
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <input
+                        type="number"
+                        min={0}
+                        value={daysTaken}
+                        readOnly
+                        title="Actual PTO used: weekdays excluding public holidays"
+                        className={`${cellInputCls} w-20 text-text-secondary`}
+                      />
+                    </td>
+                    <td className="px-2 py-1">
+                      <select value={row.status} onChange={(e) => updatePto(row.id, { status: e.target.value as TrackerStatus })} className={cellInputCls}>
+                        <option value="Coming Up">Coming Up</option>
+                        <option value="Complete">Complete</option>
+                        <option value="Pending">Pending</option>
+                      </select>
+                    </td>
+                    <td className="px-2 py-1"><input value={row.notes} onChange={(e) => updatePto(row.id, { notes: e.target.value })} className={cellInputCls} /></td>
+                    <td className="px-2 py-1">
+                      <button
+                        onClick={async () => {
+                          if (!(await confirmDelete())) return;
+                          updateTracker((current) => ({ ...current, pto: current.pto.filter((r) => r.id !== row.id) }));
+                        }}
+                        type="button"
+                        className={deleteBtnCls}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

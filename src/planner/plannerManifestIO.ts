@@ -61,7 +61,7 @@ export function loadManifest(): TaskManifest {
             description: row.description ?? "",
             startDate: row.startDate ?? toIsoDate(new Date()),
             endDate: row.endDate ?? row.startDate ?? toIsoDate(new Date()),
-            daysTotal: Math.max(1, Number(row.daysTotal) || 1),
+            daysTotal: Math.max(0, Number(row.daysTotal) || 0),
             daysTaken: Math.max(0, Number(row.daysTaken) || 0),
             status: row.status ?? "Coming Up",
             notes: row.notes ?? "",

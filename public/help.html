@@ -396,6 +396,7 @@
         <li>Metis creates pinned <strong>Spaces</strong> — <code style="font-size:12px">daily/</code>, <code style="font-size:12px">meetings/</code>, <code style="font-size:12px">summaries/</code>, <code style="font-size:12px">handwritten/</code>, and <code style="font-size:12px">assets/</code> — automatically.</li>
         <li>Create your first note with <kbd>⌘N</kbd> or the <strong>+</strong> button in the sidebar.</li>
         <li>To use AI features, open <strong>Settings</strong> (<kbd>⌘,</kbd>) and add at least one <strong>API provider profile</strong> (name, base URL, key) under <strong>Settings → AI</strong>.</li>
+        <li>Metis can notify you when a newer <strong>source version</strong> is on GitHub (<strong>Settings → About</strong>). It does not download installers — pull and rebuild.</li>
       </ol>
 
       <div class="callout tip">
@@ -502,7 +503,7 @@
       <h3>Toolbar extras</h3>
       <ul>
         <li><strong>Calendar</strong> — jump to Planner daily, weekly, or monthly views for a chosen date.</li>
-        <li><strong>Calculator</strong> — quick arithmetic; copy the result or insert it at the cursor.</li>
+        <li><strong>Calculator</strong> — type an expression (or tap the pad). Live result stays in the popover. <strong>Enter</strong> or <strong>=</strong> evaluates without inserting. Use Copy, Insert, or Insert eq to put something in the note. History, <code>^</code> <code>%</code> <code>()</code>, seed from a numeric selection.</li>
       </ul>
     </section>
 
@@ -565,14 +566,14 @@
       <h3>PTO &amp; Event tracker sync</h3>
       <ul>
         <li><strong>Public Holidays</strong> (single date) set matching Daily Log cells to Public Holiday.</li>
-        <li><strong>PTO</strong> (start/end range) sets matching weekday cells to PTO.</li>
+        <li><strong>PTO</strong> (start/end range) sets matching weekday cells to PTO. <strong>Day(s) Total</strong> is the full calendar span (weekends + PTO + public holidays). <strong>Days Taken</strong> is actual PTO used (weekdays, excluding public holidays).</li>
         <li><strong>Conferences</strong> (start/end range) set matching weekday cells to Off-site/Conference.</li>
         <li><strong>Office Trips</strong> (start/end range) add a non-destructive <strong>banner</strong> to the top of each matching day cell (does not replace the block).</li>
         <li>Tracker-controlled cells show an <strong>Edit Event</strong> link to jump back to the matching tracker row.</li>
       </ul>
 
       <h3>PTO counter</h3>
-      <p>The tracker includes a running PTO summary: <strong>PTO Remaining = Total Allocation − sum(Days Taken)</strong>.</p>
+      <p>The tracker includes a running PTO summary: <strong>PTO Remaining = Total Allocation − sum(Days Taken)</strong>. Days Taken is actual PTO used (weekdays excluding public holidays). Remaining can go negative (shown in red) when taken days exceed the yearly allocation.</p>
 
       <p>Planner colours follow your active <strong>App theme</strong> preset — open the header colour picker or <strong>Settings → App theme</strong> to change them.</p>
     </section>
