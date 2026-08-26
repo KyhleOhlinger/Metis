@@ -15,7 +15,8 @@
         { "url": "https://**" },
         { "url": "http://127.0.0.1:**" },
         { "url": "http://localhost:**" },
-        { "url": "https://date.nager.at/**" }
+        { "url": "https://date.nager.at/**" },
+        { "url": "https://raw.githubusercontent.com/KyhleOhlinger/Metis/**" }
       ]
     },
     "http:allow-fetch-cancel",

@@ -1,12 +1,15 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useShallow } from "zustand/react/shallow";
 import { useStore, type FileNode } from "@/store/useStore";
+import { useSourceUpdateStore } from "@/store/useSourceUpdateStore";
 import { toastError } from "@/store/useToastStore";
 import { listVaultFolderOptions } from "@/utils/noteImages";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { FieldLabel, Hint, KV, Section, StatGrid, ccSelectCls } from "../shared/ui";
 import { InfoExportSection } from "./InfoExportSection";
 import { PlannerInfoSection } from "./PlannerInfoSection";
+import { openExternalUrl } from "@/utils/vaultNavigation";
 
 function vaultDisplayName(vaultPath: string): string {
   const parts = vaultPath.split(/[/\\]/).filter(Boolean);
@@ -36,6 +39,19 @@ export function InfoTab({
       setDefaultImageFolder: s.setDefaultImageFolder,
     })),
   );
+  const currentVersion = useSourceUpdateStore((s) => s.currentVersion);
+  const latestVersion = useSourceUpdateStore((s) => s.latestVersion);
+  const status = useSourceUpdateStore((s) => s.status);
+  const sourceUrl = useSourceUpdateStore((s) => s.sourceUrl);
+  const [localVersion, setLocalVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<string>("get_app_version")
+      .then(setLocalVersion)
+      .catch(() => setLocalVersion(null));
+  }, []);
+
+  const shownVersion = currentVersion ?? localVersion;
 
   const imageFolderOptions = useMemo(() => {
     if (!vaultPath) return [];
@@ -121,10 +137,24 @@ export function InfoTab({
               className="aspect-square w-16 rounded-xl border border-border object-cover shadow-sm shadow-black/15"
             />
             <div>
-              <p className="text-[11px] font-semibold text-text-primary">Metis</p>
+              <p className="text-[11px] font-semibold text-text-primary">
+                Metis
+                {shownVersion ? (
+                  <span className="ml-1 font-normal text-text-muted">v{shownVersion}</span>
+                ) : null}
+              </p>
               <p className="mt-0.5 text-[10px] leading-relaxed text-text-muted">
                 A local-first, AI-augmented personal knowledge ecosystem.
               </p>
+              {status === "available" && latestVersion && (
+                <button
+                  type="button"
+                  onClick={() => openExternalUrl(sourceUrl)}
+                  className="mt-1 text-[10px] font-medium text-accent hover:underline"
+                >
+                  Update available: v{latestVersion} on GitHub
+                </button>
+              )}
             </div>
           </div>
         </Section>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AiProviderProfile, Settings, SettingsSectionId, StickyNoteDefaults } from "@/types/persona";
 import type { usePersonaStore } from "@/store/usePersonaStore";
+import { useSourceUpdateStore } from "@/store/useSourceUpdateStore";
 import { STICKY_COLOR_PRESETS } from "@/utils/stickyNotes";
 import metisIconUrl from "@/assets/metis_icon.png";
 import {
@@ -15,6 +16,8 @@ import { ExportSettings } from "../../settings/ExportSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
 import { SettingsTab } from "./SettingsTab";
+import { openExternalUrl } from "@/utils/vaultNavigation";
+import { METIS_SOURCE_URL } from "@/services/sourceUpdateCheck";
 
 type StoreSettings = ReturnType<typeof usePersonaStore.getState>["settings"];
 
@@ -116,7 +119,7 @@ export function SettingsPanel({
         )}
         {section === "about" && (
           <SettingsSection title="About Metis">
-            <AboutSettingsSection />
+            <AboutSettingsSection settings={settings} onUpdate={onUpdateSettings} />
           </SettingsSection>
         )}
       </div>
@@ -340,8 +343,20 @@ function StickySettingsSection({
   );
 }
 
-function AboutSettingsSection() {
+function AboutSettingsSection({
+  settings,
+  onUpdate,
+}: {
+  settings: Settings;
+  onUpdate: (patch: Partial<Settings>) => void;
+}) {
   const [version, setVersion] = useState<string | null>(null);
+  const status = useSourceUpdateStore((s) => s.status);
+  const latestVersion = useSourceUpdateStore((s) => s.latestVersion);
+  const error = useSourceUpdateStore((s) => s.error);
+  const check = useSourceUpdateStore((s) => s.check);
+  const checkEnabled = settings.sourceUpdateCheckEnabled !== false;
+
   useEffect(() => {
     invoke<string>("get_app_version")
       .then(setVersion)
@@ -366,6 +381,66 @@ function AboutSettingsSection() {
           Markdown vault · AI personas · Planner · Handwriting OCR
         </p>
       </div>
+
+      <div className="w-full max-w-sm space-y-2 text-left">
+        <p className={labelCls}>Source updates</p>
+        <p className="text-[10px] leading-relaxed text-text-muted">
+          Metis compares this build’s version to{" "}
+          <button
+            type="button"
+            className="text-accent hover:underline"
+            onClick={() => openExternalUrl(METIS_SOURCE_URL)}
+          >
+            GitHub <span className="font-mono">package.json</span>
+          </button>
+          . It never downloads installers — pull and rebuild when a newer source version is available.
+        </p>
+        {status === "available" && latestVersion && (
+          <p className="text-[11px] font-medium text-accent">v{latestVersion} is on GitHub.</p>
+        )}
+        {status === "current" && latestVersion && (
+          <p className="text-[11px] text-text-secondary">You’re on the latest source version (v{latestVersion}).</p>
+        )}
+        {status === "error" && error && (
+          <p className="text-[10px] text-red-400" title={error}>
+            Couldn’t reach GitHub. The repo may be private or offline.
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void check({ force: true })}
+            disabled={status === "checking"}
+            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {status === "checking" ? "Checking…" : "Check now"}
+          </button>
+          <button
+            type="button"
+            onClick={() => openExternalUrl(METIS_SOURCE_URL)}
+            className="rounded border border-accent/40 bg-accent/20 px-2 py-1 text-[10px] font-semibold text-accent"
+          >
+            Open repository
+          </button>
+        </div>
+        <label className="flex cursor-pointer items-start gap-2">
+          <input
+            type="checkbox"
+            checked={checkEnabled}
+            onChange={(e) => {
+              onUpdate({ sourceUpdateCheckEnabled: e.target.checked });
+              if (e.target.checked) void check({ force: true });
+            }}
+            className="mt-0.5 rounded border-border"
+          />
+          <span className="text-[10px] text-text-muted">
+            <span className="font-medium text-text-primary">Check GitHub on launch</span>
+            {" "}
+            for a newer source version.
+          </span>
+        </label>
+      </div>
+
       <p className="text-[10px] text-text-muted/50">© 2026 Kyhle Öhlinger — MIT License</p>
     </div>
   );

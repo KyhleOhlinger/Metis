@@ -3,6 +3,7 @@ import Fuse from "fuse.js";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
+import { useSourceUpdateStore } from "../store/useSourceUpdateStore";
 import { STATUS_COLORS } from "../constants";
 import { toastError } from "../store/useToastStore";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
@@ -262,6 +263,25 @@ export default function CommandPalette({ onClose }: Props) {
         hint: "⌘,",
         run: () => {
           openSettings("export");
+          onClose();
+        },
+      },
+      {
+        id: "settings-about",
+        label: "Open Settings: About",
+        hint: "⌘,",
+        run: () => {
+          openSettings("about");
+          onClose();
+        },
+      },
+      {
+        id: "check-source-updates",
+        label: "Check for source updates",
+        hint: "GitHub",
+        run: () => {
+          void useSourceUpdateStore.getState().check({ force: true });
+          openSettings("about");
           onClose();
         },
       },

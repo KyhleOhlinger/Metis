@@ -1,10 +1,14 @@
 {
   "name": "metis",
   "private": true,
-  "version": "0.10.2",
+  "version": "0.10.8",
   "description": "A local-first, AI-augmented personal knowledge ecosystem.",
   "author": "Kyhle Öhlinger",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KyhleOhlinger/Metis.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "tauri dev",

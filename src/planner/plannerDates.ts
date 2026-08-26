@@ -144,6 +144,28 @@ export function eachDateInclusive(startIso: string, endIso: string, fn: (d: Date
   }
 }
 
+/**
+ * PTO span vs actual leave used.
+ * - daysTotal: every calendar day in the inclusive range (weekends + holidays + PTO).
+ * - daysTaken: Mon–Fri only, excluding public-holiday dates (actual PTO used).
+ */
+export function ptoDayCountsFromRange(
+  startIso: string,
+  endIso: string,
+  holidayIsos?: Iterable<string>,
+): { daysTotal: number; daysTaken: number } {
+  const holidays = holidayIsos ? new Set(holidayIsos) : null;
+  let daysTotal = 0;
+  let daysTaken = 0;
+  eachDateInclusive(startIso, endIso, (d) => {
+    daysTotal += 1;
+    if (!dayNameFromDate(d)) return;
+    if (holidays?.has(toIsoDate(d))) return;
+    daysTaken += 1;
+  });
+  return { daysTotal, daysTaken };
+}
+
 export function lastFridayOfMonth(anchor: Date): Date {
   const year = anchor.getFullYear();
   const month = anchor.getMonth();

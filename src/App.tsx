@@ -15,6 +15,7 @@ import ExportPdfModal from "./components/ExportPdfModal";
 import ExportHubModal from "./components/ExportHubModal";
 import ConvertToJekyllModal from "./components/ConvertToJekyllModal";
 import ToastHost from "./components/ToastHost";
+import { SourceUpdateBanner } from "./components/SourceUpdateBanner";
 import { useStore, VaultData } from "./store/useStore";
 import { useMenuEvents } from "./hooks/useMenuEvents";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
@@ -25,6 +26,7 @@ import {
   syncSharedMirror,
 } from "./planner/plannerPersistence";
 import { toastError } from "./store/useToastStore";
+import { useSourceUpdateStore } from "./store/useSourceUpdateStore";
 import { formatError } from "./utils/formatError";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { editorPaneThemeVars, applyAppThemeToDocument, resolveBgPreset } from "./components/editor/bgPresets";
@@ -368,7 +370,9 @@ export default function App() {
   }, [refreshVault]);
 
   useEffect(() => {
-    usePersonaStore.getState().loadFromDisk();
+    void usePersonaStore.getState().loadFromDisk().then(() => {
+      void useSourceUpdateStore.getState().check();
+    });
   }, []);
 
   // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.
@@ -452,7 +456,7 @@ export default function App() {
   return (
     <AppErrorBoundary>
     <div
-      className="editor-theme flex h-screen w-screen overflow-hidden text-text-primary"
+      className="editor-theme flex h-screen w-screen flex-col overflow-hidden text-text-primary"
       style={editorPaneThemeVars(bgPreset)}
       data-color-scheme={bgPreset.isDark ? "dark" : "light"}
     >
@@ -499,6 +503,9 @@ export default function App() {
 
       <PlannerRestoreModal />
 
+      <SourceUpdateBanner />
+
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       {/* ── Pane 1 — Files sidebar ───────────────────────────── */}
       {/*
        * The resize grip lives INSIDE this container, absolutely pinned to its
@@ -562,6 +569,7 @@ export default function App() {
             <div className="absolute inset-y-0 left-0 w-px bg-transparent group-hover:bg-accent/50 group-active:bg-accent transition-colors duration-100" />
           </div>
         )}
+      </div>
       </div>
     </div>
     </AppErrorBoundary>
