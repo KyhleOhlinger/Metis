@@ -50,13 +50,23 @@ export interface Persona {
 
 // ── Execution scope ───────────────────────────────────────────────────────────
 
+export type PlannerPeriod = "week" | "month";
+
 export type ExecutionScope =
   | { type: "none" }
   | { type: "current-file" }
   /** Dragged directly from the file tree — run on this file regardless of which note is open */
   | { type: "specific-file"; filePath: string }
   | { type: "specific-folder"; folderPath: string }
-  | { type: "full-vault" };
+  | { type: "full-vault" }
+  /** Date-sliced slice of the vault's **active** planner (shared or vault mode). */
+  | { type: "planner"; period?: PlannerPeriod; includeCurrentFile?: boolean };
+
+export function isPlannerScope(
+  scope: ExecutionScope,
+): scope is Extract<ExecutionScope, { type: "planner" }> {
+  return scope.type === "planner";
+}
 
 /** Vault notes attached when a selection quick action auto-runs. */
 export type QuickActionScopeDefault = "none" | "persona";
@@ -74,6 +84,7 @@ export interface HistoryEntry {
 
 import type { KeyChord } from "@/utils/keyChord";
 import type { KeybindingCommandId } from "@/config/keybindingRegistry";
+import type { PlannerTab } from "@/planner/plannerTypes";
 
 // ── Quick actions (floating selection toolbar) ────────────────────────────────
 
@@ -215,6 +226,10 @@ export interface Settings {
   /** Per-vault pinned and recently opened note paths (absolute). */
   vaultNoteNavigation?: Record<string, VaultNoteNavigation>;
   /**
+   * Planner tabs omitted from AI context. Empty (default) = send every section.
+   */
+  plannerAiExcludedSections?: PlannerTab[];
+  /**
    * When false, skip GitHub source version checks on launch.
    * Default true — Metis never downloads installers; this only compares `package.json` versions.
    */
@@ -241,6 +256,7 @@ export const DEFAULT_SETTINGS: Settings = {
   editorBgPresetId: "dark",
   editorBgCustomColor: "#16171a",
   sourceUpdateCheckEnabled: true,
+  plannerAiExcludedSections: [],
   stickyDefaults: {
     float: "right",
     width: "12rem",
@@ -252,7 +268,7 @@ export const DEFAULT_SETTINGS: Settings = {
 // ── Default personas shipped with the app ────────────────────────────────────
 
 export const ICON_PRESETS = [
-  "✍️","🔍","🧠","⚙️","📝","🎯","💡","🚀","📊","🗂️","🤖","⚡",
+  "✍️","🔍","🧠","⚙️","📝","🎯","💡","🚀","📊","🗂️","🤖","⚡","📅",
 ] as const;
 
 /**
@@ -263,6 +279,8 @@ export const LIBRARIAN_PERSONA_ID = "persona-librarian";
 export const TASK_PERSONA_ID      = "persona-task";
 /** Handwriting OCR — transcribes images in `handwritten/` to `.md` notes. */
 export const HANDWRITING_OCR_PERSONA_ID = "persona-handwriting-ocr";
+/** Planner briefing / review drafts from the active planner (date-sliced). */
+export const PLANNER_PERSONA_ID = "persona-planner";
 
 export const DEFAULT_PERSONAS: Persona[] = [
   {
@@ -321,6 +339,25 @@ export const DEFAULT_PERSONAS: Persona[] = [
       "- Include ONLY incomplete tasks (`[ ]`). Never include checked tasks (`[x]` or `[X]`).\n" +
       "- If a note has no open tasks, omit it entirely.\n" +
       "Output ONLY the raw Markdown content. No preamble or explanation.",
+  },
+  {
+    id: PLANNER_PERSONA_ID,
+    name: "Planner",
+    icon: "📅",
+    model: "gpt-4o",
+    providerProfileId: "preset-openai",
+    systemPrompt:
+      "You are a Planner assistant embedded in Metis. " +
+      "You receive markdown from the user's **active** planner " +
+      "(shared profile-wide or vault-local — the header says which), covering every tab " +
+      "unless the header lists Settings exclusions. " +
+      "Rules:\n" +
+      "- Use only what appears in the context (Daily Log, weekly/monthly reviews, Reviews, Goals, Templates, PTO & Events).\n" +
+      "- Never invent meetings, PTO, trips, or accomplishments.\n" +
+      "- If a day or section is empty, say so.\n" +
+      "- Briefings: concise, dated, with 3 next actions.\n" +
+      "- Review drafts: paste-ready Markdown for the Weekly or Monthly Review cell; no preamble.\n" +
+      "Respond in Markdown.",
   },
   {
     id: "persona-writer",

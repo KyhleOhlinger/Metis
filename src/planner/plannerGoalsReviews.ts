@@ -27,10 +27,10 @@ export function defaultGoalSections(): GoalSection[] {
   ];
 }
 
-export function loadGoals(): GoalSection[] {
+/** Parse `goals.json` from the active planner store. */
+export function parseGoalSectionsJson(raw: string | null | undefined): GoalSection[] {
+  if (!raw) return defaultGoalSections();
   try {
-    const raw = readPlannerRaw(GOALS_FILE);
-    if (!raw) return defaultGoalSections();
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return defaultGoalSections();
     if (parsed.length === 0) return [];
@@ -50,6 +50,10 @@ export function loadGoals(): GoalSection[] {
   } catch {
     return defaultGoalSections();
   }
+}
+
+export function loadGoals(): GoalSection[] {
+  return parseGoalSectionsJson(readPlannerRaw(GOALS_FILE));
 }
 
 export function saveGoals(sections: GoalSection[]) {
@@ -89,10 +93,9 @@ export function defaultReviewsState(): ReviewsTableState {
   };
 }
 
-export function loadReviews(): ReviewsTableState {
+export function parseReviewsJson(raw: string | null | undefined): ReviewsTableState {
+  if (!raw) return defaultReviewsState();
   try {
-    const raw = readPlannerRaw(REVIEWS_FILE);
-    if (!raw) return defaultReviewsState();
     const parsed = JSON.parse(raw) as { headers?: unknown; rows?: unknown };
     const headers = normalizeReviewHeaders(parsed.headers);
     const rows: ReviewTableRow[] = [];
@@ -106,6 +109,10 @@ export function loadReviews(): ReviewsTableState {
   } catch {
     return defaultReviewsState();
   }
+}
+
+export function loadReviews(): ReviewsTableState {
+  return parseReviewsJson(readPlannerRaw(REVIEWS_FILE));
 }
 
 export function saveReviews(state: ReviewsTableState) {

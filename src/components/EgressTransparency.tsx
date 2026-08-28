@@ -40,7 +40,8 @@ export function EgressTransparency({
     scope.type === "specific-folder" ||
     scope.type === "full-vault" ||
     scope.type === "current-file" ||
-    scope.type === "specific-file";
+    scope.type === "specific-file" ||
+    scope.type === "planner";
 
   const hasApiKey = Boolean(profile?.apiKey?.trim());
 
@@ -143,9 +144,11 @@ export function EgressTransparency({
           )}
           <div className="mt-1">
             <Hint>
-              {includeImages
-                ? `Only notes in the selected scope are considered. Referenced vault images will be attached (max ${MAX_AGENT_VISION_IMAGES}) so a vision model can see them. Your prompt and system prompt are included separately.`
-                : "Only notes in the selected scope are considered. Check Include images on the Scope card to attach referenced vault images. Your prompt and system prompt are included separately."}
+              {scope.type === "planner"
+                ? "Sends every tab of the vault's active planner unless you excluded sections in Settings → Planner. Confirm before run."
+                : includeImages
+                  ? `Only notes in the selected scope are considered. Referenced vault images will be attached (max ${MAX_AGENT_VISION_IMAGES}) so a vision model can see them. Your prompt and system prompt are included separately.`
+                  : "Only notes in the selected scope are considered. Check Include images on the Scope card to attach referenced vault images. Your prompt and system prompt are included separately."}
             </Hint>
           </div>
         </div>

@@ -6,6 +6,7 @@ import { EgressTransparency } from "../../EgressTransparency";
 import { InlineBanner } from "../shared/ui";
 import { SystemPersonaPanels } from "@/systemPersonas/SystemPersonaPanels";
 import { isSystemPersona } from "@/systemPersonas/registry";
+import { PLANNER_PERSONA_ID } from "@/types/persona";
 import { profileForPersona } from "@/utils/providerProfiles";
 import type { ExecutionScope } from "@/types/persona";
 import type { ContextStrategy } from "@/services/contextBuilder";
@@ -108,6 +109,7 @@ export function AITab({
     handleLibrarianScan,
     handleTaskScan,
     handleTaskSync,
+    handlePlannerJob,
     runHandwritingOcr,
     handwritingPendingCount,
     handwritingTotalCount,
@@ -179,7 +181,12 @@ export function AITab({
         personas={personas}
         activePersonaId={activePersonaId}
         streaming={streaming}
-        onSelectPersona={onSelectPersona}
+        onSelectPersona={(id) => {
+          onSelectPersona(id);
+          if (id === PLANNER_PERSONA_ID) {
+            setScope({ type: "planner" });
+          }
+        }}
         onNewPersona={onNewPersona}
         onOpenSettings={onOpenSettings}
       />
@@ -226,6 +233,7 @@ export function AITab({
         onLibrarianScan={() => void handleLibrarianScan()}
         onTaskScan={() => void handleTaskScan()}
         onTaskSync={() => void handleTaskSync()}
+        onPlannerJob={(job) => void handlePlannerJob(job)}
         onHandwritingOcr={(mode) => void runHandwritingOcr(mode)}
       />
 

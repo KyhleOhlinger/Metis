@@ -11,6 +11,7 @@ import type {
 } from "../types/persona";
 import { DEFAULT_SETTINGS } from "../types/persona";
 import { normalizeHex } from "./themeColors";
+import { normalizePlannerAiExcludedSections } from "../planner/plannerTypes";
 
 /** Shipped Jekyll export defaults removed in v0.9.x — strip on load so settings stay blank. */
 const LEGACY_JEKYLL_SHIPPED_AUTHOR = "kyhle";
@@ -304,6 +305,9 @@ export function migrateSettings(saved: Partial<LegacySettings>): Settings {
         includeWrapBlock,
       };
     })(),
+    plannerAiExcludedSections: normalizePlannerAiExcludedSections(
+      cleaned.plannerAiExcludedSections,
+    ),
   };
 }
 

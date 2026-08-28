@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "@/store/useStore";
+import { usePersonaStore } from "@/store/usePersonaStore";
+import { PLANNER_AI_SECTION_OPTIONS, type PlannerTab } from "@/planner/plannerTypes";
 import {
   copySharedPlannerToVault,
   copyVaultPlannerToShared,
@@ -23,6 +25,9 @@ export function PlannerSettingsSection() {
   const plannerSyncStatus = useStore((s) => s.plannerSyncStatus);
   const setPlannerConfig = useStore((s) => s.setPlannerConfig);
   const bumpPlannerReload = useStore((s) => s.bumpPlannerReload);
+  const plannerAiExcludedSections =
+    usePersonaStore((s) => s.settings.plannerAiExcludedSections) ?? [];
+  const updateSettings = usePersonaStore((s) => s.updateSettings);
   const [activeDir, setActiveDir] = useState("");
   const [mirrorDir, setMirrorDir] = useState("");
   const [mirrorSyncedAt, setMirrorSyncedAt] = useState<number | null>(null);
@@ -150,6 +155,35 @@ export function PlannerSettingsSection() {
 
   return (
     <div className="space-y-4 text-[11px] text-text-muted">
+      <div>
+        <p className={labelCls}>AI context</p>
+        <p className="mt-1">
+          Agents receive every planner tab by default. Check a tab to exclude it from AI runs
+          (Scope → Planner, Planner persona, and Task Manager calendar).
+        </p>
+        <div className="mt-2 space-y-1.5">
+          {PLANNER_AI_SECTION_OPTIONS.map((opt) => {
+            const excluded = plannerAiExcludedSections.includes(opt.id);
+            return (
+              <label key={opt.id} className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={excluded}
+                  onChange={() => {
+                    const next: PlannerTab[] = excluded
+                      ? plannerAiExcludedSections.filter((id) => id !== opt.id)
+                      : [...plannerAiExcludedSections, opt.id];
+                    updateSettings({ plannerAiExcludedSections: next });
+                  }}
+                  className="rounded border-border"
+                />
+                <span className="text-text-primary">Exclude {opt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
       <div>
         <p className={labelCls}>Storage mode</p>
         <p className="mt-1">

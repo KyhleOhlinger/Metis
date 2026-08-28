@@ -40,6 +40,13 @@ import {
 // Links already receive accent/underline styling via highlight styles; here
 // we also enable Cmd/Ctrl+Click to follow links without leaving source mode.
 
+/** Matches `max-height` on the preview <img>. Used as CM's pre-draw estimate. */
+const INLINE_IMAGE_MAX_HEIGHT_PX = 280;
+/** Wrapper padding (top + bottom). Kept on the block box so offsetHeight includes it. */
+const INLINE_IMAGE_PAD_Y_PX = 16;
+
+const imageWidgetObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
 class InlineImageWidget extends WidgetType {
   constructor(
     readonly src: string,
@@ -57,22 +64,46 @@ class InlineImageWidget extends WidgetType {
       other.vaultPath === this.vaultPath
     );
   }
-  toDOM(): HTMLElement {
-    const wrap = document.createElement("span");
+  get estimatedHeight() {
+    return INLINE_IMAGE_MAX_HEIGHT_PX + INLINE_IMAGE_PAD_Y_PX;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    // Block widgets must be block-level; a span lets image margins collapse
+    // out of the measured box and throws off click → posAtCoords mapping.
+    const wrap = document.createElement("div");
     wrap.className = "cm-inline-img-wrap";
+    wrap.style.cssText =
+      "display:block;box-sizing:border-box;width:100%;" +
+      "padding:6px 0 10px;overflow:hidden;";
     if (this.revealAbsPath) {
       wrap.dataset.revealPath = this.revealAbsPath;
     }
+
+    const remasure = () => {
+      if (view.dom.isConnected) view.requestMeasure();
+    };
+
     const img = document.createElement("img");
-    img.src = this.src;
     img.alt = this.alt;
     // Constrain size; hide silently if the asset fails to load
     img.style.cssText =
-      "display:block;max-width:100%;max-height:280px;" +
-      "margin:6px 0 10px;border-radius:6px;object-fit:contain;";
-    img.onerror = () => {
+      `display:block;max-width:100%;max-height:${INLINE_IMAGE_MAX_HEIGHT_PX}px;` +
+      "border-radius:6px;object-fit:contain;";
+    img.addEventListener("load", remasure);
+    img.addEventListener("error", () => {
       img.style.display = "none";
-    };
+      remasure();
+    });
+    img.src = this.src;
+    wrap.appendChild(img);
+
+    // Cached / convertFileSrc images often finish after the first CM height
+    // pass (or while Source is display:none). Remeasure whenever the box
+    // actually changes so caret clicks land on the visible line.
+    const ro = new ResizeObserver(remasure);
+    ro.observe(wrap);
+    imageWidgetObservers.set(wrap, ro);
+
     if (this.revealAbsPath) {
       wrap.oncontextmenu = (e) => {
         e.preventDefault();
@@ -85,8 +116,11 @@ class InlineImageWidget extends WidgetType {
         ]);
       };
     }
-    wrap.appendChild(img);
     return wrap;
+  }
+  destroy(dom: HTMLElement) {
+    imageWidgetObservers.get(dom)?.disconnect();
+    imageWidgetObservers.delete(dom);
   }
   ignoreEvent(event: Event): boolean {
     return event.type === "contextmenu";

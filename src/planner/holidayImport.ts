@@ -1,5 +1,8 @@
 import type { PublicHolidayEntry, TrackerData } from "./plannerStorage";
 import { makeRowId } from "./plannerStorage";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { isTauriWebview } from "@/services/metisFetch";
+import { assertSafeProviderUrl } from "@/utils/providerUrlSafety";
 
 export interface NagerHolidayRow {
   date: string;
@@ -90,7 +93,20 @@ export async function fetchPublicHolidays(
   year: number,
   country: string,
 ): Promise<NagerHolidayRow[]> {
-  const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${country}`);
+  const y = Math.trunc(Number(year));
+  if (!Number.isFinite(y) || y < 1970 || y > 2100) {
+    throw new Error("Holiday import year is out of range.");
+  }
+  const countryCode = country.trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) {
+    throw new Error("Holiday import country must be a two-letter ISO code.");
+  }
+  const url = `https://date.nager.at/api/v3/PublicHolidays/${y}/${countryCode}`;
+  assertSafeProviderUrl(url);
+  const fetchFn = isTauriWebview()
+    ? (tauriFetch as unknown as typeof fetch)
+    : globalThis.fetch.bind(globalThis);
+  const res = await fetchFn(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as NagerHolidayRow[];
 }

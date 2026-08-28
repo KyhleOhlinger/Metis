@@ -3,6 +3,30 @@
 export type DayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday";
 export type TaskStatus = "work" | "holiday" | "sick" | "pto" | "personal" | "offsite";
 export type PlannerTab = "daily" | "weekly" | "monthly" | "templates" | "tracker" | "goals" | "reviews";
+
+export const PLANNER_AI_SECTION_OPTIONS: { id: PlannerTab; label: string }[] = [
+  { id: "daily", label: "Daily Log" },
+  { id: "weekly", label: "Weekly Review" },
+  { id: "monthly", label: "Monthly Review" },
+  { id: "reviews", label: "Reviews" },
+  { id: "goals", label: "Goals" },
+  { id: "templates", label: "Templates" },
+  { id: "tracker", label: "PTO & Events" },
+];
+
+const PLANNER_TAB_IDS = new Set<PlannerTab>(PLANNER_AI_SECTION_OPTIONS.map((s) => s.id));
+
+export function normalizePlannerAiExcludedSections(raw: unknown): PlannerTab[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PlannerTab[] = [];
+  for (const item of raw) {
+    if (typeof item === "string" && PLANNER_TAB_IDS.has(item as PlannerTab)) {
+      const tab = item as PlannerTab;
+      if (!out.includes(tab)) out.push(tab);
+    }
+  }
+  return out;
+}
 export type TemplateCadence = "daily" | "weekly" | "monthly" | "interval";
 export type TrackerStatus = "Complete" | "Coming Up" | "Pending";
 

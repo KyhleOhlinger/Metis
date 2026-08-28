@@ -36,10 +36,10 @@ export function savePlannerJsonNow(fileKey: PlannerFileKey, value: unknown) {
   schedulePlannerSave(fileKey, JSON.stringify(value), 0);
 }
 
-export function loadManifest(): TaskManifest {
+/** Parse planner `manifest.json` (active store). Safe on null/invalid input. */
+export function parseManifestJson(raw: string | null | undefined): TaskManifest {
+  if (!raw) return {};
   try {
-    const raw = readPlannerRaw(MANIFEST_FILE);
-    if (!raw) return {};
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     const normalized: TaskManifest = {};
 
@@ -145,14 +145,17 @@ export function loadManifest(): TaskManifest {
   }
 }
 
+export function loadManifest(): TaskManifest {
+  return parseManifestJson(readPlannerRaw(MANIFEST_FILE));
+}
+
 export function saveManifest(manifest: TaskManifest) {
   debouncePlannerSave(MANIFEST_FILE, manifest);
 }
 
-export function loadTemplates(): PlanTemplate[] {
+export function parseTemplatesJson(raw: string | null | undefined): PlanTemplate[] {
+  if (!raw) return [];
   try {
-    const raw = readPlannerRaw(TEMPLATE_FILE);
-    if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed
@@ -185,14 +188,17 @@ export function loadTemplates(): PlanTemplate[] {
   }
 }
 
+export function loadTemplates(): PlanTemplate[] {
+  return parseTemplatesJson(readPlannerRaw(TEMPLATE_FILE));
+}
+
 export function saveTemplates(templates: PlanTemplate[]) {
   savePlannerJsonNow(TEMPLATE_FILE, templates);
 }
 
-export function loadLayoutTemplates(): PlannerLayoutTemplates {
+export function parseLayoutTemplatesJson(raw: string | null | undefined): PlannerLayoutTemplates {
+  if (!raw) return DEFAULT_LAYOUT_TEMPLATES;
   try {
-    const raw = readPlannerRaw(LAYOUT_TEMPLATE_FILE);
-    if (!raw) return DEFAULT_LAYOUT_TEMPLATES;
     const parsed = JSON.parse(raw) as Partial<PlannerLayoutTemplates>;
     const monthlyPrompts = Array.isArray(parsed.monthlyPrompts)
       ? parsed.monthlyPrompts
@@ -213,6 +219,10 @@ export function loadLayoutTemplates(): PlannerLayoutTemplates {
   } catch {
     return DEFAULT_LAYOUT_TEMPLATES;
   }
+}
+
+export function loadLayoutTemplates(): PlannerLayoutTemplates {
+  return parseLayoutTemplatesJson(readPlannerRaw(LAYOUT_TEMPLATE_FILE));
 }
 
 export function saveLayoutTemplates(layout: PlannerLayoutTemplates) {

@@ -3,6 +3,7 @@ import type { AiProviderProfile } from "@/types/persona";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import QuickActionsSettings from "../../QuickActionsSettings";
 import { makeProviderProfileId } from "@/utils/providerProfiles";
+import { assertSafeProviderUrl, packagedHttpsHostHint } from "@/utils/providerUrlSafety";
 import { testProviderConnection } from "@/services/llmService";
 import { ccInputCls, FieldLabel, Hint, SectionAction } from "../shared/ui";
 import { changeDefaultProviderWithPrompt } from "@/utils/defaultProviderChange";
@@ -73,6 +74,15 @@ export function SettingsTab({
 
   function handleAddProvider() {
     if (!draftKey.trim() || !draftUrl.trim()) return;
+    try {
+      assertSafeProviderUrl(draftUrl.trim());
+    } catch (e) {
+      setDraftTestStatus({
+        phase: "error",
+        message: e instanceof Error ? e.message : String(e),
+      });
+      return;
+    }
     const profile = draftProfile();
     upsertProviderProfile(profile);
     if (!settings.defaultProviderProfileId) {
@@ -186,6 +196,17 @@ export function SettingsTab({
               className={`${ccInputCls} mt-1.5 w-28`}
             />
           </div>
+          <p>
+            Planner AI sends every tab unless you exclude sections in{" "}
+            <button
+              type="button"
+              className="text-accent hover:underline"
+              onClick={() => usePersonaStore.getState().openSettings("planner")}
+            >
+              Settings → Planner
+            </button>
+            .
+          </p>
         </div>
       </CollapsibleSection>}
 
@@ -204,8 +225,8 @@ export function SettingsTab({
       >
         <div className="space-y-3">
         <Hint>
-          Add any OpenAI-compatible API (OpenAI, Groq, Ollama, Azure, LiteLLM, etc.). Enter the
-          provider name, base URL, and API key.
+          Add an OpenAI-compatible API (name, base URL, API key).{" "}
+          {packagedHttpsHostHint()} Other public HTTPS hosts need a capability/CSP rebuild.
         </Hint>
 
         {profiles.map((p) => (

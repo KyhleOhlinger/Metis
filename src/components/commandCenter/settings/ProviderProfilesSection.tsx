@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { AiProviderProfile } from "@/types/persona";
 import { testProviderConnection } from "@/services/llmService";
+import { assertSafeProviderUrl } from "@/utils/providerUrlSafety";
 
 export type TestStatus =
   | { phase: "idle" }
@@ -67,7 +68,16 @@ export function ProviderProfilesSection({
     setDefaultModel(profile.defaultModel ?? "");
   }, [profile.id, profile.name, profile.baseUrl, profile.apiKey, profile.defaultModel]);
 
-  function commit(): AiProviderProfile {
+  function commit(): AiProviderProfile | null {
+    try {
+      assertSafeProviderUrl(baseUrl.trim());
+    } catch (e) {
+      setTestStatus({
+        phase: "error",
+        message: e instanceof Error ? e.message : String(e),
+      });
+      return null;
+    }
     const next: AiProviderProfile = {
       ...profile,
       name: name.trim() || profile.name,
@@ -198,7 +208,9 @@ export function ProviderProfilesSection({
           />
           <button
             type="button"
-            onClick={() => commit()}
+            onClick={() => {
+              if (commit()) setTestStatus({ phase: "idle" });
+            }}
             className="w-full rounded border border-accent/50 bg-accent/10 py-1 text-[10px] text-accent hover:bg-accent/20"
           >
             Save changes

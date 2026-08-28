@@ -8,6 +8,7 @@
 
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { invoke } from "@tauri-apps/api/core";
+import { assertSafeProviderUrl } from "../utils/providerUrlSafety";
 
 export const METIS_SOURCE_OWNER = "KyhleOhlinger";
 export const METIS_SOURCE_REPO_NAME = "Metis";
@@ -48,6 +49,7 @@ function packageJsonUrl(branch: string): string {
 
 /** SECURITY: only GET our own public package.json on GitHub raw. */
 function assertPinnedPackageJsonUrl(url: string): void {
+  assertSafeProviderUrl(url);
   const parsed = new URL(url);
   if (parsed.protocol !== "https:") {
     throw new Error("Update check refused: not HTTPS");

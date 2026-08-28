@@ -5,9 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 // incomplete tasks by source file, and returns a structured context block that
 // the Task Manager LLM uses to generate a formatted todo.md.
 
+import { buildPlannerUpcomingSection } from "./plannerContext";
+
 export async function buildTaskContext(
   noteIndex: import("../store/useStore").NoteMetadata[],
   onStatus: (msg: string) => void,
+  vaultPath?: string | null,
 ): Promise<string> {
   const isTodoPath = (path: string) =>
     /(?:^|[\\/])summaries[\\/]todo\.md$/i.test(path);
@@ -62,6 +65,17 @@ export async function buildTaskContext(
       ``,
     ]),
   ];
+
+  if (vaultPath) {
+    try {
+      const upcoming = await buildPlannerUpcomingSection(vaultPath);
+      if (upcoming) {
+        lines.push(upcoming, ``);
+      }
+    } catch {
+      // Planner is optional for task scan.
+    }
+  }
 
   onStatus("");
   return lines.join("\n");
