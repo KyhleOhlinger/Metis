@@ -53,5 +53,8 @@ export function scopeLabelFor(
   if (scope.type === "specific-folder") {
     return scope.folderPath.split("/").pop() ?? "Folder";
   }
+  if (scope.type === "planner") {
+    return `Planner${scope.includeCurrentFile ? " + current note" : ""}`;
+  }
   return "Full Vault";
 }

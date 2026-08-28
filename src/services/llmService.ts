@@ -23,6 +23,7 @@ import {
 import { z } from "zod";
 import type { AiProviderProfile, Persona } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
+import { assertSafeProviderUrl } from "../utils/providerUrlSafety";
 import { resolveLanguageModel } from "./providerRegistry";
 import { isTauriWebview, metisFetchForProfile, resolveProviderBaseUrl } from "./metisFetch";
 
@@ -506,6 +507,11 @@ export async function testProviderConnection(
   }
   if (!profile.baseUrl?.trim()) {
     return { ok: false, error: "Base URL is required." };
+  }
+  try {
+    assertSafeProviderUrl(profile.baseUrl);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
   if (!hostFromBaseUrl(profile.baseUrl)) {
     return { ok: false, error: "Base URL is not a valid URL." };

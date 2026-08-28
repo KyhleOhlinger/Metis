@@ -23,10 +23,11 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import type { AiProviderProfile, Persona, ExecutionScope } from "../types/persona";
+import type { AiProviderProfile, Persona, ExecutionScope, PlannerPeriod } from "../types/persona";
 import { curatedSmallModelId, generateCompletion } from "./llmService";
 import { isGoogleProvider } from "./providerRegistry";
 import { countImageMarkdownRefs, MAX_AGENT_VISION_IMAGES } from "./agentVisionContext";
+import { buildPlannerContext } from "../systemPersonas/plannerContext";
 
 // ── Model context limits ──────────────────────────────────────────────────────
 // Approximate token context windows for common models. Unknown ids use
@@ -98,6 +99,7 @@ function charBudget(model: string, overheadChars = 0): number {
 export type ContextStrategy =
   | { type: "none"; chars: number }
   | { type: "single-file"; chars: number }
+  | { type: "planner"; period?: PlannerPeriod; chars: number }
   | { type: "direct"; files: number; chars: number }
   | { type: "tfidf"; total: number; selected: number; chars: number }
   | { type: "scout"; scanned: number; selected: number; chars: number };
@@ -138,9 +140,29 @@ export async function buildSmartContext(
   activeFileContent: string,
   vaultPath: string | null,
   onStatus?: (msg: string) => void,
+  activeFilePath?: string | null,
 ): Promise<SmartContextResult> {
   if (scope.type === "none") {
     return { context: "", strategy: { type: "none", chars: 0 } };
+  }
+
+  if (scope.type === "planner") {
+    if (!vaultPath) {
+      return {
+        context: "(no vault open — planner context requires an open vault)",
+        strategy: { type: "planner", period: scope.period, chars: 0 },
+      };
+    }
+    onStatus?.("Loading active planner…");
+    const built = await buildPlannerContext(vaultPath, {
+      includeCurrentFile: Boolean(scope.includeCurrentFile),
+      currentFileContent: activeFileContent,
+      currentFilePath: activeFilePath ?? null,
+    });
+    return {
+      context: built.context,
+      strategy: { type: "planner", period: scope.period, chars: built.chars },
+    };
   }
 
   // ── Single-file scope — bypass all tiering ──────────────────────────────
@@ -475,6 +497,8 @@ export interface EgressEstimate {
   estimatedImageCount: number;
   /** Folder/vault runs may attach referenced images after notes are selected. */
   imagesMayBeAttached: boolean;
+  /** Planner slices are calendar JSON rendered as markdown, not vault notes. */
+  contentKind?: "notes" | "planner" | "prompt";
 }
 
 function fmtChars(n: number): string {
@@ -564,6 +588,52 @@ export async function estimateContextEgress(
       providerLabel,
       estimatedImageCount: 0,
       imagesMayBeAttached: false,
+      contentKind: "prompt",
+    };
+  }
+
+  if (scope.type === "planner") {
+    const periodLabel = "all sections";
+    const fileNote = scope.includeCurrentFile ? " + current note" : "";
+    const scopeLabel = `Planner (${periodLabel}${fileNote})`;
+    if (!vaultPath) {
+      return {
+        noteCount: 0,
+        totalCharsInScope: 0,
+        estimatedContextChars: 0,
+        plannedTier: "direct",
+        budgetChars: budget,
+        extraScoutApiCall: false,
+        scopeLabel,
+        requiresConfirm: false,
+        providerLabel,
+        estimatedImageCount: 0,
+        imagesMayBeAttached: false,
+        contentKind: "planner",
+      };
+    }
+    const built = await buildPlannerContext(vaultPath, {
+      includeCurrentFile: Boolean(scope.includeCurrentFile),
+      currentFileContent: activeFileContent,
+      currentFilePath: activeFilePath,
+    });
+    const imageCount =
+      includeImages && scope.includeCurrentFile
+        ? countImageMarkdownRefs(activeFileContent)
+        : 0;
+    return {
+      noteCount: scope.includeCurrentFile ? 1 : 0,
+      totalCharsInScope: built.chars,
+      estimatedContextChars: built.chars,
+      plannedTier: "direct",
+      budgetChars: budget,
+      extraScoutApiCall: false,
+      scopeLabel,
+      requiresConfirm: true,
+      providerLabel,
+      estimatedImageCount: imageCount,
+      imagesMayBeAttached: imageCount > 0,
+      contentKind: "planner",
     };
   }
 
@@ -669,6 +739,13 @@ export async function estimateContextEgress(
 
 export function egressEstimateSummary(est: EgressEstimate): string {
   const tier = plannedTierLabel(est.plannedTier, est.extraScoutApiCall);
+  if (est.contentKind === "planner" || est.scopeLabel.startsWith("Planner")) {
+    return (
+      `Scope: ${est.scopeLabel} — ~${fmtChars(est.estimatedContextChars)} chars from the active planner ` +
+      `(all tabs unless excluded in Settings → Planner). ` +
+      `(Model budget ~${fmtChars(est.budgetChars)}.)`
+    );
+  }
   if (est.scopeLabel === "No Selection") {
     return "Scope: No Selection — prompt only, no vault notes attached.";
   }
@@ -705,6 +782,8 @@ export function strategyLabel(s: ContextStrategy): string {
       return "Prompt only · no vault notes";
     case "single-file":
       return `📄 Current file · ${fmt(s.chars)} chars`;
+    case "planner":
+      return `📅 Planner · ${fmt(s.chars)} chars`;
     case "direct":
       return `📂 ${s.files} file${s.files !== 1 ? "s" : ""} · ${fmt(s.chars)} chars`;
     case "tfidf":
@@ -724,6 +803,8 @@ export function contextEgressLabel(s: ContextStrategy): string {
       return "Prompt only · no vault notes";
     case "single-file":
       return `${fmt(s.chars)} chars to provider`;
+    case "planner":
+      return `Planner · ${fmt(s.chars)} chars`;
     case "direct":
       return `Direct read · ${s.files} file${s.files !== 1 ? "s" : ""} · ${fmt(s.chars)} chars`;
     case "tfidf":

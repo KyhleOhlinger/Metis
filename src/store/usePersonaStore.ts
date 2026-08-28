@@ -11,6 +11,7 @@ import type {
 } from "../types/persona";
 import type { AgentRunLogEntry } from "../types/agentRunLog";
 import { DEFAULT_PERSONAS, DEFAULT_QUICK_ACTIONS } from "../types/persona";
+import { SYSTEM_PERSONA_IDS } from "../systemPersonas/registry";
 import { fetchProviderModels } from "../services/llmService";
 import { loadAgentRunLogFromDisk } from "../services/agentRunLogService";
 import {
@@ -174,12 +175,22 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       let settings = migrateSettings(saved);
       settings = settingsWithHosts(settings);
 
-      const personas = rawPersonas.map((p) =>
-        migratePersona(
+      const personas = rawPersonas.map((p) => {
+        const migrated = migratePersona(
           p as Persona & { provider?: LegacyAIProvider },
           settings,
-        ),
-      );
+        );
+        const shipped = DEFAULT_PERSONAS.find((d) => d.id === p.id);
+        if (shipped && SYSTEM_PERSONA_IDS.has(p.id)) {
+          return {
+            ...migrated,
+            name: shipped.name,
+            icon: shipped.icon,
+            systemPrompt: shipped.systemPrompt,
+          };
+        }
+        return migrated;
+      });
 
       set({
         personas,

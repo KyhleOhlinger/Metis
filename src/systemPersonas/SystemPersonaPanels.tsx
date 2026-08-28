@@ -1,6 +1,7 @@
 import {
   HANDWRITING_OCR_PERSONA_ID,
   LIBRARIAN_PERSONA_ID,
+  PLANNER_PERSONA_ID,
   TASK_PERSONA_ID,
 } from "../types/persona";
 
@@ -14,6 +15,7 @@ export interface SystemPersonaPanelsProps {
   onLibrarianScan: () => void;
   onTaskScan: () => void;
   onTaskSync: () => void;
+  onPlannerJob: (job: "briefing" | "weekly-review" | "monthly-review") => void;
   onHandwritingOcr: (mode: "pending" | "all") => void;
 }
 
@@ -27,6 +29,7 @@ export function SystemPersonaPanels({
   onLibrarianScan,
   onTaskScan,
   onTaskSync,
+  onPlannerJob,
   onHandwritingOcr,
 }: SystemPersonaPanelsProps) {
   if (activePersonaId === LIBRARIAN_PERSONA_ID) {
@@ -82,24 +85,23 @@ export function SystemPersonaPanels({
               to each source note. Optional due date metadata is supported inline as{" "}
               <code className="font-mono">(due: YYYY-MM-DD)</code>.
             </p>
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 mb-2 text-[10px] text-amber-200/90 leading-relaxed">
-              <span className="font-semibold text-amber-100">No confirmation step:</span>{" "}
-              when the LLM finishes, Metis writes <code className="font-mono text-[9px]">summaries/todo.md</code>{" "}
-              under your vault immediately (overwriting any existing file). This is unlike normal agent edits,
-              which use Apply.
-            </div>
+            <p className="text-[10px] text-text-muted leading-relaxed mb-2">
+              The scan does not write files until you click <span className="font-medium text-text-primary">Apply</span>{" "}
+              on the suggested <code className="font-mono">todo.md</code>.
+            </p>
             <button
               type="button"
               onClick={onTaskScan}
               disabled={!hasApiKey || streaming}
               className="flex items-center gap-1.5 rounded-md bg-green-500/15 border border-green-500/30 px-3 py-1.5 text-[11px] font-medium text-green-400 hover:bg-green-500/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {streaming ? "Scanning…" : "Scan & Update todo.md"}
+              {streaming ? "Scanning…" : "Scan vault tasks"}
             </button>
             <div className="mt-2 rounded-md border border-sky-500/35 bg-sky-500/10 px-2 py-1.5 text-[10px] text-sky-100/90 leading-relaxed">
               <span className="font-semibold text-sky-100">Vault Task Sync:</span>{" "}
               applies checkbox changes from <code className="font-mono text-[9px]">summaries/todo.md</code> back
               to source notes, then rebuilds <code className="font-mono text-[9px]">todo.md</code> from current vault task state.
+              Confirms before writing.
             </div>
             <button
               type="button"
@@ -109,6 +111,50 @@ export function SystemPersonaPanels({
             >
               {streaming ? "Syncing…" : "Vault Task Sync (bi-directional)"}
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (activePersonaId === PLANNER_PERSONA_ID) {
+    return (
+      <div className="shrink-0 border-b border-border bg-surface-overlay/40 px-3 py-2.5">
+        <div className="flex items-start gap-2">
+          <span className="text-lg leading-none shrink-0">📅</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] font-semibold text-text-primary mb-0.5">Active planner</p>
+            <p className="text-[10px] text-text-muted leading-relaxed mb-2">
+              Sends every tab from this vault’s <strong>active</strong> planner
+              (shared or vault mode). Exclude sections in <strong>Settings → Planner</strong>.
+              Review drafts are paste-ready — they are not written back automatically.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onPlannerJob("briefing")}
+                disabled={!hasApiKey || streaming || !vaultPath}
+                className="flex items-center gap-1.5 rounded-md bg-accent/15 border border-accent/30 px-3 py-1.5 text-[11px] font-medium text-accent hover:bg-accent/25 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {streaming ? "Working…" : "Brief this week"}
+              </button>
+              <button
+                type="button"
+                onClick={() => onPlannerJob("weekly-review")}
+                disabled={!hasApiKey || streaming || !vaultPath}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-3 py-1.5 text-[11px] font-medium text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Draft weekly review
+              </button>
+              <button
+                type="button"
+                onClick={() => onPlannerJob("monthly-review")}
+                disabled={!hasApiKey || streaming || !vaultPath}
+                className="flex items-center gap-1.5 rounded-md border border-border bg-surface-raised px-3 py-1.5 text-[11px] font-medium text-text-secondary hover:border-accent hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Draft monthly review
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -12,6 +12,13 @@ import {
   collectVaultTasksForTodo,
   buildTodoSyncContent,
 } from "@/systemPersonas/taskManagerContext";
+import {
+  buildPlannerContext,
+  plannerJobTrigger,
+  type PlannerPersonaJob,
+} from "@/systemPersonas/plannerContext";
+import { estimateContextEgress } from "@/services/contextBuilder";
+import { confirmEgressBeforeRun } from "@/components/egressConfirm";
 import { transcribeHandwritingImage } from "@/services/ocrService";
 import {
   recordAgentRun,
@@ -160,7 +167,7 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
   abortRef.current = controller;
 }, [activePersona, hasApiKey, streaming, settings, onAddHistory, vaultPath]);
 
-// ── Task Manager: vault-wide task scan + todo.md auto-write ────────────────
+// ── Task Manager: vault-wide task scan → pending Apply for todo.md ────────
 const handleTaskScan = useCallback(async () => {
   if (!activePersona || !hasApiKey || streaming) return;
 
@@ -184,7 +191,7 @@ const handleTaskScan = useCallback(async () => {
   let taskContext: string;
   try {
     const { noteIndex } = useStore.getState();
-    taskContext = await buildTaskContext(noteIndex, setStatusMsg);
+    taskContext = await buildTaskContext(noteIndex, setStatusMsg, vaultPath);
   } catch (e) {
     setError(`Task scan failed: ${String(e)}`);
     setStreaming(false);
@@ -208,18 +215,17 @@ const handleTaskScan = useCallback(async () => {
     profile,
     {
       onChunk: (chunk) => setResponse((prev) => prev + chunk),
-      onDone: async (text, _toolCalls, meta) => {
+      onDone: (text, _toolCalls, meta) => {
         setStreaming(false);
-        // Auto-write the result to summaries/todo.md using agent_write_note
         if (vaultPath && text.trim()) {
-          try {
-            const relPath = `${vaultPath}/summaries/todo.md`;
-            const absPath = await invoke<string>("agent_write_note", { relPath, content: text });
-            await syncUiAfterDiskWrites([{ path: absPath, content: text }]);
-            setStatusMsg("✓ todo.md written to summaries/");
-          } catch (e) {
-            setStatusMsg(`Could not write todo.md: ${String(e)}`);
-          }
+          setPendingWrites([{
+            id: `task-scan-todo-${Date.now()}`,
+            tool: "create_new_note",
+            path: "summaries/todo.md",
+            content: text,
+            status: "pending",
+          }]);
+          setStatusMsg("Review the draft below, then Apply to write summaries/todo.md.");
         }
         void recordAgentRun({
           startedAt,
@@ -273,6 +279,12 @@ const handleTaskScan = useCallback(async () => {
 // ── Task Manager: bi-directional checkbox sync (todo.md ↔ source notes) ───
 const handleTaskSync = useCallback(async () => {
   if (streaming || !vaultPath) return;
+
+  const ok = await appConfirm(
+    "Apply checkbox changes from summaries/todo.md to source notes, then rebuild todo.md from the vault?",
+    { title: "Vault task sync", confirmLabel: "Sync" },
+  );
+  if (!ok) return;
 
   setError("");
   setResponse("");
@@ -376,6 +388,119 @@ const handleTaskSync = useCallback(async () => {
     setStreaming(false);
   }
   }, [streaming, vaultPath, activePersona, settings]);
+
+  const handlePlannerJob = useCallback(
+    async (job: PlannerPersonaJob) => {
+      if (!activePersona || !hasApiKey || streaming || !vaultPath) return;
+
+      const profile = selectProfileForPersona(
+        { ...usePersonaStore.getState(), settings },
+        activePersona,
+      );
+      if (!profile) {
+        setError("No API provider configured for this persona.");
+        return;
+      }
+
+      const trigger = plannerJobTrigger(job);
+      const runScope = { type: "planner" as const };
+
+      try {
+        const egress = await estimateContextEgress(
+          runScope,
+          trigger,
+          activePersona,
+          profile,
+          "",
+          null,
+          vaultPath,
+          false,
+        );
+        if (!(await confirmEgressBeforeRun(egress))) return;
+      } catch {
+        // Proceed; buildPlannerContext will surface load errors.
+      }
+
+      setError("");
+      setResponse("");
+      setStrategy(null);
+      setStatusMsg("Loading active planner…");
+      setPendingWrites([]);
+      setStreaming(true);
+
+      let plannerContext: string;
+      try {
+        const built = await buildPlannerContext(vaultPath);
+        plannerContext = built.context;
+      } catch (e) {
+        setError(`Planner load failed: ${String(e)}`);
+        setStreaming(false);
+        return;
+      }
+
+      setStatusMsg("");
+      setStrategy({ type: "planner", chars: plannerContext.length });
+
+      const startedAt = Date.now();
+      const controller = streamResponse(
+        activePersona,
+        plannerContext,
+        trigger,
+        profile,
+        {
+          onChunk: (chunk) => setResponse((prev) => prev + chunk),
+          onDone: (text, _toolCalls, meta) => {
+            setStreaming(false);
+            void recordAgentRun({
+              startedAt,
+              status: "success",
+              persona: activePersona,
+              profile,
+              agentType: "planner",
+              scope: runScope,
+              activeFilePath: null,
+              vaultPath,
+              userMessage: trigger,
+              response: text,
+              context: plannerContext,
+              systemPrompt: activePersona.systemPrompt,
+              contextStrategy: { type: "planner", chars: plannerContext.length },
+              meta,
+            });
+            onAddHistory({
+              id: `h-${Date.now()}`,
+              timestamp: Date.now(),
+              personaId: activePersona.id,
+              scope: runScope,
+              userMessage: trigger,
+              response: text,
+            });
+          },
+          onError: (err) => {
+            setStreaming(false);
+            setError(err.message);
+            void recordAgentRun({
+              startedAt,
+              status: "error",
+              persona: activePersona,
+              profile,
+              agentType: "planner",
+              scope: runScope,
+              activeFilePath: null,
+              vaultPath,
+              userMessage: trigger,
+              errorMessage: err.message,
+              context: plannerContext,
+              systemPrompt: activePersona.systemPrompt,
+              contextStrategy: { type: "planner", chars: plannerContext.length },
+            });
+          },
+        },
+      );
+      abortRef.current = controller;
+    },
+    [activePersona, hasApiKey, streaming, vaultPath, settings, onAddHistory],
+  );
 
   const runHandwritingOcr = useCallback(
   async (mode: "pending" | "all") => {
@@ -559,6 +684,7 @@ const handleTaskSync = useCallback(async () => {
     handleLibrarianScan,
     handleTaskScan,
     handleTaskSync,
+    handlePlannerJob,
     runHandwritingOcr,
     handwritingPendingCount,
     handwritingTotalCount,

@@ -31,7 +31,7 @@ export function AITabScopeSelector({
       <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-2">
         <div className="flex items-center justify-between gap-2">
           <SubsectionLabel>Scope</SubsectionLabel>
-          {showIncludeImages && scope.type !== "none" && (
+          {showIncludeImages && scope.type !== "none" && scope.type !== "planner" && (
             <label
               className="flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted"
               title="When checked, vault images referenced in scoped notes are sent so a vision model can see them"
@@ -53,11 +53,18 @@ export function AITabScopeSelector({
               { type: "current-file", label: "File" },
               { type: "specific-folder", label: "Folder" },
               { type: "full-vault", label: "Vault" },
+              { type: "planner", label: "Planner" },
             ] as const
           ).map((seg) => (
             <SegmentButton
               key={seg.type}
-              title={seg.type === "none" ? "Prompt only — no vault notes attached" : undefined}
+              title={
+                seg.type === "none"
+                  ? "Prompt only — no vault notes attached"
+                  : seg.type === "planner"
+                    ? "Active planner — every tab unless excluded in Settings → Planner"
+                    : undefined
+              }
               active={
                 scope.type === seg.type ||
                 (seg.type === "current-file" && scope.type === "specific-file")
@@ -71,6 +78,8 @@ export function AITabScopeSelector({
                   setScope({ type: "current-file" });
                 } else if (seg.type === "full-vault") {
                   setScope({ type: "full-vault" });
+                } else if (seg.type === "planner") {
+                  setScope({ type: "planner" });
                 }
               }}
             >
@@ -78,6 +87,47 @@ export function AITabScopeSelector({
             </SegmentButton>
           ))}
         </div>
+
+        {scope.type === "planner" && (
+          <>
+            <Hint>
+              All planner tabs (Daily Log through PTO & Events). Exclude sections in Settings → Planner.
+            </Hint>
+            {activeFilePath && (
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted"
+                title="Append the open note after the planner"
+              >
+                <input
+                  type="checkbox"
+                  checked={Boolean(scope.includeCurrentFile)}
+                  onChange={(e) =>
+                    setScope({
+                      type: "planner",
+                      includeCurrentFile: e.target.checked,
+                    })
+                  }
+                  className="rounded border-border"
+                />
+                <span>Also attach current note</span>
+              </label>
+            )}
+            {showIncludeImages && scope.includeCurrentFile && (
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted"
+                title="When checked, vault images referenced in the attached note are sent"
+              >
+                <input
+                  type="checkbox"
+                  checked={includeImages}
+                  onChange={(e) => setIncludeImages(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <span>Include images</span>
+              </label>
+            )}
+          </>
+        )}
 
         {(scope.type === "current-file" || scope.type === "specific-file") &&
           noteFiles.length > 0 && (

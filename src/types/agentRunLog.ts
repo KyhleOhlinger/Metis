@@ -8,6 +8,7 @@ export type AgentType =
   | "librarian"
   | "task-scan"
   | "task-sync"
+  | "planner"
   | "handwriting-ocr"
   | "quick-action"
   | "scout";
@@ -110,6 +111,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   librarian: "Librarian",
   "task-scan": "Task scan",
   "task-sync": "Task sync",
+  planner: "Planner",
   "handwriting-ocr": "Handwriting OCR",
   "quick-action": "Quick action",
   scout: "Scout",

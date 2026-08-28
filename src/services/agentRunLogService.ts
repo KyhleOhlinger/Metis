@@ -38,6 +38,8 @@ export function formatScopeLabel(scope: ExecutionScope): string {
       return scope.folderPath.split("/").pop() ?? scope.folderPath;
     case "full-vault":
       return "Full vault";
+    case "planner":
+      return `Planner${scope.includeCurrentFile ? " + current note" : ""}`;
   }
 }
 

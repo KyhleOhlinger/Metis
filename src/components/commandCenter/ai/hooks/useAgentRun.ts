@@ -109,7 +109,10 @@ export function useAgentRun(ui: AgentRunUi) {
   const runMessage = userMessage.trim();
   if (!runPersona || !runProfile?.apiKey?.trim() || !runMessage || streaming) return;
 
-  const attachImages = includeImages && scope.type !== "none";
+  const attachImages =
+    includeImages &&
+    scope.type !== "none" &&
+    !(scope.type === "planner" && !scope.includeCurrentFile);
 
   if (!isSystemPersona(runPersona.id)) {
     try {
@@ -169,6 +172,7 @@ export function useAgentRun(ui: AgentRunUi) {
       runActiveFileContent,
       vaultPath,
       (msg) => setStatusMsg(msg),
+      runActiveFilePath,
     );
     if (runToken !== runTokenRef.current) return;
     context = result.context;
@@ -287,7 +291,6 @@ export function useAgentRun(ui: AgentRunUi) {
         }
 
         // Agent file tools: always require explicit "Apply" in the UI (no silent disk writes).
-        // Task Manager's todo.md path is the intentional exception — handled in handleTaskScan.
         if (toolCalls.length > 0) {
           const writes: PendingWrite[] = [];
           for (const tc of toolCalls as ParsedToolCall[]) {

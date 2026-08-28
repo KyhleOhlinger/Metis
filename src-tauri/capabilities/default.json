@@ -12,9 +12,23 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "https://**" },
         { "url": "http://127.0.0.1:**" },
         { "url": "http://localhost:**" },
+        { "url": "https://api.openai.com/**" },
+        { "url": "https://generativelanguage.googleapis.com/**" },
+        { "url": "https://api.groq.com/**" },
+        { "url": "https://api.perplexity.ai/**" },
+        { "url": "https://api.anthropic.com/**" },
+        { "url": "https://openrouter.ai/**" },
+        { "url": "https://api.openrouter.ai/**" },
+        { "url": "https://api.together.xyz/**" },
+        { "url": "https://api.mistral.ai/**" },
+        { "url": "https://api.fireworks.ai/**" },
+        { "url": "https://api.deepseek.com/**" },
+        { "url": "https://api.x.ai/**" },
+        { "url": "https://api.cerebras.ai/**" },
+        { "url": "https://*.openai.azure.com/**" },
+        { "url": "https://*.cognitiveservices.azure.com/**" },
         { "url": "https://date.nager.at/**" },
         { "url": "https://raw.githubusercontent.com/KyhleOhlinger/Metis/**" }
       ]

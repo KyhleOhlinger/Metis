@@ -3,6 +3,7 @@ import Fuse from "fuse.js";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
+import { PLANNER_PERSONA_ID } from "../types/persona";
 import { useSourceUpdateStore } from "../store/useSourceUpdateStore";
 import { STATUS_COLORS } from "../constants";
 import { toastError } from "../store/useToastStore";
@@ -34,6 +35,8 @@ export default function CommandPalette({ onClose }: Props) {
   const setPendingMenuAction = useStore((s) => s.setPendingMenuAction);
   const requestCommandCenter = useStore((s) => s.requestCommandCenter);
   const openSettings = usePersonaStore((s) => s.openSettings);
+  const setActivePersona = usePersonaStore((s) => s.setActivePersona);
+  const setPendingScope = usePersonaStore((s) => s.setPendingScope);
 
   const commandMode = query.startsWith(">");
 
@@ -195,6 +198,17 @@ export default function CommandPalette({ onClose }: Props) {
         },
       },
       {
+        id: "planner-briefing",
+        label: "Planner briefing",
+        hint: "AI",
+        run: () => {
+          setActivePersona(PLANNER_PERSONA_ID);
+          setPendingScope({ type: "planner" });
+          requestCommandCenter("ai");
+          onClose();
+        },
+      },
+      {
         id: "focus-cc-info",
         label: "Focus Command Center Info",
         hint: "workspace",
@@ -321,6 +335,8 @@ export default function CommandPalette({ onClose }: Props) {
       setEditorTab,
       setPendingMenuAction,
       requestCommandCenter,
+      setActivePersona,
+      setPendingScope,
     ],
   );
 

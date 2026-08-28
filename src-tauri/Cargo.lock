@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "metis"
-version = "0.10.8"
+version = "0.10.13"
 dependencies = [
  "base64 0.22.1",
  "notify",
