@@ -14,6 +14,8 @@ interface SourceUpdateState {
   latestVersion: string | null;
   sourceUrl: string;
   error: string | null;
+  /** Epoch ms of the last check attempt (success or network error). */
+  lastCheckedAt: number | null;
   check: (opts?: { force?: boolean }) => Promise<void>;
   dismiss: () => void;
 }
@@ -24,6 +26,7 @@ export const useSourceUpdateStore = create<SourceUpdateState>((set) => ({
   latestVersion: null,
   sourceUrl: METIS_SOURCE_URL,
   error: null,
+  lastCheckedAt: null,
 
   check: async (opts) => {
     const enabled = usePersonaStore.getState().settings.sourceUpdateCheckEnabled !== false;
@@ -42,11 +45,13 @@ export const useSourceUpdateStore = create<SourceUpdateState>((set) => ({
         latestVersion: result.latestVersion,
         sourceUrl: result.sourceUrl,
         error: null,
+        lastCheckedAt: Date.now(),
       });
     } catch (err) {
       set({
         status: "error",
         error: formatError(err),
+        lastCheckedAt: Date.now(),
       });
     }
   },

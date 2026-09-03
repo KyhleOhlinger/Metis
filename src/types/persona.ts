@@ -230,7 +230,7 @@ export interface Settings {
    */
   plannerAiExcludedSections?: PlannerTab[];
   /**
-   * When false, skip GitHub source version checks on launch.
+   * When false, skip automatic GitHub source version checks (launch, daily, focus).
    * Default true — Metis never downloads installers; this only compares `package.json` versions.
    */
   sourceUpdateCheckEnabled?: boolean;

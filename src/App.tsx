@@ -26,7 +26,7 @@ import {
   syncSharedMirror,
 } from "./planner/plannerPersistence";
 import { toastError } from "./store/useToastStore";
-import { useSourceUpdateStore } from "./store/useSourceUpdateStore";
+import { useSourceUpdateSchedule } from "./hooks/useSourceUpdateSchedule";
 import { formatError } from "./utils/formatError";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { editorPaneThemeVars, applyAppThemeToDocument, resolveBgPreset } from "./components/editor/bgPresets";
@@ -369,11 +369,7 @@ export default function App() {
     };
   }, [refreshVault]);
 
-  useEffect(() => {
-    void usePersonaStore.getState().loadFromDisk().then(() => {
-      void useSourceUpdateStore.getState().check();
-    });
-  }, []);
+  useSourceUpdateSchedule();
 
   // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.
   useEffect(() => {
