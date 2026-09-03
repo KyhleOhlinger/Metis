@@ -23,6 +23,8 @@ import {
 import { openDomContextMenu } from "@/utils/domContextMenu";
 import {
   METIS_STICKY_MIME,
+  buildStickyBlockPreviewHtml,
+  findStickyPairs,
   insertStickyNoteAt,
   parseStickyDragPayload,
 } from "@/utils/stickyNotes";
@@ -46,6 +48,10 @@ const INLINE_IMAGE_MAX_HEIGHT_PX = 280;
 const INLINE_IMAGE_PAD_Y_PX = 16;
 
 const imageWidgetObservers = new WeakMap<HTMLElement, ResizeObserver>();
+const stickyWidgetObservers = new WeakMap<HTMLElement, ResizeObserver>();
+
+/** Pre-draw height for collapsed sticky widgets (remeasured after layout). */
+const STICKY_PREVIEW_ESTIMATED_HEIGHT_PX = 96;
 
 class InlineImageWidget extends WidgetType {
   constructor(
@@ -393,6 +399,122 @@ function makeMarkdownTableCollapseField() {
   });
 }
 
+// ── Sticky notes: render preview while unfocused (caret outside block) ───────
+//
+// Same dual-render pattern as GFM tables: raw `:::sticky` / `:::stickywrap`
+// fences when the caret is inside the block; collapsed HTML preview otherwise.
+// Click the sticky card → caret at sticky open; click the wrap zone → wrap open.
+
+class CollapsedStickyPreviewWidget extends WidgetType {
+  constructor(
+    readonly html: string,
+    readonly stickyFrom: number,
+    readonly wrapFrom: number | null,
+  ) {
+    super();
+  }
+  eq(other: CollapsedStickyPreviewWidget) {
+    return (
+      other.html === this.html &&
+      other.stickyFrom === this.stickyFrom &&
+      other.wrapFrom === this.wrapFrom
+    );
+  }
+  get estimatedHeight() {
+    return STICKY_PREVIEW_ESTIMATED_HEIGHT_PX;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-sticky-preview cm-sticky-preview--collapsed";
+    wrap.title = "Click to edit sticky note";
+    wrap.innerHTML = this.html;
+
+    wrap.querySelectorAll<HTMLElement>(".metis-sticky[data-metis-sticky-width]").forEach((node) => {
+      const w = node.dataset.metisStickyWidth?.trim();
+      if (w) node.style.setProperty("--metis-sticky-width", w);
+    });
+
+    const remeasure = () => {
+      if (view.dom.isConnected) view.requestMeasure();
+    };
+    const ro = new ResizeObserver(remeasure);
+    ro.observe(wrap);
+    stickyWidgetObservers.set(wrap, ro);
+    requestAnimationFrame(remeasure);
+
+    wrap.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      view.focus();
+      const target = e.target as HTMLElement;
+      const inWrap = target.closest(".metis-sticky-wrap") !== null;
+      const offset =
+        inWrap && this.wrapFrom !== null ? this.wrapFrom : this.stickyFrom;
+      view.dispatch({
+        selection: EditorSelection.cursor(offset),
+        scrollIntoView: true,
+      });
+    });
+    return wrap;
+  }
+  destroy(dom: HTMLElement) {
+    stickyWidgetObservers.get(dom)?.disconnect();
+    stickyWidgetObservers.delete(dom);
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+function buildStickyCollapseDecorations(state: EditorState): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = state.doc;
+
+  for (const pair of findStickyPairs(doc)) {
+    const from = pair.sticky.from;
+    const to = pair.wrap?.to ?? pair.sticky.to;
+
+    if (selectionIntersectsRange(state.selection, from, to)) {
+      continue;
+    }
+
+    const html = buildStickyBlockPreviewHtml(
+      pair.sticky.attrs,
+      pair.sticky.body,
+      pair.wrap?.body,
+    );
+
+    builder.add(
+      from,
+      to,
+      Decoration.replace({
+        widget: new CollapsedStickyPreviewWidget(
+          html,
+          pair.sticky.from,
+          pair.wrap?.from ?? null,
+        ),
+        block: true,
+      }),
+    );
+  }
+
+  return builder.finish();
+}
+
+function makeStickyCollapseField() {
+  return StateField.define<DecorationSet>({
+    create(state) {
+      return buildStickyCollapseDecorations(state);
+    },
+    update(_decos, tr) {
+      return buildStickyCollapseDecorations(tr.state);
+    },
+    provide(f) {
+      return EditorView.decorations.from(f);
+    },
+  });
+}
+
 function isStickyDrag(dt: DataTransfer | null): boolean {
   if (!dt) return false;
   const types = [...dt.types];
@@ -456,6 +578,14 @@ function makeInlinePreviewAtomicRanges() {
       const line = state.doc.line(lineNo);
       if (!selectionIntersectsRange(state.selection, line.from, line.to)) {
         builder.add(line.from, line.to, mark);
+      }
+    }
+
+    for (const pair of findStickyPairs(state.doc)) {
+      const from = pair.sticky.from;
+      const to = pair.wrap?.to ?? pair.sticky.to;
+      if (!selectionIntersectsRange(state.selection, from, to)) {
+        builder.add(from, to, mark);
       }
     }
 
@@ -649,6 +779,7 @@ export function makeInlinePreviewExtension(
   return [
     makeImageDecosField(vaultPath, filePath),
     makeMarkdownTableCollapseField(),
+    makeStickyCollapseField(),
     makeInlinePreviewAtomicRanges(),
     makeLinkClickHandler(vaultPath, filePath),
     makeStickyDropHandler(),

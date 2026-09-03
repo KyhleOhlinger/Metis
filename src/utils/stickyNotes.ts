@@ -424,7 +424,7 @@ export function buildStickyBlockPreviewHtml(
     }
   }
   parts.push('<div class="metis-sticky-clear" aria-hidden="true"></div>');
-  return parts.join("\n\n");
+  return parts.join("");
 }
 
 /** Replace sticky (+ optional stickywrap) fences before `marked.parse` in Visual preview. */

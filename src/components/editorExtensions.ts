@@ -9,7 +9,7 @@
  *   calloutPlugin          — Obsidian-style > [!TYPE] callout block decoration
  *   markdownAutoComplete   — smart auto-close for ```, [], (), *, _ etc.
  *   taskListClickExtension — click `[ ]` / `[x]` to toggle task completion
- *   makeInlinePreviewExtension — inline images (+ reveal menu), GFM tables collapse to rendered preview when the caret is outside (click to edit), sticky drag-drop, click collapsed links / Cmd+Ctrl+click raw links (sticky fences raw in Source; rendered in Visual only)
+ *   makeInlinePreviewExtension — inline images (+ reveal menu), GFM tables and sticky notes collapse to rendered preview when the caret is outside (click to edit), sticky drag-drop, click collapsed links / Cmd+Ctrl+click raw links
  */
 
 

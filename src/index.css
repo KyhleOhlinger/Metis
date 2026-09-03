@@ -1237,20 +1237,48 @@ body,
 
 /* Sticky notes — source-mode collapsed preview + Visual float layout */
 .cm-sticky-preview {
-  margin: 10px 0 14px;
-  /* Contain floats so the block grows to the sticky height; CM lines after start below */
-  display: flow-root;
+  margin: 4px 0 8px;
+  box-sizing: border-box;
+  /* Flex (not float) — CM line boxes baseline-align floats/inline content, which
+     pins :::stickywrap text to the bottom of the sticky card. Visual keeps float. */
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
 }
 .cm-sticky-preview--collapsed {
   cursor: pointer;
 }
-.cm-sticky-preview::after {
-  content: "";
-  display: block;
-  clear: both;
+.cm-sticky-preview--collapsed .metis-sticky:hover,
+.cm-sticky-preview--collapsed .metis-sticky-wrap:hover {
+  filter: brightness(1.06);
 }
 .cm-sticky-preview .metis-sticky {
   margin: 0;
+  float: none;
+  flex: 0 0 auto;
+}
+.cm-sticky-preview .metis-sticky--left {
+  order: 1;
+  transform: rotate(0.5deg);
+}
+.cm-sticky-preview .metis-sticky--right {
+  order: 2;
+  transform: rotate(-0.6deg);
+}
+.cm-sticky-preview .metis-sticky--right ~ .metis-sticky-wrap {
+  order: 1;
+}
+.cm-sticky-preview .metis-sticky-wrap {
+  order: 2;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cm-sticky-preview:has(.metis-sticky--nofloat) {
+  flex-direction: column;
+  gap: 0.75em;
+}
+.cm-sticky-preview .metis-sticky-clear {
+  display: none;
 }
 
 .preview-prose .metis-sticky,
@@ -1262,7 +1290,6 @@ body,
   filter: brightness(1.06);
 }
 
-.cm-sticky-preview .metis-sticky,
 .preview-prose .metis-sticky {
   box-sizing: border-box;
   width: var(--metis-sticky-width, 12rem);
@@ -1282,15 +1309,23 @@ body,
   box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
-/* Source collapsed preview: no float — avoids overlay on raw wrap lines below the widget. */
-.cm-sticky-preview .metis-sticky--left,
-.cm-sticky-preview .metis-sticky--right {
-  float: none;
-  margin: 0 0 1em 0;
-  transform: rotate(-0.6deg);
-}
-.cm-sticky-preview .metis-sticky--left {
-  transform: rotate(0.5deg);
+.cm-sticky-preview .metis-sticky {
+  box-sizing: border-box;
+  width: var(--metis-sticky-width, 12rem);
+  max-width: 100%;
+  border-radius: 3px 10px 8px 4px;
+  padding:
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.7)
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.9)
+    calc(var(--metis-editor-text-size, 15px) * 1.05 * 0.75);
+  margin: 0;
+  font-family: "Segoe Print", "Bradley Hand", "Apple Chancery", "Snell Roundhand",
+    "Noteworthy", "Chalkboard SE", "Comic Sans MS", cursive;
+  font-size: calc(var(--metis-editor-text-size, 15px) * 1.05);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .preview-prose .metis-sticky--left {
   float: left;
@@ -1360,10 +1395,14 @@ body,
   margin-bottom: 0;
 }
 /* Markdown rendered beside a floated sticky (`:::stickywrap` body). */
+.cm-sticky-preview .metis-sticky-wrap,
 .metis-sticky-wrap {
   overflow: hidden;
   font-size: var(--metis-editor-text-size, 15px);
   line-height: 1.5;
+}
+.cm-sticky-preview .metis-sticky-wrap {
+  cursor: pointer;
 }
 .metis-sticky-wrap p {
   margin: 0.5em 0;

@@ -434,9 +434,9 @@ function AboutSettingsSection({
             className="mt-0.5 rounded border-border"
           />
           <span className="text-[10px] text-text-muted">
-            <span className="font-medium text-text-primary">Check GitHub on launch</span>
+            <span className="font-medium text-text-primary">Check GitHub for updates</span>
             {" "}
-            for a newer source version.
+            on launch and once per day while Metis is open.
           </span>
         </label>
       </div>
