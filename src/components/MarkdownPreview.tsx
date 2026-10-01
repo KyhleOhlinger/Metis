@@ -11,6 +11,8 @@ import {
 } from "../utils/markdownHtml";
 import { parseMarkedWithHighlight } from "../utils/markedHighlight";
 import { resolveMarkdownImageAbsPath, resolveMarkdownImageSrc } from "../utils/vaultImages";
+import { isSupernoteNoteFile } from "@/constants/supernote";
+import { mountSupernotePager } from "@/utils/mountSupernotePager";
 import {
   followVaultHref,
   openExternalUrl,
@@ -119,7 +121,7 @@ export default function MarkdownPreview({
     const linkSpans = findMarkdownLinkSpans(md);
 
     md = md.replace(
-      /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,
+      /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi,
       (_, filename) => `![${filename}](${filename})`,
     );
 
@@ -195,11 +197,14 @@ export default function MarkdownPreview({
         return;
       }
 
+      const pagerImg = (target.closest(".metis-supernote-pager img") as HTMLImageElement | null);
+      const pager = pagerImg?.closest(".metis-supernote-pager") as HTMLElement | null;
       const img = target.closest("img[data-image-idx]") as HTMLImageElement | null;
-      if (img && root.contains(img)) {
+      const idxEl = pager ?? img;
+      if (idxEl && root.contains(idxEl) && !target.closest("button")) {
         e.preventDefault();
         e.stopPropagation();
-        const idx = Number(img.dataset.imageIdx);
+        const idx = Number(idxEl.dataset.imageIdx);
         const offset = ctx.imageSourceOffsets[idx];
         if (offset !== undefined) ctx.onSourceActivate?.(offset);
         return;
@@ -238,8 +243,23 @@ export default function MarkdownPreview({
       const ctx = ctxRef.current;
       const target = e.target as HTMLElement;
 
+      const pager = target.closest(".metis-supernote-pager[data-reveal-path]") as HTMLElement | null;
       const img = target.closest("img[data-image-idx]") as HTMLImageElement | null;
       const imgIdx = img?.dataset.imageIdx;
+      if (pager && root.contains(pager)) {
+        const absPath = pager.dataset.revealPath;
+        if (absPath) {
+          e.preventDefault();
+          e.stopPropagation();
+          openDomContextMenu(e.clientX, e.clientY, [
+            {
+              label: ctx.revealLabel,
+              onClick: () => revealInFinder(absPath, ctx.vaultPath),
+            },
+          ]);
+        }
+        return;
+      }
       if (img && imgIdx !== undefined && root.contains(img)) {
         const absPath = ctx.imagePaths[Number(imgIdx)];
         if (absPath) {
@@ -316,7 +336,19 @@ export default function MarkdownPreview({
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
+    const cleanups: Array<() => void> = [];
     el.querySelectorAll<HTMLImageElement>("img[data-src]").forEach((img) => {
+      const idx = Number(img.dataset.imageIdx);
+      const absPath = Number.isFinite(idx) ? ctxRef.current.imagePaths[idx] : undefined;
+      if (absPath && isSupernoteNoteFile(absPath)) {
+        const host = document.createElement("div");
+        host.className = "metis-supernote-pager";
+        if (img.dataset.imageIdx) host.dataset.imageIdx = img.dataset.imageIdx;
+        host.dataset.revealPath = absPath;
+        img.replaceWith(host);
+        cleanups.push(mountSupernotePager(host, absPath, ctxRef.current.vaultPath));
+        return;
+      }
       const src = img.dataset.src;
       if (src) {
         img.src = src;
@@ -328,6 +360,9 @@ export default function MarkdownPreview({
       const w = node.dataset.metisStickyWidth?.trim();
       if (w) node.style.setProperty("--metis-sticky-width", w);
     });
+    return () => {
+      for (const stop of cleanups) stop();
+    };
   }, [preview.html]);
 
   useEffect(() => {

@@ -5,6 +5,7 @@ import { EditorSelection } from "@codemirror/state";
 import { useStore } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { isVaultImageFile } from "../utils/vaultImages";
+import { isSupernoteNoteFile } from "@/constants/supernote";
 import { openNoteByWikilinkNameFromStore } from "../utils/vaultNavigation";
 import { EditorEmptyState } from "./editor/EditorEmptyState";
 import { EditorHeaderBar } from "./editor/EditorHeaderBar";
@@ -13,6 +14,7 @@ import { applyEditorNavigation } from "./editor/applyEditorNavigation";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
 import type { EditorKeymapOpts } from "@/components/editor/editorKeymaps";
 import { useCodeMirrorEditor, useCodeMirrorCompartments } from "../hooks/useCodeMirrorEditor";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 import { useEditorPaneMode } from "../hooks/useEditorPaneMode";
 import type { BgPreset } from "./editor/bgPresets";
 import { resolveBgPreset } from "./editor/bgPresets";
@@ -20,7 +22,9 @@ import { resolveBgPreset } from "./editor/bgPresets";
 export default function Editor() {
   const editorHostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
+  const spellcheckSetting = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
+  const spellcheckPlugin = useCorePluginEnabled("spellcheck");
+  const spellcheckEnabled = spellcheckSetting && spellcheckPlugin;
   const spellcheckLang = usePersonaStore((s) => s.settings.spellcheckLanguage ?? "en_US");
   const keybindingOverrides = usePersonaStore((s) => s.settings.keybindingOverrides);
   const updateSettings = usePersonaStore((s) => s.updateSettings);
@@ -102,13 +106,15 @@ export default function Editor() {
 
   const activeFileName = activeFilePath?.split("/").pop() ?? "";
   const isImageFile = Boolean(activeFilePath && isVaultImageFile(activeFileName));
+  const isNoteBinaryFile = Boolean(activeFilePath && isSupernoteNoteFile(activeFileName));
+  const skipMarkdownEditor = isImageFile || isNoteBinaryFile;
 
   useCodeMirrorEditor({
     editorHostRef,
     viewRef,
     activeFilePath,
     activeFileContent,
-    isImageFile,
+    isImageFile: skipMarkdownEditor,
     vaultPath,
     bgPresetRef,
     spellcheckRef,
@@ -157,7 +163,7 @@ export default function Editor() {
   }, []);
 
   useEffect(() => {
-    if (!editorNavigateTo || editorNavigateTo.path !== activeFilePath || isImageFile) {
+    if (!editorNavigateTo || editorNavigateTo.path !== activeFilePath || skipMarkdownEditor) {
       return;
     }
 
@@ -179,7 +185,7 @@ export default function Editor() {
     return () => {
       cancelled = true;
     };
-  }, [editorNavigateTo, activeFilePath, isImageFile]);
+  }, [editorNavigateTo, activeFilePath, skipMarkdownEditor]);
 
   useEffect(() => {
     if (editorMode !== "source") setFindBarOpen(false);
@@ -208,7 +214,7 @@ export default function Editor() {
     <div className="flex h-full min-w-0 flex-col">
       <EditorHeaderBar
         fileName={showEmpty ? "No note open" : fileName}
-        isImageFile={isImageFile}
+        isImageFile={skipMarkdownEditor}
         editorMode={editorMode}
         bgPreset={bgPreset}
         showBgPicker={showBgPicker}
@@ -216,7 +222,7 @@ export default function Editor() {
         onBgPresetChange={setBgPreset}
         hideModeToggle={
           showEmpty ||
-          isImageFile ||
+          skipMarkdownEditor ||
           editorMode === "planner" ||
           editorMode === "agent-history"
         }
@@ -233,6 +239,7 @@ export default function Editor() {
         <EditorMainContent
           editorMode={editorMode}
           isImageFile={isImageFile}
+          isNoteBinaryFile={isNoteBinaryFile}
           activeFilePath={activeFilePath}
           activeFileContent={activeFileContent}
           vaultPath={vaultPath}

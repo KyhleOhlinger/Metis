@@ -20,6 +20,10 @@ import {
 import { dragSlot } from "./sidebarDragDrop";
 import { IconFile, IconFolder } from "./sidebarIcons";
 import { InlineInput } from "./InlineInput";
+import { SupernoteSyncControl } from "./SupernoteSyncControl";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
+import { isSupernoteNoteFile, isSupernoteSyncFolderNode } from "@/constants/supernote";
+import { openSupernoteCompanion } from "@/utils/openSupernoteCompanion";
 
 // ── FileTreeNode ──────────────────────────────────────────────────────────────
 
@@ -66,11 +70,15 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
   const activePersona = usePersonaStore(selectActivePersona);
   const setPendingScope = usePersonaStore((s) => s.setPendingScope);
 
-  const isActiveFile   = activeFilePath === node.path;
+  const isActiveFile = activeFilePath === node.path;
   const isActiveFolder = activeFolderPath === node.path && node.is_dir;
 
+  const supernoteOn = useCorePluginEnabled("supernote");
+  const showSupernoteSync =
+    supernoteOn && node.is_dir && isSupernoteSyncFolderNode(node.name, node.path, vaultPath);
   const isImage = !node.is_dir && isVaultImageFile(node.name);
-  const isOpenable = !node.is_dir && (node.name.endsWith(".md") || isImage);
+  const isNoteBinary = !node.is_dir && isSupernoteNoteFile(node.name);
+  const isOpenable = !node.is_dir && (node.name.endsWith(".md") || isImage || isNoteBinary);
 
   // ── Open file / select folder ───────────────────────────────────────────────
   const handleClick = useCallback(async (_e: React.MouseEvent) => {
@@ -98,6 +106,11 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
       markSaved();
     }
 
+    if (isNoteBinary) {
+      await openSupernoteCompanion(node.path, vaultPath);
+      return;
+    }
+
     if (isImage) {
       setActiveFile(node.path, "");
       return;
@@ -109,7 +122,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     } catch (err) {
       toastError(`Could not open file: ${String(err)}`);
     }
-  }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage]);
+  }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage, isNoteBinary]);
 
   // ── Pointer-down: begin potential drag ─────────────────────────────────────
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -455,6 +468,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
             );
           })()}
           <span className="flex-1 truncate text-xs">{node.name}</span>
+          {showSupernoteSync && <SupernoteSyncControl />}
 
           <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
             {/* Run active persona on this file / folder */}
@@ -513,7 +527,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
       {node.is_dir && expanded && node.children && (
         <div>
           {[...node.children]
-            // Pin todo.md to the top of whichever folder it lives in
+            .filter((child) => child.is_dir || !isSupernoteNoteFile(child.name))
             .sort((a, b) => {
               if (a.name.toLowerCase() === "todo.md") return -1;
               if (b.name.toLowerCase() === "todo.md") return  1;

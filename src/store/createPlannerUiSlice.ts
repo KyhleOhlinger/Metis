@@ -1,5 +1,6 @@
 import type { StateCreator } from "zustand";
 import type { MetisState } from "./metisState";
+import { isCorePluginEnabled } from "@/plugins/usePluginStore";
 
 export type PlannerUiSlice = Pick<
   MetisState,
@@ -25,6 +26,7 @@ export const createPlannerUiSlice: StateCreator<MetisState, [], [], PlannerUiSli
   setEditorTab: (tab) => set({ editorTab: tab }),
 
   openPlannerTab: () => {
+    if (!isCorePluginEnabled("planner")) return;
     const { vaultPath, isMetisVault, plannerSetupRequired } = get();
     if (!vaultPath) return;
     if (isMetisVault && plannerSetupRequired) {
@@ -47,6 +49,7 @@ export const createPlannerUiSlice: StateCreator<MetisState, [], [], PlannerUiSli
     set({ plannerSyncStatus: status, plannerSyncError: error ?? null }),
 
   navigatePlannerTo: (target) => {
+    if (!isCorePluginEnabled("planner")) return;
     const { vaultPath, isMetisVault, plannerSetupRequired } = get();
     if (vaultPath && isMetisVault && plannerSetupRequired) {
       set({ plannerNavigateTo: target, plannerSetupModalOpen: true });

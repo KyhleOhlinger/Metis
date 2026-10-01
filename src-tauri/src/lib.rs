@@ -4,6 +4,9 @@ mod ai_context;
 mod agent_run_log;
 mod conversion;
 mod planner;
+mod plugins;
+mod supernote;
+mod supernote_render;
 mod menu;
 mod search;
 mod security;
@@ -48,6 +51,18 @@ pub fn run() {
             shell::reveal_in_finder,
             shell::open_url,
             shell::open_vault_window,
+            plugins::load_vault_plugins,
+            plugins::set_core_plugin_enabled,
+            plugins::set_plugin_restricted_mode,
+            plugins::set_community_plugin_enabled,
+            plugins::install_plugin_from_folder,
+            plugins::install_community_plugin_files,
+            plugins::uninstall_community_plugin,
+            plugins::read_community_plugin_styles,
+            supernote::ensure_supernote_folder,
+            supernote::sync_supernote_browse_access,
+            supernote::get_supernote_sync_meta,
+            supernote_render::render_supernote_page,
             vault_fs::open_vault,
             conversion::convert_vault_to_metis,
             settings::load_personas,

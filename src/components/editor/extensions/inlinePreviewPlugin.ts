@@ -20,6 +20,8 @@ import {
   resolveMarkdownImageAbsPath,
   resolveMarkdownImageSrc,
 } from "@/utils/vaultImages";
+import { isSupernoteNoteFile } from "@/constants/supernote";
+import { mountSupernotePager } from "@/utils/mountSupernotePager";
 import { openDomContextMenu } from "@/utils/domContextMenu";
 import {
   METIS_STICKY_MIME,
@@ -49,6 +51,54 @@ const INLINE_IMAGE_PAD_Y_PX = 16;
 
 const imageWidgetObservers = new WeakMap<HTMLElement, ResizeObserver>();
 const stickyWidgetObservers = new WeakMap<HTMLElement, ResizeObserver>();
+const supernotePagerCleanups = new WeakMap<HTMLElement, () => void>();
+
+const WIKI_EMBED_RE =
+  /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/i;
+
+class InlineSupernoteWidget extends WidgetType {
+  constructor(
+    readonly absPath: string,
+    readonly vaultPath: string,
+  ) {
+    super();
+  }
+  eq(other: InlineSupernoteWidget) {
+    return other.absPath === this.absPath && other.vaultPath === this.vaultPath;
+  }
+  get estimatedHeight() {
+    return 640;
+  }
+  toDOM(view: EditorView): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-inline-supernote-wrap";
+    wrap.dataset.revealPath = this.absPath;
+    const cleanup = mountSupernotePager(wrap, this.absPath, this.vaultPath, () => {
+      if (view.dom.isConnected) view.requestMeasure();
+    });
+    supernotePagerCleanups.set(wrap, cleanup);
+    return wrap;
+  }
+  destroy(dom: HTMLElement) {
+    supernotePagerCleanups.get(dom)?.();
+    supernotePagerCleanups.delete(dom);
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+function supernoteWidgetDeco(absPath: string, vaultPath: string): Decoration | null {
+  const normalized = normalizePosixPath(absPath);
+  if (!isPathWithinVault(normalized, vaultPath) || !isSupernoteNoteFile(normalized)) {
+    return null;
+  }
+  return Decoration.widget({
+    widget: new InlineSupernoteWidget(normalized, vaultPath),
+    side: 1,
+    block: true,
+  });
+}
 
 /** Pre-draw height for collapsed sticky widgets (remeasured after layout). */
 const STICKY_PREVIEW_ESTIMATED_HEIGHT_PX = 96;
@@ -153,8 +203,14 @@ function buildInlineImageDecosFromState(
     // Standard markdown image: ![alt](src)
     const stdM = /!\[([^\]]*)\]\(([^)]+)\)/.exec(text);
     if (stdM) {
-      const src = resolveMarkdownImageSrc(stdM[2].trim(), vaultPath, fileDir);
-      const revealAbsPath = resolveMarkdownImageAbsPath(stdM[2].trim(), vaultPath, fileDir);
+      const rawSrc = stdM[2].trim();
+      const revealAbsPath = resolveMarkdownImageAbsPath(rawSrc, vaultPath, fileDir);
+      if (revealAbsPath && isSupernoteNoteFile(revealAbsPath)) {
+        const deco = supernoteWidgetDeco(revealAbsPath, vaultPath);
+        if (deco) builder.add(line.to, line.to, deco);
+        continue;
+      }
+      const src = resolveMarkdownImageSrc(rawSrc, vaultPath, fileDir);
       builder.add(
         line.to,
         line.to,
@@ -167,17 +223,18 @@ function buildInlineImageDecosFromState(
       continue;
     }
 
-    // Wikilink image: ![[filename.ext]]
-    // Use vault-wide asset resolution (Obsidian-compatible): the file is
-    // searched by name across the entire vault, not just the vault root.
-    const wikiM = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i.exec(text);
+    // Wikilink embed: ![[filename.ext]] (images + .note notebooks)
+    const wikiM = WIKI_EMBED_RE.exec(text);
     if (wikiM) {
       const { assetIndex } = useStore.getState();
-      // resolveWikilinkAssetPath already normalises the path; validate it
-      // still starts with the vault root before converting to asset:// URL.
       const resolvedPath = resolveWikilinkAssetPath(wikiM[1], assetIndex, vaultPath);
       const normalizedPath = normalizePosixPath(resolvedPath);
       if (!isPathWithinVault(normalizedPath, vaultPath)) continue;
+      if (isSupernoteNoteFile(normalizedPath)) {
+        const deco = supernoteWidgetDeco(normalizedPath, vaultPath);
+        if (deco) builder.add(line.to, line.to, deco);
+        continue;
+      }
       const src = convertFileSrc(normalizedPath);
       builder.add(
         line.to,
@@ -289,7 +346,7 @@ function findInlineImageLines(doc: Text): number[] {
       lines.push(n);
       continue;
     }
-    if (/!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i.test(text)) {
+    if (WIKI_EMBED_RE.test(text)) {
       lines.push(n);
     }
   }
@@ -709,7 +766,7 @@ function makeLinkClickHandler(vaultPath: string, filePath: string) {
       }
 
       // Wikilink image: ![[filename.ext]]
-      const wikiImageRe = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
+      const wikiImageRe = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi;
       while ((m = wikiImageRe.exec(text)) !== null) {
         const start = m.index;
         const end = start + m[0].length;

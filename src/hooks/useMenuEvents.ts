@@ -23,6 +23,7 @@ import { usePersonaStore } from "../store/usePersonaStore";
 import { LAST_VAULT_KEY } from "../constants";
 import { toastError } from "../store/useToastStore";
 import { formatError } from "../utils/formatError";
+import { isCorePluginEnabled } from "@/plugins/usePluginStore";
 
 interface MenuEventHookOptions {
   /** Toggles the left file-tree sidebar */
@@ -119,7 +120,7 @@ export function useMenuEvents({
 
         // ── Daily note ───────────────────────────────────────────────────────
         case "daily-note":
-          openDailyNote();
+          if (isCorePluginEnabled("daily-notes")) openDailyNote();
           break;
 
         // ── Save current note ────────────────────────────────────────────────
@@ -133,7 +134,7 @@ export function useMenuEvents({
         }
 
         case "export-pdf":
-          onExportPdf();
+          if (isCorePluginEnabled("export")) onExportPdf();
           break;
 
         // ── Reveal active file in Finder / Explorer ──────────────────────────

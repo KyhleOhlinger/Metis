@@ -67,6 +67,7 @@ API keys are stored locally in the OS app-data directory and are never sent anyw
 - Auto-close pairs: `` ``` ``, `**`, `_`, `` ` ``, `[]()`
 - Fenced code blocks with syntax highlighting, language badges, and a hover Copy button
 - **Custom hotkeys** — rebind app and editor shortcuts in **Settings → Hotkeys**; overrides sync to the native menu bar (File, View, Settings…)
+- **Plugins** — per-vault core feature toggles and community packages in **Settings → Plugins** (Restricted Mode; CSS only)
 
 ### Export
 - **PDF** — File menu, sidebar context menus, or export hub; single note, folder, or full vault (Visual-rendered pipeline)

@@ -16,7 +16,9 @@ import { useStore } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
 import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
-import { resolveMarkdownImageSrc } from "@/utils/vaultImages";
+import { resolveMarkdownImageAbsPath, resolveMarkdownImageSrc } from "@/utils/vaultImages";
+import { isSupernoteNoteFile } from "@/constants/supernote";
+import { mountSupernotePager } from "@/utils/mountSupernotePager";
 import { selectionIntersectsRange } from "./editorPluginUtils";
 import { frontmatterLineCount, FRONTMATTER_RE } from "../frontmatterUtils";
 
@@ -228,6 +230,34 @@ export const calloutPlugin = ViewPlugin.fromClass(
 
 // ── 4. Visual mode — dim syntax markers + render images inline ────────────────
 
+const supernoteVisualCleanups = new WeakMap<HTMLElement, () => void>();
+
+class VisualSupernoteWidget extends WidgetType {
+  constructor(
+    readonly absPath: string,
+    readonly vaultPath: string,
+  ) {
+    super();
+  }
+  eq(other: VisualSupernoteWidget) {
+    return other.absPath === this.absPath && other.vaultPath === this.vaultPath;
+  }
+  toDOM(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-visual-supernote-widget";
+    const cleanup = mountSupernotePager(wrap, this.absPath, this.vaultPath);
+    supernoteVisualCleanups.set(wrap, cleanup);
+    return wrap;
+  }
+  destroy(dom: HTMLElement) {
+    supernoteVisualCleanups.get(dom)?.();
+    supernoteVisualCleanups.delete(dom);
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
@@ -289,7 +319,7 @@ const DIM_NODE_NAMES = new Set([
 
 // Wikilink image pattern — only match common image extensions
 const WIKI_IMAGE_RE =
-  /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
+  /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi;
 
 function buildVisualDecorations(
   view: EditorView,
@@ -328,12 +358,25 @@ function buildVisualDecorations(
         const text = state.sliceDoc(from, to);
         const m = text.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
         if (m) {
-          const src = resolveImageSrc(m[2], activeFilePath, vaultPath);
-          ranges.push({
-            from,
-            to,
-            deco: Decoration.replace({ widget: new ImageWidget(src, m[1]) }),
-          });
+          const rawSrc = m[2].trim();
+          const dir = activeFilePath.substring(0, activeFilePath.lastIndexOf("/"));
+          const abs = resolveMarkdownImageAbsPath(rawSrc, vaultPath, dir);
+          if (abs && isSupernoteNoteFile(abs)) {
+            ranges.push({
+              from,
+              to,
+              deco: Decoration.replace({
+                widget: new VisualSupernoteWidget(abs, vaultPath),
+              }),
+            });
+          } else {
+            const src = resolveImageSrc(rawSrc, activeFilePath, vaultPath);
+            ranges.push({
+              from,
+              to,
+              deco: Decoration.replace({ widget: new ImageWidget(src, m[1]) }),
+            });
+          }
         }
       }
     }
@@ -349,12 +392,25 @@ function buildVisualDecorations(
     const from = vpFrom + wm.index;
     const to = from + wm[0].length;
     if (!selectionIntersectsRange(state.selection, from, to)) {
-      const src = resolveWikiSrc(wm[1], vaultPath);
-      ranges.push({
-        from,
-        to,
-        deco: Decoration.replace({ widget: new ImageWidget(src, wm[1]) }),
-      });
+      const abs = normalizePosixPath(
+        resolveWikilinkAssetPath(wm[1], useStore.getState().assetIndex, vaultPath),
+      );
+      if (isPathWithinVault(abs, vaultPath) && isSupernoteNoteFile(abs)) {
+        ranges.push({
+          from,
+          to,
+          deco: Decoration.replace({
+            widget: new VisualSupernoteWidget(abs, vaultPath),
+          }),
+        });
+      } else {
+        const src = resolveWikiSrc(wm[1], vaultPath);
+        ranges.push({
+          from,
+          to,
+          deco: Decoration.replace({ widget: new ImageWidget(src, wm[1]) }),
+        });
+      }
     }
   }
 

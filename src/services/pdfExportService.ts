@@ -7,6 +7,8 @@ import { resolveBgPreset } from "@/components/editor/bgPresets";
 import { buildNotePreviewHtml } from "@/utils/buildNotePreviewHtml";
 import { EXPORT_CHAPTER_CSS } from "@/utils/exportPreviewStyles";
 import { isPathWithinVault, normalizePosixPath } from "@/utils/paths";
+import { flattenCssColorsForPdf } from "@/utils/flattenCssColorsForPdf";
+import { isSupernoteNoteFile } from "@/constants/supernote";
 
 export type PdfExportScope = "file" | "folder" | "vault";
 
@@ -82,6 +84,14 @@ async function readNoteContents(
   return out;
 }
 
+type SupernotePageDto = {
+  page: number;
+  pageCount: number;
+  pngBase64: string;
+};
+
+const MAX_SUPERNOTE_PDF_PAGES = 50;
+
 /** Replace vault image refs with inline data URLs for offline PDF rendering. */
 async function inlineExportImages(html: string): Promise<{ html: string; failedImages: number }> {
   const parser = new DOMParser();
@@ -90,11 +100,31 @@ async function inlineExportImages(html: string): Promise<{ html: string; failedI
   if (!root) return { html, failedImages: 0 };
 
   let failedImages = 0;
-  const images = root.querySelectorAll<HTMLImageElement>("img[data-export-abs-path]");
+  const images = [...root.querySelectorAll<HTMLImageElement>("img[data-export-abs-path]")];
   for (const img of images) {
     const absPath = img.getAttribute("data-export-abs-path");
     if (!absPath) continue;
     try {
+      if (isSupernoteNoteFile(absPath)) {
+        const pages = await rasterizeSupernoteForPdf(absPath);
+        if (!pages.length) {
+          failedImages += 1;
+          img.alt = img.alt || "Notebook unavailable";
+          img.removeAttribute("src");
+          img.removeAttribute("data-export-abs-path");
+          continue;
+        }
+        const wrap = doc.createElement("div");
+        wrap.className = "export-supernote-pages";
+        for (const src of pages) {
+          const pageImg = doc.createElement("img");
+          pageImg.src = src;
+          pageImg.alt = "Supernote page";
+          wrap.appendChild(pageImg);
+        }
+        img.replaceWith(wrap);
+        continue;
+      }
       const { data_base64, mime_type } = await invoke<VaultImageBase64>(
         "read_vault_image_base64",
         { path: absPath },
@@ -105,9 +135,21 @@ async function inlineExportImages(html: string): Promise<{ html: string; failedI
       failedImages += 1;
       img.alt = img.alt || "Image unavailable";
       img.removeAttribute("src");
+      img.removeAttribute("data-export-abs-path");
     }
   }
   return { html: root.innerHTML, failedImages };
+}
+
+async function rasterizeSupernoteForPdf(path: string): Promise<string[]> {
+  const first = await invoke<SupernotePageDto>("render_supernote_page", { path, page: 1 });
+  const count = Math.max(1, Math.min(first.pageCount, MAX_SUPERNOTE_PDF_PAGES));
+  const out = [`data:image/png;base64,${first.pngBase64}`];
+  for (let page = 2; page <= count; page++) {
+    const dto = await invoke<SupernotePageDto>("render_supernote_page", { path, page });
+    out.push(`data:image/png;base64,${dto.pngBase64}`);
+  }
+  return out;
 }
 
 function buildExportHost(
@@ -169,6 +211,12 @@ function pdfOptions(preset: BgPreset): Html2PdfOpts {
       useCORS: true,
       logging: false,
       backgroundColor: preset.bg,
+      foreignObjectRendering: false,
+      onclone: (clonedDoc: Document) => {
+        const root =
+          clonedDoc.querySelector<HTMLElement>(".preview-prose") ?? clonedDoc.body;
+        if (root) flattenCssColorsForPdf(root, preset.fg);
+      },
     },
     jsPDF: { unit: "in", format: "letter", orientation: "portrait" },
     pagebreak: {
@@ -218,12 +266,17 @@ async function renderChaptersToPdf(
 }
 
 async function htmlToPdfBlob(host: HTMLElement, preset: BgPreset): Promise<Blob> {
+  const target = (host.querySelector(".preview-prose") ?? host) as HTMLElement;
+  flattenCssColorsForPdf(target, preset.fg);
   const { default: html2pdf } = await import("html2pdf.js");
-  const target = host.querySelector(".preview-prose") ?? host;
-  return (await html2pdf()
-    .set(pdfOptions(preset))
-    .from(target as HTMLElement)
-    .outputPdf("blob")) as Blob;
+  try {
+    return (await html2pdf().set(pdfOptions(preset)).from(target).outputPdf("blob")) as Blob;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `PDF rendering failed${message ? `: ${message}` : ""}. Try a simpler theme or fewer images.`,
+    );
+  }
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {

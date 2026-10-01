@@ -10,6 +10,7 @@ import { ChevronLeft, ChevronRight } from "./shared/ui";
 import { InfoTab } from "./info/InfoTab";
 import { AITab } from "./ai/AITab";
 import { SettingsTab } from "./settings/SettingsTab";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 interface Props {
   isOpen: boolean;
@@ -62,12 +63,19 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   const clearCommandCenterRequest = useStore((s) => s.clearCommandCenterRequest);
   const [tab, setTab] = useState<"info" | "ai" | "settings">("info");
   const [showNewPersonaModal, setShowNewPersonaModal] = useState(false);
+  const aiEnabled = useCorePluginEnabled("ai");
+
+  useEffect(() => {
+    if (!aiEnabled && tab === "ai") setTab("info");
+  }, [aiEnabled, tab]);
 
   useEffect(() => {
     if (!commandCenterRequest) return;
     const req = commandCenterRequest;
     if (req === "info" || req === "info-planner") setTab("info");
-    else setTab(req);
+    else if (req === "ai") {
+      if (aiEnabled) setTab("ai");
+    } else setTab(req);
     if (!isOpen) onToggle();
     const timer = window.setTimeout(() => {
       if (req === "info-planner") {
@@ -100,8 +108,7 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   const setPendingScope = usePersonaStore((s) => s.setPendingScope);
   useEffect(() => {
     if (!pendingScope) return;
-    // Open the panel and navigate to the AI tab — the AITab picks up the scope
-    setTab("ai");
+    if (aiEnabled) setTab("ai");
     if (!isOpen) onToggle();
     setPendingScope(null);
   }, [pendingScope, isOpen, onToggle, setPendingScope]);
@@ -113,7 +120,7 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   const selectionQuery = usePersonaStore((s) => s.selectionQuery);
   useEffect(() => {
     if (!selectionQuery) return;
-    setTab("ai");
+    if (aiEnabled) setTab("ai");
     if (!isOpen) onToggle();
   }, [selectionQuery, isOpen, onToggle]);
 
@@ -144,7 +151,9 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
 
         {/* ── Tab bar ────────────────────────────────────────────── */}
         <div className="flex border-b border-border">
-          {(["info", "ai", "settings"] as const).map((t) => (
+          {(["info", "ai", "settings"] as const)
+            .filter((t) => t !== "ai" || aiEnabled)
+            .map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -176,7 +185,7 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
               charCount={charCount}
             />
           )}
-          {tab === "ai" && (
+          {tab === "ai" && aiEnabled && (
             <AITab
               activePersona={activePersona}
               personas={personaSlice.personas}

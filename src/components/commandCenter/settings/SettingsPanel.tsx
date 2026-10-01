@@ -15,6 +15,7 @@ import { SETTINGS_NAV } from "../../settings/settingsNav";
 import { ExportSettings } from "../../settings/ExportSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
+import { PluginsSettingsSection } from "../../settings/PluginsSettingsSection";
 import { SettingsTab } from "./SettingsTab";
 import { openExternalUrl } from "@/utils/vaultNavigation";
 import { METIS_SOURCE_URL } from "@/services/sourceUpdateCheck";
@@ -92,6 +93,11 @@ export function SettingsPanel({
         {section === "hotkeys" && (
           <SettingsSection title="Hotkeys">
             <HotkeysSettingsSection settings={settings} onUpdate={onUpdateSettings} />
+          </SettingsSection>
+        )}
+        {section === "plugins" && (
+          <SettingsSection title="Plugins">
+            <PluginsSettingsSection />
           </SettingsSection>
         )}
         {section === "ai" && (

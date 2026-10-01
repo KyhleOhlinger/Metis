@@ -23,6 +23,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import { backlinkLabels } from "../utils/linkGraph";
 import { STATUS_COLORS } from "../constants";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 // ── Smart-field constants ─────────────────────────────────────────────────────
 
@@ -184,6 +185,8 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
   const { refreshVault, vaultPath, backlinkIndex } = useStore(
     useShallow((s) => ({ refreshVault: s.refreshVault, vaultPath: s.vaultPath, backlinkIndex: s.backlinkIndex })),
   );
+  const propertiesEnabled = useCorePluginEnabled("properties");
+  const backlinksEnabled = useCorePluginEnabled("backlinks");
 
   // Auto-derive parent folder from the file path (read-only — not written to frontmatter).
   // Returns null when the note lives directly at the vault root.
@@ -351,10 +354,10 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
   const statusField = fields.find(([k]) => k === "status");
   const genericFields = fields.filter(([k]) => !SMART_KEYS.has(k));
   const collapsedHint = [
-    tags.length > 0 && `${tags.length} tag${tags.length !== 1 ? "s" : ""}`,
+    propertiesEnabled && tags.length > 0 && `${tags.length} tag${tags.length !== 1 ? "s" : ""}`,
     body.links.length > 0 && `${body.links.length} link${body.links.length !== 1 ? "s" : ""}`,
-    backlinkNames.length > 0 && `${backlinkNames.length} backlink${backlinkNames.length !== 1 ? "s" : ""}`,
-    genericFields.length > 0 && `${genericFields.length} field${genericFields.length !== 1 ? "s" : ""}`,
+    backlinksEnabled && backlinkNames.length > 0 && `${backlinkNames.length} backlink${backlinkNames.length !== 1 ? "s" : ""}`,
+    propertiesEnabled && genericFields.length > 0 && `${genericFields.length} field${genericFields.length !== 1 ? "s" : ""}`,
   ].filter(Boolean).join(" · ");
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -427,6 +430,7 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
           </Row>
 
           {/* ── Properties (smart fields) ───────────────────────────────── */}
+          {propertiesEnabled && (
           <Row label="Properties">
             <div className="space-y-1.5">
 
@@ -506,8 +510,11 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
 
             </div>
           </Row>
+          )}
 
           {/* ── Tags ────────────────────────────────────────────────────── */}
+          {propertiesEnabled && (
+          <>
           <Row label="Tags">
             <div className="flex flex-wrap items-center gap-1">
               {tags.map((tag, i) =>
@@ -649,6 +656,8 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
             className="text-[10px] text-text-muted hover:text-accent transition-colors">
             + Add field
           </button>
+          </>
+          )}
 
           {/* ── Links (read-only) ──────────────────────────────────────── */}
           {body.links.length > 0 && (
@@ -664,6 +673,7 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
             </Row>
           )}
 
+          {backlinksEnabled && (
           <Row label="Backlinks">
             {backlinkNames.length > 0 ? (
               <div className="flex flex-wrap gap-1">
@@ -686,6 +696,7 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
               </p>
             )}
           </Row>
+          )}
         </div>
       )}
     </div>

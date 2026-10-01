@@ -161,6 +161,7 @@ export type SettingsSectionId =
   | "editor"
   | "sticky"
   | "hotkeys"
+  | "plugins"
   | "ai"
   | "personas"
   | "export"
@@ -236,6 +237,12 @@ export interface Settings {
   sourceUpdateCheckEnabled?: boolean;
   /** Latest GitHub semver the user dismissed; banner returns when GitHub is newer. */
   sourceUpdateDismissedVersion?: string;
+  /** Nomad Browse & Access IPv4 (no port). */
+  supernoteDeviceIp?: string;
+  /** Browse & Access port. Default 8089. */
+  supernoteDevicePort?: number;
+  /** Auto-pull interval in minutes while Metis is open. Default 15. 0 = manual only. */
+  supernoteSyncIntervalMinutes?: number;
 }
 
 export interface VaultNoteNavigation {
@@ -263,6 +270,9 @@ export const DEFAULT_SETTINGS: Settings = {
     color: "amber",
     includeWrapBlock: false,
   },
+  supernoteDeviceIp: "",
+  supernoteDevicePort: 8089,
+  supernoteSyncIntervalMinutes: 15,
 };
 
 // ── Default personas shipped with the app ────────────────────────────────────

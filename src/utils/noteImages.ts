@@ -3,9 +3,9 @@ import { resolveMarkdownImageAbsPath, VAULT_IMAGE_EXT } from "./vaultImages";
 import { normalizePosixPath } from "./paths";
 import { resolveWikilinkAssetPath } from "./resolveWikilinkAsset";
 
-const WIKI_IMAGE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi;
+const WIKI_IMAGE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi;
 const MD_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
-const WIKI_IMAGE_LINE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i;
+const WIKI_IMAGE_LINE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/i;
 const MD_IMAGE_LINE_RE = /!\[([^\]]*)\]\(([^)]+)\)/;
 
 /** Character offsets of image markdown lines in document order (for Visual → Source navigation). */

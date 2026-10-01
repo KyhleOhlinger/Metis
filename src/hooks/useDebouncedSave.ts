@@ -20,7 +20,7 @@ export function useDebouncedSave(
 
   return useCallback(
     (path: string | null, content: string) => {
-      if (!path) return;
+      if (!path || !path.toLowerCase().endsWith(".md")) return;
       const existing = timers.current.get(path);
       if (existing) clearTimeout(existing);
       const timer = setTimeout(async () => {

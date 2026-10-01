@@ -3,6 +3,7 @@ import { isPinnedSpaceName } from "@/constants/vaultSpaces";
 import { InlineInput } from "./InlineInput";
 import { FileTreeNode } from "./FileTreeNode";
 import { SidebarQuickNotes } from "./SidebarQuickNotes";
+import { isSupernoteNoteFile } from "@/constants/supernote";
 
 interface SidebarFileTreePanelProps {
   vaultPath: string | null;
@@ -100,7 +101,11 @@ function FileTreeSections({
   expandVersion: { value: boolean } | null;
 }) {
   const pinned = files.filter((n) => n.is_dir && isPinnedSpaceName(n.name));
-  const rest = files.filter((n) => !(n.is_dir && isPinnedSpaceName(n.name)));
+  const rest = files.filter(
+    (n) =>
+      !(n.is_dir && isPinnedSpaceName(n.name)) &&
+      (n.is_dir || !isSupernoteNoteFile(n.name)),
+  );
 
   return (
     <>

@@ -33,6 +33,8 @@ export function collectHandwritingImages(
   const folder = findHandwrittenFolder(files);
   if (!folder?.children?.length) return [];
 
+  // Direct children only — nested folders (e.g. handwritten/Supernote/) are skipped.
+
   const mdBasenames = new Set(
     folder.children
       .filter((c) => !c.is_dir && c.name.toLowerCase().endsWith(".md"))

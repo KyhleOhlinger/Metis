@@ -12,6 +12,7 @@ import {
   resolveMarkdownImageAbsPath,
   resolveMarkdownImageSrc,
 } from "./vaultImages";
+import { isSupernoteNoteFile } from "@/constants/supernote";
 
 export type BuildNotePreviewOptions = {
   content: string;
@@ -35,7 +36,7 @@ export function buildNotePreviewHtml({
   md = preprocessStickyBlocksForPreview(md);
 
   md = md.replace(
-    /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/gi,
+    /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi,
     (_, filename) => `![${filename}](${filename})`,
   );
 
@@ -57,7 +58,8 @@ export function buildNotePreviewHtml({
       const resolved = resolveMarkdownImageSrc(src, vaultPath, fileDir, assetIndex);
       const absPath = resolveMarkdownImageAbsPath(src, vaultPath, fileDir, assetIndex);
       const dataAbs = absPath ? ` data-export-abs-path="${escapeHtml(absPath)}"` : "";
-      const srcAttr = resolved ? ` src="${resolved}"` : "";
+      const skipAssetSrc = Boolean(absPath && isSupernoteNoteFile(absPath));
+      const srcAttr = !skipAssetSrc && resolved ? ` src="${resolved}"` : "";
       return `${before}${srcAttr}${dataAbs}`;
     },
   );

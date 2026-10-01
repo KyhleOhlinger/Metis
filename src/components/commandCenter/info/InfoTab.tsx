@@ -10,6 +10,7 @@ import { FieldLabel, Hint, KV, Section, StatGrid, ccSelectCls } from "../shared/
 import { InfoExportSection } from "./InfoExportSection";
 import { PlannerInfoSection } from "./PlannerInfoSection";
 import { openExternalUrl } from "@/utils/vaultNavigation";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 function vaultDisplayName(vaultPath: string): string {
   const parts = vaultPath.split(/[/\\]/).filter(Boolean);
@@ -52,6 +53,9 @@ export function InfoTab({
   }, []);
 
   const shownVersion = currentVersion ?? localVersion;
+  const wordCountEnabled = useCorePluginEnabled("word-count");
+  const exportEnabled = useCorePluginEnabled("export");
+  const plannerEnabled = useCorePluginEnabled("planner");
 
   const imageFolderOptions = useMemo(() => {
     if (!vaultPath) return [];
@@ -76,7 +80,7 @@ export function InfoTab({
           <Section title="Active Note">
             <KV label="File" value={activeFileName} mono stacked={activeFileName.length > 28} />
             <KV label="Status" value={activeStatus} highlight={isDirty} />
-            {activeFilePath && (
+            {activeFilePath && wordCountEnabled && (
               <StatGrid
                 items={[
                   { label: "Words", value: wordCount.toLocaleString() },
@@ -125,9 +129,9 @@ export function InfoTab({
           )}
         </Section>
 
-        {vaultPath && <InfoExportSection />}
+        {vaultPath && exportEnabled && <InfoExportSection />}
 
-        <PlannerInfoSection />
+        {plannerEnabled && <PlannerInfoSection />}
 
         <Section title="About">
           <div className="flex flex-col items-center gap-2.5 py-1 text-center">
