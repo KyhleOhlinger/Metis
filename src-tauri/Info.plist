@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sequoia+: without this string, LAN TCP to the Nomad is denied with no prompt.
+	     `tauri dev` inherits Cursor/Terminal's Local Network grant; Metis.app does not. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Metis pulls notebooks from your Supernote over Browse &amp; Access on the local network or Tailscale.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Browse & Access is cleartext HTTP on LAN. Do not allow arbitrary Internet HTTP. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

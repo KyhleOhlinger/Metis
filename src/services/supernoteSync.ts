@@ -32,7 +32,11 @@ export async function runSupernoteSync(): Promise<SupernoteSyncResult | null> {
   const { supernoteDeviceIp, supernoteDevicePort } = usePersonaStore.getState().settings;
   const ip = (supernoteDeviceIp ?? "").trim();
   if (!ip) {
-    toastError("Set the Nomad IP on the Supernote folder (no port).");
+    toastError(
+      import.meta.env.DEV
+        ? "Set the Nomad IP on the Supernote folder (no port)."
+        : "Set the Nomad IP on the Supernote folder. The packaged app does not use the IP saved in `tauri dev`.",
+    );
     return null;
   }
   const port = supernoteDevicePort ?? SUPERNOTE_DEFAULT_PORT;

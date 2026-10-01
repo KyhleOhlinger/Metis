@@ -1,7 +1,7 @@
 //! Supernote Nomad Browse & Access pull into `handwritten/Supernote/`.
 //!
-//! SECURITY: HTTP stays in Rust (not the webview HTTP plugin). Destination is a
-//! user-supplied IPv4 on RFC1918 or Tailscale CGNAT. Page viewing is `supernote_render`.
+//! SECURITY: HTTP stays in Rust (reqwest, same client in dev and release).
+//! Destination is a user-supplied IPv4 on RFC1918 or Tailscale CGNAT.
 
 use crate::security::{canon_vault, reject_untrusted_webview, safe_resolve};
 use crate::state::CurrentVault;
@@ -24,7 +24,7 @@ const MAX_FILES: usize = 200;
 const MAX_DEPTH: u32 = 6;
 const MAX_LISTING_BYTES: usize = 2 * 1024 * 1024;
 const MAX_FILE_BYTES: usize = 50 * 1024 * 1024;
-const LISTING_TIMEOUT_SECS: u64 = 12;
+const LISTING_TIMEOUT_SECS: u64 = 20;
 const FILE_TIMEOUT_SECS: u64 = 60;
 
 const PULL_EXTS: &[&str] = &["note", "png", "jpg", "jpeg", "webp", "pdf", "bmp"];
@@ -218,14 +218,74 @@ fn vault_for_window(
     canon_vault(&PathBuf::from(vault_str))
 }
 
-fn http_client(timeout_secs: u64) -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
+struct LanGet {
+    status: u16,
+    content_type: String,
+    body: Vec<u8>,
+}
+
+/// Same HTTP client in dev and packaged builds, on every OS.
+/// `tauri dev` only looked faster because it never used the macOS-only
+/// Network.framework client (that path waited on Bonjour and then timed out).
+fn lan_http_get(url: &str, timeout_secs: u64, max_bytes: usize) -> Result<LanGet, String> {
+    let client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(timeout_secs))
+        .pool_max_idle_per_host(0)
+        .tcp_nodelay(true)
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Metis-Supernote/1")
         .build()
-        .map_err(|e| format!("Could not create HTTP client: {e}"))
+        .map_err(|e| format!("Could not create HTTP client: {e}"))?;
+    let res = client
+        .get(url)
+        .send()
+        .map_err(|e| map_browse_http_error(&e))?;
+    let status = res.status().as_u16();
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let body = res
+        .bytes()
+        .map_err(|e| format!("Failed to read response: {e}"))?
+        .to_vec();
+    if body.len() > max_bytes {
+        return Err("Response is too large.".into());
+    }
+    Ok(LanGet {
+        status,
+        content_type,
+        body,
+    })
+}
+
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut parts = Vec::new();
+    let mut cur: Option<&dyn std::error::Error> = Some(err);
+    while let Some(e) = cur {
+        let s = e.to_string();
+        if parts.last().map(|p| p != &s).unwrap_or(true) {
+            parts.push(s);
+        }
+        cur = e.source();
+    }
+    parts.join(" — ")
+}
+
+fn looks_like_local_network_denied(msg: &str) -> bool {
+    let l = msg.to_ascii_lowercase();
+    l.contains("operation not permitted")
+        || l.contains("permission denied")
+        || l.contains("os error 1")
+        || l.contains("no route to host")
+        || l.contains("os error 65")
+        || l.contains("network is unreachable")
+        || l.contains("os error 51")
+        || l.contains("host is down")
 }
 
 fn decode_href(raw: &str) -> String {
@@ -574,28 +634,28 @@ fn listing_links(
         .unwrap_or_else(|| links_from_hrefs(html, page_url, octets, port))
 }
 
-fn get_listing(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
-    let res = client
-        .get(url)
-        .send()
-        .map_err(|e| {
-            format!(
-                "Could not reach Browse & Access ({e}). Enable it on the Nomad and confirm you are on the same Wi-Fi."
-            )
-        })?;
-    if !res.status().is_success() {
+fn map_browse_http_error(err: &reqwest::Error) -> String {
+    let raw = error_chain(err);
+    if looks_like_local_network_denied(&raw) {
+        return "macOS dropped the LAN connection even though Local Network may already show Metis on. That switch does not apply to an unsigned app. This build is ad-hoc signed: quit Metis, turn Local Network off and on once, reopen Metis, then sync.".into();
+    }
+    if err.is_timeout() {
+        return "Browse & Access timed out. Enable it on the Nomad, confirm the popup, and check the IP.".into();
+    }
+    format!(
+        "Could not reach Browse & Access ({raw}). Enable it on the Nomad and confirm you are on the same Wi-Fi or Tailscale."
+    )
+}
+
+fn get_listing(url: &str) -> Result<String, String> {
+    let res = lan_http_get(url, LISTING_TIMEOUT_SECS, MAX_LISTING_BYTES)?;
+    if !(200..300).contains(&res.status) {
         return Err(format!(
             "Browse & Access returned HTTP {} for {url}",
-            res.status().as_u16()
+            res.status
         ));
     }
-    let bytes = res
-        .bytes()
-        .map_err(|e| format!("Failed to read directory listing: {e}"))?;
-    if bytes.len() > MAX_LISTING_BYTES {
-        return Err("Directory listing is too large.".into());
-    }
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    Ok(String::from_utf8_lossy(&res.body).into_owned())
 }
 
 #[tauri::command]
@@ -643,8 +703,6 @@ fn pull_browse_access(
         "http://{}.{}.{}.{}:{port}",
         octets[0], octets[1], octets[2], octets[3]
     );
-    let list_client = http_client(LISTING_TIMEOUT_SECS)?;
-    let file_client = http_client(FILE_TIMEOUT_SECS)?;
 
     let mut downloaded = 0usize;
     let mut skipped = 0usize;
@@ -672,7 +730,7 @@ fn pull_browse_access(
             continue;
         }
 
-        let html = match get_listing(&list_client, &page_url) {
+        let html = match get_listing(&page_url) {
             Ok(h) => {
                 listed_ok = true;
                 h
@@ -734,30 +792,23 @@ fn pull_browse_access(
                 fs::create_dir_all(parent)
                     .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
             }
-            let res = file_client.get(&link.abs).send().map_err(|e| {
-                format!("Download failed for {}: {e}", rel.display())
-            })?;
-            if !res.status().is_success() {
+            let res = match lan_http_get(&link.abs, FILE_TIMEOUT_SECS, MAX_FILE_BYTES) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            if !(200..300).contains(&res.status) {
                 continue;
             }
-            let ctype = res
-                .headers()
-                .get(reqwest::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_ascii_lowercase();
-            if ctype.contains("text/html") {
+            if res.content_type.contains("text/html") {
                 continue;
             }
-            let bytes = res
-                .bytes()
-                .map_err(|e| format!("Download failed for {}: {e}", rel.display()))?;
+            let bytes = res.body;
             if bytes.len() > MAX_FILE_BYTES {
                 continue;
             }
             if existed {
                 if let Ok(current) = fs::read(&dest) {
-                    if current.as_slice() == bytes.as_ref() {
+                    if current.as_slice() == bytes.as_slice() {
                         skipped += 1;
                         record_sync_entry(
                             &mut sync_meta,
