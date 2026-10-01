@@ -11,6 +11,7 @@ const ALLOWED_FILE_EXTS: &[&str] = &[
     "md",
     "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "avif",
     "pdf",
+    "note",
 ];
 
 /// Default vault folders (pinned Spaces). Keep in sync with `src/constants/vaultSpaces.ts`.

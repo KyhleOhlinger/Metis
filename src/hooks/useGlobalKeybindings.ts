@@ -8,6 +8,7 @@ import { eventMatchesChord } from "@/utils/keyChord";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { getChordsForCommand } from "@/services/keybindingRuntime";
 import type { KeybindingCommandId } from "@/config/keybindingRegistry";
+import { isCorePluginEnabled } from "@/plugins/usePluginStore";
 
 type LastPane = "sidebar" | "editor" | "cc";
 
@@ -60,6 +61,7 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
       break;
     }
     case "daily-note":
+      if (!isCorePluginEnabled("daily-notes")) return;
       opts.openDailyNote();
       break;
     case "settings": {
@@ -78,7 +80,7 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
       opts.setPaletteOpen((v) => !v);
       break;
     case "vault-search": {
-      if (!store.vaultPath) return;
+      if (!store.vaultPath || !isCorePluginEnabled("search")) return;
       store.setSidebarView("search");
       if (!opts.sidebarOpen) opts.setSidebarOpen(true);
       break;
@@ -87,6 +89,7 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
       const active = document.activeElement;
       if (active?.closest(".cm-editor") && store.editorTab === "source") return;
       if (opts.lastPaneRef.current === "sidebar" && store.vaultPath) {
+        if (!isCorePluginEnabled("search")) return;
         store.setSidebarView("search");
         if (!opts.sidebarOpen) opts.setSidebarOpen(true);
       }

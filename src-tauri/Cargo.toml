@@ -1,6 +1,6 @@
 [package]
 name = "metis"
-version = "0.10.17"
+version = "0.13.7"
 edition = "2021"
 description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]
@@ -35,6 +35,12 @@ base64 = "0.22"
 # Open URLs / files in the OS default application — well-established crate
 open = "5"
 regex = "1.12.3"
+# Blocking HTTP for Supernote Browse & Access (LAN only; not the webview HTTP plugin).
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "blocking"] }
+# PNG encode of rendered .note pages (Ratta layer composite).
+image = { version = "0.25", default-features = false, features = ["png"] }
+# zlib for older SN_ASA_COMPRESS layers.
+flate2 = "1"
 # Pure Rust Hunspell-compatible spellchecker — from the Helix editor team
 spellbook = "0.4"
 

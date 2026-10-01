@@ -4,6 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { PLANNER_PERSONA_ID } from "../types/persona";
+import { isCorePluginEnabled } from "@/plugins/usePluginStore";
+import { runSupernoteSync } from "@/services/supernoteSync";
+import { usePluginStore } from "@/plugins/usePluginStore";
 import { useSourceUpdateStore } from "../store/useSourceUpdateStore";
 import { STATUS_COLORS } from "../constants";
 import { toastError } from "../store/useToastStore";
@@ -15,6 +18,21 @@ interface PaletteAction {
   label: string;
   hint?: string;
   run: () => void;
+}
+
+function paletteActionAllowed(id: string): boolean {
+  if (id === "vault-search") return isCorePluginEnabled("search");
+  if (id === "daily-note") return isCorePluginEnabled("daily-notes");
+  if (id.startsWith("planner")) {
+    if (!isCorePluginEnabled("planner")) return false;
+    if (id === "planner-briefing") return isCorePluginEnabled("ai");
+    if (id.startsWith("planner-export")) return isCorePluginEnabled("export");
+    return true;
+  }
+  if (id === "focus-ai" || id === "run-log") return isCorePluginEnabled("ai");
+  if (id === "export" || id === "settings-export") return isCorePluginEnabled("export");
+  if (id === "supernote-sync") return isCorePluginEnabled("supernote");
+  return true;
 }
 
 interface Props {
@@ -38,10 +56,13 @@ export default function CommandPalette({ onClose }: Props) {
   const setActivePersona = usePersonaStore((s) => s.setActivePersona);
   const setPendingScope = usePersonaStore((s) => s.setPendingScope);
 
+  const pluginRev = usePluginStore((s) => `${JSON.stringify(s.core)}|${s.enabled.join(",")}`);
+
   const commandMode = query.startsWith(">");
 
   const actions: PaletteAction[] = useMemo(
-    () => [
+    () => {
+      const all: PaletteAction[] = [
       {
         id: "vault-search",
         label: "Search vault",
@@ -75,6 +96,15 @@ export default function CommandPalette({ onClose }: Props) {
         hint: "⌘D",
         run: () => {
           setPendingMenuAction("daily-note");
+          onClose();
+        },
+      },
+      {
+        id: "supernote-sync",
+        label: "Sync Supernote (Browse & Access)",
+        hint: "handwritten/Supernote",
+        run: () => {
+          void runSupernoteSync();
           onClose();
         },
       },
@@ -326,7 +356,18 @@ export default function CommandPalette({ onClose }: Props) {
           onClose();
         },
       },
-    ],
+      {
+        id: "settings-plugins",
+        label: "Open Settings: Plugins",
+        hint: "⌘,",
+        run: () => {
+          openSettings("plugins");
+          onClose();
+        },
+      },
+    ];
+      return all.filter((a) => paletteActionAllowed(a.id));
+    },
     [
       onClose,
       openSettings,
@@ -337,6 +378,7 @@ export default function CommandPalette({ onClose }: Props) {
       requestCommandCenter,
       setActivePersona,
       setPendingScope,
+      pluginRev,
     ],
   );
 

@@ -1,4 +1,5 @@
 import { SYSTEM_PERSONA_IDS } from "@/systemPersonas/registry";
+import { isSystemPersonaAllowed, usePluginStore } from "@/plugins/usePluginStore";
 import type { Persona } from "@/types/persona";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { SectionAction, SubsectionLabel } from "../shared/ui";
@@ -55,9 +56,13 @@ export function AITabPersonaBar({
   onNewPersona,
   onOpenSettings,
 }: AITabPersonaBarProps) {
-  const systemChips = personas.filter((p) => !p.disabled && SYSTEM_PERSONA_IDS.has(p.id));
+  const core = usePluginStore((s) => s.core);
+  const systemChips = personas.filter(
+    (p) => !p.disabled && SYSTEM_PERSONA_IDS.has(p.id) && isSystemPersonaAllowed(p.id),
+  );
   const customChips = personas.filter((p) => !p.disabled && !SYSTEM_PERSONA_IDS.has(p.id));
   const hasPersonas = systemChips.length > 0 || customChips.length > 0;
+  void core;
 
   return (
     <div className="shrink-0 border-b border-border px-3 py-2.5">

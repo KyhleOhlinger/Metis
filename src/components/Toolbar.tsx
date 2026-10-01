@@ -34,6 +34,7 @@ import {
   toggleHeading,
 } from "./toolbar/toolbarBlockFormat";
 import { toggleBulletList, toggleOrderedList, toggleTaskList } from "./toolbar/toolbarListFormat";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 const ICON_SIZE_NORMAL = 14;
 const ICON_SIZE_COMPACT = 11;
@@ -82,6 +83,10 @@ const ITEMS: ToolbarItem[] = [
 ];
 
 export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: ToolbarProps) {
+  const stickyEnabled = useCorePluginEnabled("sticky-notes");
+  const calendarEnabled = useCorePluginEnabled("calendar");
+  const calculatorEnabled = useCorePluginEnabled("calculator");
+  const spellPlugin = useCorePluginEnabled("spellcheck");
   const containerRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
 
@@ -153,12 +158,20 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
 
         <div className={dividerCls} />
         <CalloutDropdown viewRef={viewRef} iconSize={iconSize} btnCls={btnCls} />
-        <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} btnCls={btnCls} />
+        {stickyEnabled && (
+          <StickyNoteDropdown viewRef={viewRef} iconSize={iconSize} btnCls={btnCls} />
+        )}
 
-        <div className={dividerCls} />
-        <ToolbarCalendarPopover iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
-        <ToolbarCalculatorPopover viewRef={viewRef} iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
+        {(calendarEnabled || calculatorEnabled) && <div className={dividerCls} />}
+        {calendarEnabled && (
+          <ToolbarCalendarPopover iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
+        )}
+        {calculatorEnabled && (
+          <ToolbarCalculatorPopover viewRef={viewRef} iconSize={iconSize} btnCls={`${btnCls} shrink-0 flex items-center gap-0.5`} />
+        )}
 
+        {spellPlugin && (
+          <>
         <div className={dividerCls} />
         <button
           title={spellcheck ? "Disable spellcheck" : "Enable spellcheck"}
@@ -174,6 +187,8 @@ export default function Toolbar({ viewRef, spellcheck, onToggleSpellcheck }: Too
         >
           <SpellCheck size={iconSize} />
         </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useStore } from "@/store/useStore";
 import { backlinkLabels } from "@/utils/linkGraph";
 import { openNoteByWikilinkNameFromStore } from "@/utils/vaultNavigation";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 interface NoteBacklinksBarProps {
   filePath: string | null;
@@ -10,6 +11,7 @@ interface NoteBacklinksBarProps {
 
 /** Compact backlinks row for Visual mode (metadata panel is Source-only). */
 export function NoteBacklinksBar({ filePath }: NoteBacklinksBarProps) {
+  const backlinksEnabled = useCorePluginEnabled("backlinks");
   const { backlinkIndex } = useStore(
     useShallow((s) => ({ backlinkIndex: s.backlinkIndex })),
   );
@@ -17,7 +19,7 @@ export function NoteBacklinksBar({ filePath }: NoteBacklinksBarProps) {
   const backlinkPaths = filePath ? backlinkIndex[filePath] ?? [] : [];
   const backlinkNames = useMemo(() => backlinkLabels(backlinkPaths), [backlinkPaths]);
 
-  if (!filePath || backlinkNames.length === 0) return null;
+  if (!backlinksEnabled || !filePath || backlinkNames.length === 0) return null;
 
   return (
     <div className="shrink-0 border-b border-border bg-surface-raised/60 px-3 py-1.5">

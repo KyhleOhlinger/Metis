@@ -20,7 +20,8 @@ export function resolveMarkdownImageAbsPath(
 
   const trimmed = src.trim();
 
-  if (IMAGE_EXT.test(trimmed) && !trimmed.includes("/")) {
+  // Name-only raster images and `.note` notebooks: vault-wide lookup (Obsidian-style).
+  if ((IMAGE_EXT.test(trimmed) || /\.note$/i.test(trimmed)) && !trimmed.includes("/")) {
     const index = assetIndex ?? useStore.getState().assetIndex;
     const resolved = resolveWikilinkAssetPath(trimmed, index, vaultPath);
     const normalized = normalizePosixPath(resolved);

@@ -4,6 +4,7 @@ import { buildBacklinkIndex } from "../utils/linkGraph";
 import { formatError } from "../utils/formatError";
 import { toastError } from "./useToastStore";
 import { resetPlannerPersistence } from "../planner/plannerPersistence";
+import { usePluginStore } from "../plugins/usePluginStore";
 import { usePersonaStore } from "./usePersonaStore";
 import {
   mergeVaultNavigation,
@@ -59,6 +60,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       commandCenterRequest: null,
     });
     setTimeout(() => get().enrichNoteIndex(), 0);
+    void usePluginStore.getState().loadForVault();
   },
 
   setIsMetisVault: (v) => set({ isMetisVault: v }),
@@ -168,6 +170,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
 
   clearVault: () => {
     resetPlannerPersistence();
+    usePluginStore.getState().reset();
     set({
       vaultPath: null,
       isMetisVault: false,

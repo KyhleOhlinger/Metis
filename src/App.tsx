@@ -27,7 +27,10 @@ import {
 } from "./planner/plannerPersistence";
 import { toastError } from "./store/useToastStore";
 import { useSourceUpdateSchedule } from "./hooks/useSourceUpdateSchedule";
+import { useSupernoteSyncSchedule } from "./hooks/useSupernoteSyncSchedule";
 import { formatError } from "./utils/formatError";
+import { CommunityPluginStyles } from "./plugins/CommunityPluginStyles";
+import { isCorePluginEnabled } from "./plugins/usePluginStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { editorPaneThemeVars, applyAppThemeToDocument, resolveBgPreset } from "./components/editor/bgPresets";
 
@@ -282,19 +285,23 @@ export default function App() {
         setPaletteOpen(true);
         break;
       case "export-hub":
-        setExportHubOpen(true);
+        if (isCorePluginEnabled("export")) setExportHubOpen(true);
         break;
       case "new-note":
       case "new-folder":
         setSidebarOpen(true);
         return;
       case "daily-note":
-        setSidebarOpen(true);
-        openDailyNote();
+        if (isCorePluginEnabled("daily-notes")) {
+          setSidebarOpen(true);
+          openDailyNote();
+        }
         break;
       case "open-search":
-        setSidebarOpen(true);
-        useStore.getState().setSidebarView("search");
+        if (isCorePluginEnabled("search")) {
+          setSidebarOpen(true);
+          useStore.getState().setSidebarView("search");
+        }
         break;
       default:
         return;
@@ -370,6 +377,7 @@ export default function App() {
   }, [refreshVault]);
 
   useSourceUpdateSchedule();
+  useSupernoteSyncSchedule();
 
   // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.
   useEffect(() => {
@@ -457,6 +465,7 @@ export default function App() {
       data-color-scheme={bgPreset.isDark ? "dark" : "light"}
     >
       <ToastHost />
+      <CommunityPluginStyles />
       <SettingsModal />
       {paletteOpen && <CommandPalette onClose={() => setPaletteOpen(false)} />}
       {exportPdfOpen && vaultPath && (

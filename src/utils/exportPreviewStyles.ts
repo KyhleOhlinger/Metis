@@ -14,6 +14,15 @@ export const EXPORT_CHAPTER_CSS = `
   border-bottom: 1px solid currentColor;
   opacity: 0.45;
 }
+.export-supernote-pages img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 12px;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
 .html2pdf__page-break {
   display: block;
   height: 0;
@@ -21,3 +30,4 @@ export const EXPORT_CHAPTER_CSS = `
   break-after: page;
 }
 `;
+

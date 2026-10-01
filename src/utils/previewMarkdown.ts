@@ -3,7 +3,7 @@
 const STICKY_OPEN_RE = /^:::\s*sticky(?:\s*\{([^}]*)\})?\s*$/i;
 const STICKY_WRAP_OPEN_RE = /^:::\s*stickywrap\s*$/i;
 const MD_IMAGE_LINE_RE = /!\[([^\]]*)\]\(([^)]+)\)/;
-const WIKI_IMAGE_LINE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif))\]\]/i;
+const WIKI_IMAGE_LINE_RE = /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/i;
 
 /** Markdown paragraph line — marked parses it; raw HTML spacers break GFM tables/images. */
 const PREVIEW_SPACER_LINE = "&nbsp;";

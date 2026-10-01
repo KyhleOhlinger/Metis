@@ -6,6 +6,7 @@ import SelectionToolbar from "@/components/SelectionToolbar";
 import EditorFindBar from "@/components/EditorFindBar";
 import MarkdownPreview from "@/components/MarkdownPreview";
 import VaultImageViewer from "@/components/VaultImageViewer";
+import { SupernoteNoteViewer } from "@/components/SupernoteNoteViewer";
 import DailyTaskGrid from "@/components/DailyTaskGrid";
 import AgentRunHistoryPage from "@/components/agentHistory/AgentRunHistoryPage";
 import { NoteBacklinksBar } from "@/components/editor/NoteBacklinksBar";
@@ -14,6 +15,7 @@ import { type BgPreset } from "@/components/editor/bgPresets";
 interface EditorMainContentProps {
   editorMode: string;
   isImageFile: boolean;
+  isNoteBinaryFile: boolean;
   activeFilePath: string | null;
   activeFileContent: string;
   vaultPath: string | null;
@@ -37,6 +39,7 @@ interface EditorMainContentProps {
 export function EditorMainContent({
   editorMode,
   isImageFile,
+  isNoteBinaryFile,
   activeFilePath,
   activeFileContent,
   vaultPath,
@@ -68,7 +71,7 @@ export function EditorMainContent({
         </div>
       )}
 
-      {editorMode === "source" && !isImageFile && (
+      {editorMode === "source" && !isImageFile && !isNoteBinaryFile && (
         <Toolbar
           viewRef={viewRef}
           spellcheck={spellcheckEnabled}
@@ -76,7 +79,7 @@ export function EditorMainContent({
         />
       )}
 
-      {editorMode === "source" && !isImageFile && (
+      {editorMode === "source" && !isImageFile && !isNoteBinaryFile && (
         <MetadataPanel
           content={activeFileContent}
           filePath={activeFilePath}
@@ -85,7 +88,7 @@ export function EditorMainContent({
         />
       )}
 
-      {editorMode === "source" && !isImageFile && (
+      {editorMode === "source" && !isImageFile && !isNoteBinaryFile && (
         <SelectionToolbar onDismiss={onDismissSelectionToolbar} />
       )}
 
@@ -94,7 +97,7 @@ export function EditorMainContent({
           ref={editorHostRef as RefObject<HTMLDivElement>}
           className="absolute inset-0"
           style={{
-            display: editorMode === "source" && !isImageFile ? "block" : "none",
+            display: editorMode === "source" && !isImageFile && !isNoteBinaryFile ? "block" : "none",
           }}
         />
 
@@ -106,7 +109,16 @@ export function EditorMainContent({
           />
         )}
 
-        {editorMode === "visual" && activeFilePath && vaultPath && !isImageFile && (
+        {isNoteBinaryFile && activeFilePath && vaultPath && (
+          <SupernoteNoteViewer
+            key={activeFilePath}
+            filePath={activeFilePath}
+            vaultPath={vaultPath}
+            bgColor={bgPreset.bg}
+          />
+        )}
+
+        {editorMode === "visual" && activeFilePath && vaultPath && !isImageFile && !isNoteBinaryFile && (
           <div className="flex h-full min-h-0 flex-col">
             <NoteBacklinksBar filePath={activeFilePath} />
             <div className="min-h-0 flex-1 overflow-hidden">

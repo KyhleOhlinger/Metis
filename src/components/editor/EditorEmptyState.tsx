@@ -1,6 +1,7 @@
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
 import { EditorEmptyQuickNotes } from "./EditorEmptyQuickNotes";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 function EmptyAction({
   label,
@@ -46,6 +47,9 @@ export function EditorEmptyState({
     if (!store.vaultPath) return;
     store.setPendingMenuAction("open-search");
   };
+  const searchEnabled = useCorePluginEnabled("search");
+  const plannerEnabled = useCorePluginEnabled("planner");
+  const exportEnabled = useCorePluginEnabled("export");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col select-none">
@@ -76,9 +80,9 @@ export function EditorEmptyState({
           {vaultPath ? (
             <>
               <EmptyAction label="Quick switcher" hint="⌘P" onClick={openPalette} />
-              <EmptyAction label="Search vault" hint="⌘⇧F" onClick={openSearch} />
-              <EmptyAction label="Planner" onClick={onOpenPlanner} />
-              <EmptyAction label="Export…" onClick={openExport} />
+              {searchEnabled && <EmptyAction label="Search vault" hint="⌘⇧F" onClick={openSearch} />}
+              {plannerEnabled && <EmptyAction label="Planner" onClick={onOpenPlanner} />}
+              {exportEnabled && <EmptyAction label="Export…" onClick={openExport} />}
               <EmptyAction label="Settings" hint="⌘," onClick={openSettings} />
             </>
           ) : (

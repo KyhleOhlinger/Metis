@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import { FoldVertical, UnfoldVertical } from "lucide-react";
 import { ChevronLeft, ActionButton } from "./sidebarIcons";
 import { todayString } from "./dailyNote";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 interface SidebarExpandedHeaderProps {
   vaultPath: string | null;
@@ -32,6 +33,8 @@ export function SidebarExpandedHeader({
   onToggleExpandAll,
   onCollapseSidebar,
 }: SidebarExpandedHeaderProps) {
+  const dailyEnabled = useCorePluginEnabled("daily-notes");
+  const searchEnabled = useCorePluginEnabled("search");
   return (
     <div className="border-b border-border px-2 py-2">
       <div className="flex items-center justify-between">
@@ -65,7 +68,7 @@ export function SidebarExpandedHeader({
               </ActionButton>
             </>
           )}
-          {vaultPath && (
+          {vaultPath && dailyEnabled && (
             <ActionButton
               title={`Open / create today's daily note (${todayString()})`}
               onClick={onDailyNote}
@@ -81,7 +84,7 @@ export function SidebarExpandedHeader({
               </svg>
             </ActionButton>
           )}
-          {vaultPath && (
+          {vaultPath && searchEnabled && (
             <ActionButton
               title="Search vault (Cmd+Shift+F)"
               onClick={onToggleSearch}

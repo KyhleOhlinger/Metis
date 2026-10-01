@@ -4,6 +4,7 @@ mod read;
 mod write;
 mod tree_ops;
 
+pub(crate) use sanitize::sanitize_name;
 pub use vault_open::*;
 pub use read::*;
 pub use write::*;

@@ -10,6 +10,7 @@ import { toastError } from "../store/useToastStore";
 import { formatError } from "../utils/formatError";
 import { ChevronRight, CollapsedBtn } from "./sidebar/sidebarIcons";
 import { todayString, openOrCreateDailyNote } from "./sidebar/dailyNote";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 import { SidebarExpandedHeader } from "./sidebar/SidebarExpandedHeader";
 import { SidebarFileTreePanel } from "./sidebar/SidebarFileTreePanel";
 import { useSidebarDragDrop } from "../hooks/useSidebarDragDrop";
@@ -67,6 +68,13 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
   const [rootCreating, setRootCreating] = useState<"note" | "folder" | null>(null);
   const [expandVersion, setExpandVersion] = useState<{ value: boolean } | null>(null);
   const allCollapsed = expandVersion?.value === false;
+  const searchEnabled = useCorePluginEnabled("search");
+  const dailyEnabled = useCorePluginEnabled("daily-notes");
+  const plannerEnabled = useCorePluginEnabled("planner");
+
+  useEffect(() => {
+    if (!searchEnabled && sidebarView === "search") setSidebarView("files");
+  }, [searchEnabled, sidebarView, setSidebarView]);
 
   const vaultNav = usePersonaStore((s) =>
     vaultPath ? s.settings.vaultNoteNavigation?.[vaultPath] : undefined,
@@ -173,6 +181,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
                   <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /><line x1="12" y1="11" x2="12" y2="17" /><line x1="9" y1="14" x2="15" y2="14" />
                 </svg>
               </CollapsedBtn>
+              {dailyEnabled && (
               <CollapsedBtn
                 title={`Daily note (${todayString()})`}
                 onClick={() => openOrCreateDailyNote(vaultPath, setActiveFile, refreshVault)}
@@ -183,6 +192,8 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
                   <line x1="8" y1="14" x2="8.01" y2="14" /><line x1="12" y1="14" x2="12.01" y2="14" /><line x1="16" y1="14" x2="16.01" y2="14" />
                 </svg>
               </CollapsedBtn>
+              )}
+              {searchEnabled && (
               <CollapsedBtn
                 title="Search vault (Cmd+Shift+F)"
                 onClick={() => {
@@ -192,6 +203,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
               >
                 <Search size={12} />
               </CollapsedBtn>
+              )}
               <div className="my-1 w-4 border-t border-border" />
             </>
           )}
@@ -208,7 +220,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
             )}
           </CollapsedBtn>
           <div className="mt-auto" />
-          {vaultPath && (
+          {vaultPath && plannerEnabled && (
             <CollapsedBtn
               title="Open Planner"
               onClick={() => openPlannerTab()}
@@ -265,7 +277,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
             onCreateVault={() => setShowCreateVault(true)}
             onOpenVault={() => void handleOpenVault()}
           />
-          {sidebarView === "search" && (
+          {sidebarView === "search" && searchEnabled && (
             <div
               className="absolute inset-0 z-20 flex flex-col bg-surface-raised shadow-lg ring-1 ring-inset ring-border"
               role="dialog"
@@ -283,7 +295,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
         </div>
 
         <div className="border-t border-border px-3 py-1.5">
-          {vaultPath && (
+          {vaultPath && plannerEnabled && (
             <button
               type="button"
               onClick={() => openPlannerTab()}

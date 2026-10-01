@@ -6,6 +6,7 @@ export const SETTINGS_NAV: { id: SettingsSectionId; label: string }[] = [
   { id: "editor", label: "App theme" },
   { id: "sticky", label: "Sticky notes" },
   { id: "hotkeys", label: "Hotkeys" },
+  { id: "plugins", label: "Plugins" },
   { id: "ai", label: "AI" },
   { id: "personas", label: "Personas" },
   { id: "export", label: "Export" },
