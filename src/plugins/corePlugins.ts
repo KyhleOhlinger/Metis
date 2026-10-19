@@ -15,7 +15,8 @@ export type CorePluginId =
   | "task-manager"
   | "handwriting"
   | "export"
-  | "supernote";
+  | "supernote"
+  | "backup";
 
 export interface CorePluginDef {
   id: CorePluginId;
@@ -109,6 +110,11 @@ export const CORE_PLUGINS: CorePluginDef[] = [
     id: "export",
     name: "Export",
     description: "PDF, Jekyll, and planner markdown export.",
+  },
+  {
+    id: "backup",
+    name: "Backup",
+    description: "GitHub backup of selected vault folders. Sync from Info, the File menu, or ⌘⇧B.",
   },
   {
     id: "supernote",

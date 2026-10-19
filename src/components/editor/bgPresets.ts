@@ -7,12 +7,31 @@ import {
   deriveCustomThemeFields,
   deriveSyntaxPalette,
   deriveThemePalette,
+  DEFAULT_APP_THEME_BG,
+  DEFAULT_APP_THEME_ID,
   normalizeHex,
   withAlphaHex,
 } from "@/utils/themeColors";
 import { buildMetisHighlightStyle } from "./extensions/highlightStyles";
 
 export const CUSTOM_PRESET_ID = "custom";
+
+/** Swatch used for the custom-colour button in Settings and the header picker. */
+export const APP_THEME_WHEEL_SWATCH =
+  "conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444)";
+
+export function appThemeSelectionPatch(
+  id: string,
+  customHex?: string,
+): { editorBgPresetId: string; editorBgCustomColor?: string } {
+  if (id === CUSTOM_PRESET_ID) {
+    return {
+      editorBgPresetId: CUSTOM_PRESET_ID,
+      editorBgCustomColor: normalizeHex(customHex ?? "") ?? DEFAULT_APP_THEME_BG,
+    };
+  }
+  return { editorBgPresetId: id };
+}
 
 export interface BgPreset {
   id: string;
@@ -91,17 +110,16 @@ export function resolveBgPreset(
   customColor?: string | undefined,
 ): BgPreset {
   if (id === CUSTOM_PRESET_ID) {
-    const hex = normalizeHex(customColor ?? "") ?? normalizeHex("#16171a")!;
+    const hex = normalizeHex(customColor ?? "") ?? DEFAULT_APP_THEME_BG;
     const custom = buildCustomBgPreset(hex);
     if (custom) return custom;
   }
-  const builtIn = BG_PRESETS.find((p) => p.id === id);
+  const builtIn = BG_PRESETS.find((p) => p.id === (id || DEFAULT_APP_THEME_ID));
   return builtIn ? { ...builtIn } : { ...BG_PRESETS[0] };
 }
 
 export const bgCompartment = new Compartment();
 export const highlightCompartment = new Compartment();
-export const spellcheckCompartment = new Compartment();
 
 export function highlightForPreset(p: BgPreset) {
   const tokens = themeTokensForPreset(p);

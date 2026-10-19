@@ -130,6 +130,6 @@ export async function exportNoteToJekyll(input: JekyllExportInput): Promise<stri
 }
 
 export async function pickJekyllBlogRoot(): Promise<string | null> {
-  const picked = await invoke<string | null>("pick_folder");
+  const picked = await invoke<string | null>("pick_export_directory");
   return picked;
 }

@@ -89,7 +89,8 @@ pub fn convert_vault_to_metis(
     emit("Writing vault marker…", current);
     write_vault_meta(&root)?;
     if let Ok(mut meta) = read_vault_meta(&root) {
-        meta.planner_setup_required = true;
+        meta.planner_mode = Some("vault".into());
+        meta.planner_setup_required = false;
         write_vault_meta_full(&root, &meta)?;
     }
     current += 1;

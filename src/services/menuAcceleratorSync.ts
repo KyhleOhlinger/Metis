@@ -11,6 +11,7 @@ export const MENU_ITEM_COMMAND_IDS: Record<string, KeybindingCommandId> = {
   new_folder: "new-folder",
   open_vault: "open-vault",
   save: "save",
+  sync_backup: "backup-sync",
   daily_note: "daily-note",
   toggle_sidebar: "toggle-sidebar",
   toggle_panel: "toggle-panel",

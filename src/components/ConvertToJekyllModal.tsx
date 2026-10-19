@@ -221,8 +221,9 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
               <div className="mt-1 flex gap-2">
                 <input
                   value={blogRoot}
-                  onChange={(e) => setBlogRoot(e.target.value)}
-                  placeholder="/path/to/your-blog.github.io"
+                  readOnly
+                  placeholder="Choose a folder with Browse"
+                  title="Browse records this folder as an approved export destination"
                   className="min-w-0 flex-1 rounded border border-border bg-surface-overlay px-2 py-1.5 font-mono text-[10px] text-text-primary"
                 />
                 <button

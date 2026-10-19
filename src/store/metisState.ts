@@ -1,5 +1,4 @@
 import type { PlannerNavigateTarget } from "./plannerNavigation";
-import type { PlannerStorageMode } from "../planner/plannerPersistence";
 import type {
   AssetMetadata,
   EditorNavigateTarget,
@@ -23,11 +22,7 @@ export interface MetisState {
   noteIndex: NoteMetadata[];
   assetIndex: AssetMetadata[];
   defaultImageFolder: string;
-  plannerMode: PlannerStorageMode;
-  plannerSetupRequired: boolean;
   plannerReloadKey: number;
-  plannerSetupModalOpen: boolean;
-  plannerRestoreOffer: boolean;
   backlinkIndex: Record<string, string[]>;
   saveStatus: "idle" | "saving" | "saved" | "error";
   saveError: string | null;
@@ -38,12 +33,9 @@ export interface MetisState {
   sidebarView: "files" | "search";
   editorNavigateTo: EditorNavigateTarget | null;
   plannerNavigateTo: PlannerNavigateTarget | null;
-  commandCenterRequest: "info" | "info-planner" | "ai" | "settings" | null;
+  commandCenterRequest: "info" | "ai" | "settings" | null;
   setEditorTab: (tab: "source" | "visual" | "planner" | "agent-history") => void;
   openPlannerTab: () => void;
-  setPlannerSetupModalOpen: (open: boolean) => void;
-  setPlannerRestoreOffer: (offer: boolean) => void;
-  setPlannerConfig: (mode: PlannerStorageMode, setupRequired: boolean) => void;
   bumpPlannerReload: () => void;
   setPendingMenuAction: (action: string | null) => void;
   setSidebarView: (view: "files" | "search") => void;
@@ -69,7 +61,7 @@ export interface MetisState {
   clearEditorNavigateTo: () => void;
   navigatePlannerTo: (target: PlannerNavigateTarget) => void;
   clearPlannerNavigateTo: () => void;
-  requestCommandCenter: (tab: "info" | "info-planner" | "ai" | "settings") => void;
+  requestCommandCenter: (tab: "info" | "ai" | "settings") => void;
   clearCommandCenterRequest: () => void;
 }
 
@@ -88,11 +80,7 @@ export const metisInitialState = {
   noteIndex: [] as NoteMetadata[],
   assetIndex: [] as AssetMetadata[],
   defaultImageFolder: "assets",
-  plannerMode: "shared" as PlannerStorageMode,
-  plannerSetupRequired: false,
   plannerReloadKey: 0,
-  plannerSetupModalOpen: false,
-  plannerRestoreOffer: false,
   backlinkIndex: {} as Record<string, string[]>,
   saveStatus: "idle" as const,
   saveError: null,

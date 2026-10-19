@@ -2,7 +2,6 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import type { EditorView } from "@codemirror/view";
 import type { DailyWeekSpan, PlannerTab } from "@/planner/plannerStorage";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { useStore } from "@/store/useStore";
 import Toolbar from "../Toolbar";
 import { PlannerSyncIndicator } from "./PlannerSyncIndicator";
 import PlannerTabBar from "./PlannerTabBar";
@@ -67,7 +66,6 @@ export default function PlannerChrome({
   const copy = TAB_COPY[tab];
   const spellcheckEnabled = usePersonaStore((s) => s.settings.spellcheckEnabled === true);
   const updateSettings = usePersonaStore((s) => s.updateSettings);
-  const requestCommandCenter = useStore((s) => s.requestCommandCenter);
   const dailySubtitle =
     tab === "daily" && weekSpan
       ? `${weekSpan}-week grid · auto-saved to disk`
@@ -80,14 +78,7 @@ export default function PlannerChrome({
           <p className="text-[11px] font-semibold text-text-primary">{copy.title}</p>
           <p className="mt-0.5 text-[10px] text-text-muted">{dailySubtitle}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => requestCommandCenter("info-planner")}
-          className="shrink-0 rounded px-1 py-0.5 text-left hover:bg-surface-overlay"
-          title="Open Command Center Info → Planner"
-        >
           <PlannerSyncIndicator compact />
-        </button>
       </div>
       <PlannerTabBar tab={tab} onTabChange={onTabChange} />
       <PlannerDateNav

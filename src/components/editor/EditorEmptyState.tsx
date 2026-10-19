@@ -41,7 +41,6 @@ export function EditorEmptyState({
   const openPalette = () => useStore.getState().setPendingMenuAction("open-palette");
   const openExport = () => useStore.getState().setPendingMenuAction("export-hub");
   const noteCount = useStore((s) => s.noteIndex.length);
-  const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
   const openSearch = () => {
     const store = useStore.getState();
     if (!store.vaultPath) return;
@@ -65,11 +64,6 @@ export function EditorEmptyState({
           {vaultPath && noteCount > 0 && (
             <p className="mt-1 text-[11px] text-text-muted">
               {noteCount} note{noteCount !== 1 ? "s" : ""} in vault · sidebar lists pinned and recent
-            </p>
-          )}
-          {vaultPath && plannerSetupRequired && (
-            <p className="mt-2 text-[11px] text-amber-400/90">
-              Planner setup incomplete — open Planner or Settings → Planner to finish.
             </p>
           )}
         </div>

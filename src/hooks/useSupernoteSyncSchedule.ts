@@ -32,7 +32,7 @@ export function useSupernoteSyncSchedule() {
     const tick = () => {
       if (inFlight.current) return;
       inFlight.current = true;
-      void runSupernoteSync().finally(() => {
+      void runSupernoteSync({ quiet: true }).finally(() => {
         inFlight.current = false;
       });
     };

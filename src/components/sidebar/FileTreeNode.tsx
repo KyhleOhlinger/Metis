@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Image, Copy, FileDown, FileOutput, Pin } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 import { useStore, FileNode } from "../../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../../store/usePersonaStore";
 import ContextMenu, { ContextMenuEntry } from "../ContextMenu";
@@ -116,12 +117,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
       return;
     }
 
-    try {
-      const content = await invoke<string>("get_file_content", { path: node.path });
-      setActiveFile(node.path, content);
-    } catch (err) {
-      toastError(`Could not open file: ${String(err)}`);
-    }
+    await openVaultNotePath(node.path);
   }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage, isNoteBinary]);
 
   // ── Pointer-down: begin potential drag ─────────────────────────────────────
@@ -370,9 +366,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
       if (type === "note") {
         const newPath = await invoke<string>("create_note", { dirPath: node.path, name });
         await refreshVault();
-        const content = await invoke<string>("get_file_content", { path: newPath });
-        setActiveFile(newPath, content);
-        setActiveFolderPath(node.path);
+        await openVaultNotePath(newPath);
       } else if (type === "folder") {
         await invoke<string>("create_folder", { parentPath: node.path, name });
         await refreshVault();

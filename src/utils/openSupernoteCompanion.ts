@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 import type { FileNode } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
 import { isSupernoteNoteFile } from "@/constants/supernote";
@@ -74,22 +75,14 @@ export async function openSupernoteCompanion(
 
   const store = useStore.getState();
   const mdPath = companionMarkdownPathForNote(notePath);
-  const parent = notePath.substring(0, notePath.lastIndexOf("/"));
-  if (parent) store.setActiveFolderPath(parent);
 
-  try {
-    const content = await invoke<string>("get_file_content", { path: mdPath });
-    store.setActiveFile(mdPath, content);
-    return;
-  } catch {
-    // Companion note missing — create it below.
-  }
+  if (await openVaultNotePath(mdPath, { quiet: true })) return;
 
   try {
     const template = buildSupernoteCompanionMarkdown(notePath, vaultPath);
     await invoke("save_note", { path: mdPath, content: template });
     await store.refreshVault();
-    store.setActiveFile(mdPath, template);
+    await openVaultNotePath(mdPath, { content: template });
   } catch (err) {
     toastError(`Could not open notebook note: ${String(err)}`);
   }

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
+import { loadVaultFile, openVaultNotePath } from "@/utils/openVaultNote";
 import { toastError, appConfirm } from "../store/useToastStore";
 
 interface SearchMatch {
@@ -213,15 +214,13 @@ export default function SearchPanel() {
 
   const openMatch = useCallback(async (m: SearchMatch) => {
     try {
-      const content = await invoke<string>("get_file_content", {
-        path: m.file_path,
-      });
+      const content = await loadVaultFile(m.file_path);
 
-      const { setActiveFile, navigateEditorTo, setEditorTab } = useStore.getState();
+      const { navigateEditorTo, setEditorTab } = useStore.getState();
 
       if (m.line_number === 0) {
         setEditorTab("source");
-        setActiveFile(m.file_path, content);
+        await openVaultNotePath(m.file_path, { content });
         return;
       }
 
@@ -234,7 +233,7 @@ export default function SearchPanel() {
       const matchEnd = offset + (m.match_end - m.match_start);
 
       navigateEditorTo({ path: m.file_path, offset, matchEnd });
-      setActiveFile(m.file_path, content);
+      await openVaultNotePath(m.file_path, { content });
     } catch (err) {
       toastError(`Could not open search result: ${String(err)}`);
     }

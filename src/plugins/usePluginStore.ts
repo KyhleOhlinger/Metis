@@ -111,7 +111,7 @@ export function isCorePluginEnabled(id: CorePluginId): boolean {
 }
 
 export function useCorePluginEnabled(id: CorePluginId): boolean {
-  return usePluginStore((s) => isCoreEnabled(s.core, id) || REQUIRED_CORE_PLUGIN_IDS.has(id));
+  return usePluginStore((s) => isCoreEnabled(s.core, id));
 }
 
 export function isSystemPersonaAllowed(personaId: string): boolean {

@@ -32,11 +32,10 @@ export default function PlannerMarkdownPreview({
     vaultPath: "",
   });
 
-  const { vaultPath, noteIndex, setActiveFile } = useStore(
+  const { vaultPath, noteIndex } = useStore(
     useShallow((s) => ({
       vaultPath: s.vaultPath ?? "",
       noteIndex: s.noteIndex,
-      setActiveFile: s.setActiveFile,
     })),
   );
 
@@ -44,7 +43,6 @@ export default function PlannerMarkdownPreview({
     fileDir: vaultPath,
     vaultPath,
     noteIndex,
-    setActiveFile,
   };
 
   const html = useMemo(

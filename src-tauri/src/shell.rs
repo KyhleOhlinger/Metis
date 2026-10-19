@@ -1,10 +1,12 @@
-use crate::security::{canon_vault, safe_resolve};
-use crate::state::CurrentVault;
+use crate::security::{canon_vault, normalize_path, safe_resolve, write_private_json_file};
+use crate::settings::app_data_dir_for_build;
+use crate::state::{CurrentVault, ExportGrants};
 use crate::vault_fs::{
     read_vault_meta, validate_relative_vault_dir, write_vault_meta, write_vault_meta_full,
 };
+use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 // ── Webview navigation guard ─────────────────────────────────────────────────
@@ -386,16 +388,24 @@ pub fn copy_files_to_folder(
 // ── PDF / export file I/O (user-chosen paths via save dialog) ─────────────────
 
 /// Native save-file dialog. Returns absolute path or `None` if cancelled.
+///
+/// SECURITY: The chosen path is stored as a one-shot grant for this window.
+/// `write_export_bytes` rejects every other path.
 #[tauri::command]
 pub async fn pick_save_path(
     window: tauri::WebviewWindow,
+    export_grants: tauri::State<'_, ExportGrants>,
     default_name: String,
     extension: String,
     default_directory: Option<String>,
-) -> Option<String> {
+) -> Result<Option<String>, String> {
     use std::path::PathBuf;
     use std::sync::mpsc;
     use tauri_plugin_dialog::DialogExt;
+
+    if crate::security::reject_untrusted_webview(&window).is_err() {
+        return Err("This command is not available from the help window.".into());
+    }
 
     let ext = extension.trim().trim_start_matches('.').to_lowercase();
     let default = if default_name.to_lowercase().ends_with(&format!(".{ext}")) {
@@ -435,26 +445,207 @@ pub async fn pick_save_path(
             let _ = tx.send(path);
         });
 
-    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+    let chosen = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
         .await
-        .unwrap_or(None)
+        .unwrap_or(None);
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let resolved = resolve_export_path(Path::new(&path))?;
+    // SECURITY: grant is the resolved path, not the raw dialog string.
+    export_grants
+        .pending_files
+        .lock()
+        .unwrap()
+        .insert(window.label().to_string(), resolved);
+    Ok(Some(path))
 }
 
-/// Write export bytes to a user-selected path (may be outside the vault).
+/// Folder picker that records a persistent export grant (Jekyll blog root).
 ///
-/// SECURITY: Caller must only pass paths from `pick_save_path`. Rejects empty payloads
-/// and oversize exports (~100 MB).
+/// SECURITY: Typing a path in settings does not authorize writes. Only a folder
+/// returned by this dialog is stored in `export-grants.json`.
 #[tauri::command]
-pub fn write_export_bytes(path: String, data_base64: String) -> Result<(), String> {
-    use base64::{Engine, engine::general_purpose::STANDARD};
+pub async fn pick_export_directory(window: tauri::WebviewWindow) -> Result<Option<String>, String> {
+    use std::sync::mpsc;
+    use tauri_plugin_dialog::DialogExt;
 
-    if path.contains('\0') {
-        return Err("Invalid export path.".into());
-    }
-    let target = PathBuf::from(&path);
-    if target.as_os_str().is_empty() {
+    crate::security::reject_untrusted_webview(&window)?;
+
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    window
+        .app_handle()
+        .clone()
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .pick_folder(move |result| {
+            let _ = tx.send(result.map(|fp| fp.to_string()));
+        });
+
+    let chosen = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .unwrap_or(None);
+    let Some(path) = chosen else {
+        return Ok(None);
+    };
+    let granted = remember_export_directory(&window.app_handle(), Path::new(&path))?;
+    Ok(Some(granted.to_string_lossy().into_owned()))
+}
+
+const EXPORT_GRANTS_FILE: &str = "export-grants.json";
+const MAX_EXPORT_DIRS: usize = 32;
+
+#[derive(Serialize, Deserialize, Default)]
+struct ExportGrantFile {
+    directories: Vec<String>,
+}
+
+enum ExportPermit {
+    /// Exact file from `pick_save_path`. Consumed after a successful write.
+    OneShot,
+    /// File strictly inside a folder from `pick_export_directory`.
+    UnderDirectory,
+}
+
+/// Resolve an export path through its nearest existing ancestor.
+///
+/// SECURITY: Collapses `..` before the walk, then canonicalizes the existing
+/// prefix so `/tmp` and `/private/tmp` compare equal. Missing suffixes stay
+/// attached and cannot jump out via a symlink that is not the ancestor.
+pub(crate) fn resolve_export_path(path: &Path) -> Result<PathBuf, String> {
+    if path.as_os_str().is_empty() {
         return Err("Export path is empty.".into());
     }
+    let raw = path.to_string_lossy();
+    if raw.contains('\0') {
+        return Err("Invalid export path.".into());
+    }
+    if !path.is_absolute() {
+        return Err("Export path must be absolute.".into());
+    }
+    let normalized = normalize_path(path)?;
+    let mut suffix = Vec::new();
+    let mut cursor = normalized;
+    loop {
+        if cursor.exists() {
+            let canon = cursor
+                .canonicalize()
+                .map_err(|e| format!("Cannot resolve export path: {e}"))?;
+            let mut out = canon;
+            for part in suffix.iter().rev() {
+                out.push(part);
+            }
+            return Ok(out);
+        }
+        let Some(name) = cursor.file_name().map(|n| n.to_os_string()) else {
+            return Err("Cannot resolve export path.".into());
+        };
+        suffix.push(name);
+        if !cursor.pop() {
+            return Err("Cannot resolve export path.".into());
+        }
+    }
+}
+
+fn export_grants_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir_for_build(app)?.join(EXPORT_GRANTS_FILE))
+}
+
+fn load_export_directories(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
+    let path = export_grants_path(app)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read export grants: {e}"))?;
+    let file: ExportGrantFile = serde_json::from_str(&raw).unwrap_or_default();
+    let mut out = Vec::new();
+    for dir in file.directories {
+        let candidate = PathBuf::from(&dir);
+        if !candidate.is_dir() {
+            continue;
+        }
+        if let Ok(canon) = candidate.canonicalize() {
+            if canon.parent().is_some() {
+                out.push(canon);
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn remember_export_directory(app: &tauri::AppHandle, dir: &Path) -> Result<PathBuf, String> {
+    if !dir.is_dir() {
+        return Err("Export folder is not a directory.".into());
+    }
+    let canon = dir
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve export folder: {e}"))?;
+    // SECURITY: a grant of `/` would authorize writes anywhere on the volume.
+    if canon.parent().is_none() {
+        return Err("Choose a folder inside a drive, not the drive itself.".into());
+    }
+    let mut dirs = load_export_directories(app)?;
+    dirs.retain(|existing| existing != &canon);
+    dirs.push(canon.clone());
+    if dirs.len() > MAX_EXPORT_DIRS {
+        let drop_count = dirs.len() - MAX_EXPORT_DIRS;
+        dirs.drain(0..drop_count);
+    }
+    let file = ExportGrantFile {
+        directories: dirs
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+    };
+    let json = serde_json::to_string_pretty(&file)
+        .map_err(|e| format!("Failed to encode export grants: {e}"))?;
+    write_private_json_file(&export_grants_path(app)?, &json)?;
+    Ok(canon)
+}
+
+fn authorize_export(
+    app: &tauri::AppHandle,
+    window_label: &str,
+    grants: &ExportGrants,
+    resolved: &Path,
+) -> Result<ExportPermit, String> {
+    let pending_hit = grants
+        .pending_files
+        .lock()
+        .unwrap()
+        .get(window_label)
+        .cloned();
+    if pending_hit.as_deref() == Some(resolved) {
+        return Ok(ExportPermit::OneShot);
+    }
+    let dirs = load_export_directories(app)?;
+    let under_grant = dirs.iter().any(|dir| resolved.starts_with(dir) && resolved != dir);
+    if under_grant {
+        return Ok(ExportPermit::UnderDirectory);
+    }
+    Err(
+        "This export path was not approved. Use Save in the dialog, or choose the Jekyll folder with Browse."
+            .into(),
+    )
+}
+
+/// Write export bytes to a user-approved path (may be outside the vault).
+///
+/// SECURITY: The path must match this window's one-shot save-dialog grant, or
+/// resolve strictly inside a folder granted by `pick_export_directory`.
+/// Rejects empty payloads and oversize exports (~100 MB).
+#[tauri::command]
+pub fn write_export_bytes(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    export_grants: tauri::State<'_, ExportGrants>,
+    path: String,
+    data_base64: String,
+) -> Result<(), String> {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    crate::security::reject_untrusted_webview(&window)?;
 
     let bytes = STANDARD
         .decode(data_base64.trim())
@@ -468,13 +659,74 @@ pub fn write_export_bytes(path: String, data_base64: String) -> Result<(), Strin
         return Err("Export file is too large (max 100 MB).".into());
     }
 
-    if let Some(parent) = target.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create export directory: {e}"))?;
+    let resolved = resolve_export_path(Path::new(&path))?;
+    let permit = authorize_export(&app_handle, window.label(), &export_grants, &resolved)?;
+
+    if let Some(parent) = resolved.parent() {
+        if !parent.exists() {
+            match permit {
+                ExportPermit::OneShot => {
+                    return Err("Export folder does not exist.".into());
+                }
+                ExportPermit::UnderDirectory => {
+                    // Parent is a missing suffix under the granted folder.
+                    fs::create_dir_all(parent)
+                        .map_err(|e| format!("Failed to create export directory: {e}"))?;
+                }
+            }
         }
     }
 
-    fs::write(&target, bytes).map_err(|e| format!("Failed to write export file: {e}"))
+    fs::write(&resolved, bytes).map_err(|e| format!("Failed to write export file: {e}"))?;
+
+    if matches!(permit, ExportPermit::OneShot) {
+        export_grants
+            .pending_files
+            .lock()
+            .unwrap()
+            .remove(window.label());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod export_path_tests {
+    use super::resolve_export_path;
+    use std::fs;
+    use std::path::PathBuf;
+
+    #[test]
+    fn missing_suffix_stays_under_existing_ancestor() {
+        let root = std::env::temp_dir().join(format!(
+            "metis-export-grant-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("_posts").join("note.markdown");
+        let resolved = resolve_export_path(&target).unwrap();
+        let canon = root.canonicalize().unwrap();
+        assert!(resolved.starts_with(&canon));
+        assert_ne!(resolved, canon);
+
+        let sibling = PathBuf::from(format!("{}-evil/note.markdown", canon.display()));
+        assert!(!sibling.starts_with(&canon));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parent_dir_cannot_escape_the_ancestor() {
+        let root = std::env::temp_dir().join(format!(
+            "metis-export-escape-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("_posts").join("..").join("..").join("outside.txt");
+        let resolved = resolve_export_path(&target).unwrap();
+        let canon = root.canonicalize().unwrap();
+        assert!(!resolved.starts_with(&canon));
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 

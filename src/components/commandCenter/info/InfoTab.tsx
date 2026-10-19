@@ -8,7 +8,7 @@ import { listVaultFolderOptions } from "@/utils/noteImages";
 import metisIconUrl from "@/assets/metis_icon.png";
 import { FieldLabel, Hint, KV, Section, StatGrid, ccSelectCls } from "../shared/ui";
 import { InfoExportSection } from "./InfoExportSection";
-import { PlannerInfoSection } from "./PlannerInfoSection";
+import { BackupInfoSection } from "./BackupInfoSection";
 import { openExternalUrl } from "@/utils/vaultNavigation";
 import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
@@ -55,7 +55,7 @@ export function InfoTab({
   const shownVersion = currentVersion ?? localVersion;
   const wordCountEnabled = useCorePluginEnabled("word-count");
   const exportEnabled = useCorePluginEnabled("export");
-  const plannerEnabled = useCorePluginEnabled("planner");
+  const backupEnabled = useCorePluginEnabled("backup");
 
   const imageFolderOptions = useMemo(() => {
     if (!vaultPath) return [];
@@ -129,9 +129,9 @@ export function InfoTab({
           )}
         </Section>
 
-        {vaultPath && exportEnabled && <InfoExportSection />}
+        {vaultPath && backupEnabled && <BackupInfoSection />}
 
-        {plannerEnabled && <PlannerInfoSection />}
+        {vaultPath && exportEnabled && <InfoExportSection />}
 
         <Section title="About">
           <div className="flex flex-col items-center gap-2.5 py-1 text-center">

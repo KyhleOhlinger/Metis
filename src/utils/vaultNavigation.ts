@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store/useStore";
 import type { NoteMetadata } from "../store/useStore";
 import { formatError } from "./formatError";
+import { openVaultNotePath } from "./openVaultNote";
 import { normalizePosixPath, pathsEqual } from "./paths";
 import { toastError } from "../store/useToastStore";
 
@@ -68,19 +69,13 @@ export function findNoteByWikilinkName(
   return undefined;
 }
 
-function openNotePath(
-  note: NoteMetadata,
-  setActiveFile: (path: string, content: string) => void,
-): void {
-  invoke<string>("get_file_content", { path: note.path })
-    .then((c) => setActiveFile(note.path, c))
-    .catch((err) => toastError(`Could not open note: ${formatError(err)}`));
+function openResolvedNote(note: NoteMetadata): void {
+  void openVaultNotePath(note.path);
 }
 
 export function openNoteByWikilinkName(
   rawName: string,
   noteIndex: NoteMetadata[],
-  setActiveFile: (path: string, content: string) => void,
   vaultPath?: string,
 ): void {
   const note = findNoteByWikilinkName(rawName, noteIndex, vaultPath);
@@ -88,12 +83,12 @@ export function openNoteByWikilinkName(
     toastError(`Note not found: ${normalizeWikilinkTarget(rawName)}`);
     return;
   }
-  openNotePath(note, setActiveFile);
+  openResolvedNote(note);
 }
 
 export function openNoteByWikilinkNameFromStore(rawName: string): void {
-  const { noteIndex, setActiveFile, vaultPath } = useStore.getState();
-  openNoteByWikilinkName(rawName, noteIndex, setActiveFile, vaultPath ?? undefined);
+  const { noteIndex, vaultPath } = useStore.getState();
+  openNoteByWikilinkName(rawName, noteIndex, vaultPath ?? undefined);
 }
 
 export function revealPlatformLabel(): string {
@@ -113,7 +108,6 @@ export type FollowVaultHrefOptions = {
   fileDir: string;
   vaultPath: string;
   filePath?: string;
-  setActiveFile?: (path: string, content: string) => void;
   onSamePageFragment?: (fragment: string) => void;
 };
 
@@ -185,13 +179,12 @@ export function followVaultHref(href: string, opts: FollowVaultHrefOptions): voi
     return;
   }
 
-  const setActive = opts.setActiveFile ?? useStore.getState().setActiveFile;
   const { noteIndex } = useStore.getState();
 
   const tryOpenByName = () => {
     const note = findNoteByWikilinkName(pathPart, noteIndex, opts.vaultPath);
     if (note) {
-      openNotePath(note, setActive);
+      openResolvedNote(note);
     } else {
       toastError(`Note not found: ${normalizeWikilinkTarget(pathPart)}`);
     }
@@ -201,7 +194,7 @@ export function followVaultHref(href: string, opts: FollowVaultHrefOptions): voi
   if (!looksLikeVaultFilePath(pathPart)) {
     const note = findNoteByWikilinkName(pathPart, noteIndex, opts.vaultPath);
     if (note) {
-      openNotePath(note, setActive);
+      openResolvedNote(note);
       return;
     }
   }
@@ -216,9 +209,9 @@ export function followVaultHref(href: string, opts: FollowVaultHrefOptions): voi
   }
 
   if (abs.startsWith(`${opts.vaultPath}/`)) {
-    invoke<string>("get_file_content", { path: abs })
-      .then((c) => setActive(abs, c))
-      .catch(() => tryOpenByName());
+    void openVaultNotePath(abs, { quiet: true }).then((opened) => {
+      if (!opened) tryOpenByName();
+    });
     return;
   }
 

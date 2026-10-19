@@ -1,5 +1,5 @@
 import { useEffect, type MutableRefObject, type RefObject } from "react";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -41,9 +41,10 @@ import {
   highlightForPreset,
   makeBgTheme,
   metisTheme,
-  spellcheckCompartment,
   type BgPreset,
 } from "@/components/editor/bgPresets";
+
+const spellcheckCompartment = new Compartment();
 import type { Settings } from "@/types/persona";
 
 interface Options {

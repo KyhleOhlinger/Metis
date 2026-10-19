@@ -3,7 +3,7 @@
 //! Community packages may include `manifest.json` + optional `styles.css`.
 //! `main.js` (and other scripts) are never copied or executed.
 
-use crate::security::{canon_vault, reject_untrusted_webview};
+use crate::security::registered_vault;
 use crate::state::CurrentVault;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -33,9 +33,13 @@ const CORE_PLUGIN_IDS: &[&str] = &[
     "handwriting",
     "export",
     "supernote",
+    "backup",
 ];
 
 const REQUIRED_CORE_PLUGIN_IDS: &[&str] = &["file-explorer", "command-palette"];
+
+/// Keep in lockstep with `defaultEnabled: false` in `src/plugins/corePlugins.ts`.
+const CORE_PLUGINS_DEFAULT_OFF: &[&str] = &["supernote"];
 
 fn is_known_core_id(id: &str) -> bool {
     CORE_PLUGIN_IDS.contains(&id)
@@ -43,6 +47,29 @@ fn is_known_core_id(id: &str) -> bool {
 
 fn is_required_core_id(id: &str) -> bool {
     REQUIRED_CORE_PLUGIN_IDS.contains(&id)
+}
+
+/// Missing keys stay on, except Supernote, which is off until the vault enables it.
+pub(crate) fn core_plugin_enabled(vault: &Path, id: &str) -> bool {
+    if is_required_core_id(id) {
+        return true;
+    }
+    let default_on = !CORE_PLUGINS_DEFAULT_OFF.contains(&id);
+    let Ok(raw) = fs::read_to_string(core_path(vault)) else {
+        return default_on;
+    };
+    let Ok(file) = serde_json::from_str::<CorePluginsFile>(&raw) else {
+        return default_on;
+    };
+    file.plugins.get(id).copied().unwrap_or(default_on)
+}
+
+pub(crate) fn require_core_plugin(vault: &Path, id: &str) -> Result<(), String> {
+    if core_plugin_enabled(vault, id) {
+        Ok(())
+    } else {
+        Err(format!("The {id} plugin is turned off for this vault."))
+    }
 }
 
 fn assert_dest_under_plugins(vault: &Path, dest: &Path) -> Result<(), String> {
@@ -112,15 +139,7 @@ fn vault_for_window(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
 ) -> Result<PathBuf, String> {
-    reject_untrusted_webview(window)?;
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("No vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(vault_str);
-    canon_vault(&vault)
+    registered_vault(window, vault_state)
 }
 
 /// SECURITY: kebab-case id, no path segments, cannot contain "metis".

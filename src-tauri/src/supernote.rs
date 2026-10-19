@@ -3,7 +3,8 @@
 //! SECURITY: HTTP stays in Rust (reqwest, same client in dev and release).
 //! Destination is a user-supplied IPv4 on RFC1918 or Tailscale CGNAT.
 
-use crate::security::{canon_vault, reject_untrusted_webview, safe_resolve};
+use crate::plugins::require_core_plugin;
+use crate::security::{registered_vault, safe_resolve};
 use crate::state::CurrentVault;
 use crate::vault_fs::sanitize_name;
 use regex::Regex;
@@ -208,14 +209,16 @@ fn vault_for_window(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
 ) -> Result<PathBuf, String> {
-    reject_untrusted_webview(window)?;
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("No vault registered for this window.")?
-        .clone();
-    drop(lock);
-    canon_vault(&PathBuf::from(vault_str))
+    registered_vault(window, vault_state)
+}
+
+fn vault_for_sync(
+    window: &tauri::WebviewWindow,
+    vault_state: &tauri::State<'_, CurrentVault>,
+) -> Result<PathBuf, String> {
+    let vault = vault_for_window(window, vault_state)?;
+    require_core_plugin(&vault, "supernote")?;
+    Ok(vault)
 }
 
 struct LanGet {
@@ -663,7 +666,7 @@ pub fn ensure_supernote_folder(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
-    let vault = vault_for_window(&window, &vault_state)?;
+    let vault = vault_for_sync(&window, &vault_state)?;
     let handwritten = vault.join(DEST_SPACE);
     fs::create_dir_all(&handwritten).map_err(|e| format!("Cannot create handwritten/: {e}"))?;
     let dest = dest_dir(&vault);
@@ -678,7 +681,7 @@ pub async fn sync_supernote_browse_access(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<SupernoteSyncResult, String> {
-    let vault = vault_for_window(&window, &vault_state)?;
+    let vault = vault_for_sync(&window, &vault_state)?;
     tauri::async_runtime::spawn_blocking(move || pull_browse_access(vault, ip, port))
         .await
         .map_err(|e| format!("Sync task failed: {e}"))?

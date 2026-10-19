@@ -11,7 +11,6 @@ import {
 
 export type PreviewAnchorContext = FollowVaultHrefOptions & {
   noteIndex?: NoteMetadata[];
-  setActiveFile?: (path: string, content: string) => void;
   /** Visual mode: plain click on internal links jumps to Source at offset. */
   onSourceActivate?: (sourceOffset: number, matchEnd?: number) => void;
 };
@@ -44,8 +43,8 @@ export function handlePreviewAnchorClick(
 
   if (wikiRaw) {
     const wiki = normalizeWikilinkTarget(decodeURIComponent(wikiRaw));
-    if (modifier && ctx.setActiveFile) {
-      openNoteByWikilinkName(wiki, ctx.noteIndex ?? [], ctx.setActiveFile, ctx.vaultPath);
+    if (modifier) {
+      openNoteByWikilinkName(wiki, ctx.noteIndex ?? [], ctx.vaultPath);
       return;
     }
     const sourceFrom = anchor.dataset.metisSourceOffset;
@@ -107,13 +106,12 @@ export function bindPreviewAnchorHandlers(
     e.preventDefault();
     e.stopPropagation();
 
-    if (wikiRaw && ctx.setActiveFile) {
+    if (wikiRaw) {
       const wiki = normalizeWikilinkTarget(decodeURIComponent(wikiRaw));
       openDomContextMenu(e.clientX, e.clientY, [
         {
           label: "Open Note",
-          onClick: () =>
-            openNoteByWikilinkName(wiki, ctx.noteIndex ?? [], ctx.setActiveFile!, ctx.vaultPath),
+          onClick: () => openNoteByWikilinkName(wiki, ctx.noteIndex ?? [], ctx.vaultPath),
         },
       ]);
       return;

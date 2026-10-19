@@ -9,6 +9,7 @@ import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { getChordsForCommand } from "@/services/keybindingRuntime";
 import type { KeybindingCommandId } from "@/config/keybindingRegistry";
 import { isCorePluginEnabled } from "@/plugins/usePluginStore";
+import { runBackupSync } from "@/services/backupSync";
 
 type LastPane = "sidebar" | "editor" | "cc";
 
@@ -35,6 +36,7 @@ const APP_COMMAND_IDS: KeybindingCommandId[] = [
   "vault-search",
   "find",
   "agent-run-log",
+  "backup-sync",
 ];
 
 function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEvent): void {
@@ -97,6 +99,10 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
     }
     case "agent-run-log":
       openAgentRunLog();
+      break;
+    case "backup-sync":
+      if (!isCorePluginEnabled("backup")) return;
+      void runBackupSync({ confirm: true });
       break;
     default:
       break;

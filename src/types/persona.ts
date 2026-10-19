@@ -1,3 +1,6 @@
+import type { VaultNoteNavigation } from "@/utils/noteNavigation";
+import { DEFAULT_APP_THEME_BG, DEFAULT_APP_THEME_ID } from "@/utils/themeColors";
+
 // ── Persona types ─────────────────────────────────────────────────────────────
 
 /** @deprecated Legacy enum — used only when migrating old settings/personas. */
@@ -59,7 +62,7 @@ export type ExecutionScope =
   | { type: "specific-file"; filePath: string }
   | { type: "specific-folder"; folderPath: string }
   | { type: "full-vault" }
-  /** Date-sliced slice of the vault's **active** planner (shared or vault mode). */
+  /** This vault’s planner under `.metis/planner/`. */
   | { type: "planner"; period?: PlannerPeriod; includeCurrentFile?: boolean };
 
 export function isPlannerScope(
@@ -165,6 +168,7 @@ export type SettingsSectionId =
   | "ai"
   | "personas"
   | "export"
+  | "backup"
   | "about";
 
 export interface Settings {
@@ -245,11 +249,6 @@ export interface Settings {
   supernoteSyncIntervalMinutes?: number;
 }
 
-export interface VaultNoteNavigation {
-  pinned: string[];
-  recent: string[];
-}
-
 export const DEFAULT_SETTINGS: Settings = {
   providerProfiles: [],
   defaultProviderProfileId: "preset-openai",
@@ -260,8 +259,8 @@ export const DEFAULT_SETTINGS: Settings = {
   aiHistoryMaxResponseChars: 32_000,
   spellcheckLanguage: "en_US",
   spellcheckEnabled: false,
-  editorBgPresetId: "dark",
-  editorBgCustomColor: "#16171a",
+  editorBgPresetId: DEFAULT_APP_THEME_ID,
+  editorBgCustomColor: DEFAULT_APP_THEME_BG,
   sourceUpdateCheckEnabled: true,
   plannerAiExcludedSections: [],
   stickyDefaults: {

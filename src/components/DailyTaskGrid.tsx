@@ -37,7 +37,6 @@ import { toastError, toastSuccess } from "@/store/useToastStore";
 export default function DailyTaskGrid() {
   const today = useMemo(() => startOfDay(new Date()), []);
   const vaultPath = useStore((s) => s.vaultPath);
-  const plannerMode = useStore((s) => s.plannerMode);
   const plannerReloadKey = useStore((s) => s.plannerReloadKey);
   const bumpPlannerReload = useStore((s) => s.bumpPlannerReload);
   const plannerNavigateTo = useStore((s) => s.plannerNavigateTo);
@@ -55,7 +54,7 @@ export default function DailyTaskGrid() {
   const plannerScrollRef = useRef<HTMLDivElement>(null);
   const dailyGridShellRef = useRef<HTMLDivElement>(null);
 
-  const bootstrap = usePlannerBootstrap(vaultPath, plannerMode, plannerReloadKey);
+  const bootstrap = usePlannerBootstrap(vaultPath, plannerReloadKey);
   const manifestApi = usePlannerManifest(bootstrap.manifest, bootstrap.setManifest, anchorWeek, today);
   const trackerApi = usePlannerTracker(bootstrap.manifest, bootstrap.setManifest);
   const goalsApi = usePlannerGoals(bootstrap.goalSections, bootstrap.setGoalSections, bootstrap.hydrationComplete);

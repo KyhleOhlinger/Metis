@@ -20,8 +20,8 @@ export function JekyllExportSettings({
         <p className="text-xs leading-relaxed text-text-secondary">
           Defaults for sidebar or export hub Convert to Jekyll….
           Posts are written to <code className="text-[10px]">_posts/</code> with images under{" "}
-          <code className="text-[10px]">assets/img/</code>. Leave fields blank until you configure
-          your blog.
+          <code className="text-[10px]">assets/img/</code>. Choose the blog folder with Browse.
+          A path already saved in settings is not an export grant until you browse again.
         </p>
       )}
 
@@ -32,8 +32,9 @@ export function JekyllExportSettings({
         <div className="mt-1 flex gap-2">
           <input
             value={settings.jekyllBlogRoot ?? ""}
-            onChange={(e) => onUpdate({ jekyllBlogRoot: e.target.value })}
-            placeholder="/path/to/your-blog.github.io"
+            readOnly
+            placeholder="Choose a folder with Browse"
+            title="Browse records this folder as an approved export destination"
             className={`${inputCls} min-w-0 flex-1 font-mono text-[10px]`}
           />
           <button

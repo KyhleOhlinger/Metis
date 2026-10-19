@@ -2,23 +2,17 @@ import { useStore } from "@/store/useStore";
 
 export function plannerSyncStatusLabel(
   status: ReturnType<typeof useStore.getState>["plannerSyncStatus"],
-  mode: "shared" | "vault",
-  mirrorWarning?: string | null,
 ): string {
-  if (status === "saved" && mirrorWarning) {
-    return mode === "shared" ? "Saved (backup failed)" : "Saved";
-  }
   switch (status) {
     case "pending":
       return "Unsaved changes";
     case "saving":
-      return mode === "shared" ? "Saving & syncing…" : "Saving…";
     case "syncing":
-      return mode === "shared" ? "Syncing backup…" : "Saving…";
+      return "Saving…";
     case "saved":
-      return mode === "shared" ? "Saved & synced" : "Saved";
+      return "Saved";
     case "error":
-      return "Sync failed";
+      return "Save failed";
     default:
       return "Up to date";
   }
@@ -27,15 +21,12 @@ export function plannerSyncStatusLabel(
 export function PlannerSyncIndicator({ compact = false }: { compact?: boolean }) {
   const plannerSyncStatus = useStore((s) => s.plannerSyncStatus);
   const plannerSyncError = useStore((s) => s.plannerSyncError);
-  const plannerMode = useStore((s) => s.plannerMode);
 
-  const mirrorWarning =
-    plannerSyncStatus === "saved" && plannerSyncError ? plannerSyncError : null;
-  const label = plannerSyncStatusLabel(plannerSyncStatus, plannerMode, mirrorWarning);
+  const label = plannerSyncStatusLabel(plannerSyncStatus);
   let className = "text-text-muted";
   if (plannerSyncStatus === "pending" || plannerSyncStatus === "saving" || plannerSyncStatus === "syncing") {
     className = "text-amber-400/90";
-  } else if (plannerSyncStatus === "error" || mirrorWarning) {
+  } else if (plannerSyncStatus === "error") {
     className = "text-red-400";
   } else if (plannerSyncStatus === "saved") {
     className = "text-emerald-400/90";
