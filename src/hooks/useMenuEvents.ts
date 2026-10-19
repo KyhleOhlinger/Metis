@@ -23,7 +23,8 @@ import { usePersonaStore } from "../store/usePersonaStore";
 import { LAST_VAULT_KEY } from "../constants";
 import { toastError } from "../store/useToastStore";
 import { formatError } from "../utils/formatError";
-import { isCorePluginEnabled } from "@/plugins/usePluginStore";
+import { isCorePluginEnabled, useCorePluginEnabled } from "@/plugins/usePluginStore";
+import { runBackupSync } from "@/services/backupSync";
 
 interface MenuEventHookOptions {
   /** Toggles the left file-tree sidebar */
@@ -45,6 +46,13 @@ export function useMenuEvents({
   onExportPdf,
   onForeignVault,
 }: MenuEventHookOptions) {
+  const backupMenuOn = useCorePluginEnabled("backup");
+  useEffect(() => {
+    void invoke("set_menu_item_enabled", { menuId: "sync_backup", enabled: backupMenuOn }).catch(
+      () => {},
+    );
+  }, [backupMenuOn]);
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -132,6 +140,10 @@ export function useMenuEvents({
             .catch((e) => toastError(`Save failed: ${formatError(e)}`));
           break;
         }
+
+        case "sync-backup":
+          if (isCorePluginEnabled("backup")) void runBackupSync({ confirm: true });
+          break;
 
         case "export-pdf":
           if (isCorePluginEnabled("export")) onExportPdf();

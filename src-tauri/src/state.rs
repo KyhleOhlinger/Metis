@@ -1,5 +1,6 @@
 use notify::RecommendedWatcher;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 // ── Managed application state ─────────────────────────────────────────────────
@@ -15,3 +16,20 @@ pub struct WatcherState(pub Mutex<HashMap<String, RecommendedWatcher>>);
 /// the entry for their specific window label, preventing any operation from
 /// escaping a vault boundary even if the frontend IPC is abused.
 pub struct CurrentVault(pub Mutex<HashMap<String, String>>);
+
+/// One-shot save-dialog paths, keyed by window label.
+///
+/// SECURITY: `write_export_bytes` may write outside the vault only when the
+/// path equals the entry recorded by `pick_save_path` for this window, or when
+/// it resolves strictly inside a folder granted by `pick_export_directory`.
+pub struct ExportGrants {
+    pub pending_files: Mutex<HashMap<String, PathBuf>>,
+}
+
+impl ExportGrants {
+    pub fn new() -> Self {
+        Self {
+            pending_files: Mutex::new(HashMap::new()),
+        }
+    }
+}

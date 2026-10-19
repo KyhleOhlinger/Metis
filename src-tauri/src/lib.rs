@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Kyhle Öhlinger. Licensed under the MIT License.
 
 mod ai_context;
+mod backup_sync;
 mod agent_run_log;
 mod conversion;
 mod planner;
@@ -20,7 +21,7 @@ mod watcher;
 
 use tauri::Manager;
 
-pub use state::{CurrentVault, WatcherState};
+pub use state::{CurrentVault, ExportGrants, WatcherState};
 
 pub fn run() {
     tauri::Builder::default()
@@ -28,6 +29,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .manage(WatcherState(std::sync::Mutex::new(std::collections::HashMap::new())))
         .manage(CurrentVault(std::sync::Mutex::new(std::collections::HashMap::new())))
+        .manage(ExportGrants::new())
         .setup(|app| {
             let menu = menu::build_menu(app.handle())?;
             app.set_menu(menu)?;
@@ -71,19 +73,13 @@ pub fn run() {
             settings::save_settings,
             settings::get_app_version,
             menu::sync_menu_accelerators,
+            menu::set_menu_item_enabled,
             planner::get_planner_storage_dir,
             planner::planner_get_config,
-            planner::planner_set_vault_mode,
             planner::planner_load_file,
             planner::planner_save_file,
             planner::planner_save_files,
             planner::planner_import_bundle,
-            planner::planner_copy_vault_to_shared,
-            planner::planner_copy_shared_to_vault,
-            planner::planner_sync_shared_mirror,
-            planner::planner_get_mirror_status,
-            planner::planner_check_restore,
-            planner::planner_restore_shared_from_vault,
             agent_run_log::load_agent_run_log,
             agent_run_log::append_agent_run_log,
             agent_run_log::load_agent_run_transcript,
@@ -105,6 +101,7 @@ pub fn run() {
             shell::set_vault_default_image_dir,
             shell::copy_files_to_folder,
             shell::pick_save_path,
+            shell::pick_export_directory,
             shell::write_export_bytes,
             vault_fs::agent_write_note,
             watcher::set_vault_watch,
@@ -113,6 +110,9 @@ pub fn run() {
             spellcheck::check_spelling,
             spellcheck::suggest_spelling,
             spellcheck::list_dictionaries,
+            backup_sync::backup_sync_get,
+            backup_sync::backup_sync_set_options,
+            backup_sync::backup_sync_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Metis");

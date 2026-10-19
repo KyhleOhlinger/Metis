@@ -33,7 +33,8 @@ export type KeybindingCommandId =
   | "line-start"
   | "line-end"
   | "ai-run"
-  | "agent-run-log";
+  | "agent-run-log"
+  | "backup-sync";
 
 export interface KeybindingDefinition {
   id: KeybindingCommandId;
@@ -245,11 +246,11 @@ export const KEYBINDING_REGISTRY: KeybindingDefinition[] = [
     rebindable: true,
   },
   {
-    id: "agent-run-log",
-    label: "Open agent run log",
-    category: "AI",
+    id: "backup-sync",
+    label: "Sync backup",
+    category: "File",
     scope: "app",
-    defaultChord: { mod: true, shift: true, key: "l" },
+    defaultChord: { mod: true, shift: true, key: "b" },
     rebindable: true,
   },
 ];

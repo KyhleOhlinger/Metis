@@ -5,7 +5,7 @@
 //! go through `get_file_content`. Algorithm follows Apache-2.0
 //! `supernote-typescript` / `supernote-tool` (Ratta RLE).
 
-use crate::security::{canon_vault, reject_untrusted_webview, safe_resolve};
+use crate::security::{registered_vault, safe_resolve};
 use crate::state::CurrentVault;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{ImageBuffer, Rgba, imageops};
@@ -37,14 +37,7 @@ fn vault_for_window(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
 ) -> Result<PathBuf, String> {
-    reject_untrusted_webview(window)?;
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("No vault registered for this window.")?
-        .clone();
-    drop(lock);
-    canon_vault(&PathBuf::from(vault_str))
+    registered_vault(window, vault_state)
 }
 
 fn read_u32_le(buf: &[u8], at: usize) -> Result<u32, String> {

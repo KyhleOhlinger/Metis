@@ -72,18 +72,12 @@ export default function CommandCenter({ isOpen, onToggle }: Props) {
   useEffect(() => {
     if (!commandCenterRequest) return;
     const req = commandCenterRequest;
-    if (req === "info" || req === "info-planner") setTab("info");
+    if (req === "info") setTab("info");
     else if (req === "ai") {
       if (aiEnabled) setTab("ai");
     } else setTab(req);
     if (!isOpen) onToggle();
-    const timer = window.setTimeout(() => {
-      if (req === "info-planner") {
-        document.getElementById("cc-info-planner")?.scrollIntoView({ block: "start" });
-      }
-    }, 80);
     clearCommandCenterRequest();
-    return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consume the request once
   }, [commandCenterRequest, clearCommandCenterRequest]);
 

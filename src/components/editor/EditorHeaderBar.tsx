@@ -2,7 +2,7 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
 import EditorBgPicker from "@/components/editor/EditorBgPicker";
 import { EditorSaveIndicator } from "@/components/EditorWorkspaceHeader";
-import { CUSTOM_PRESET_ID, type BgPreset } from "@/components/editor/bgPresets";
+import { appThemeSelectionPatch, type BgPreset } from "@/components/editor/bgPresets";
 
 interface EditorHeaderBarProps {
   fileName: string;
@@ -11,7 +11,6 @@ interface EditorHeaderBarProps {
   bgPreset: BgPreset;
   showBgPicker: boolean;
   onShowBgPickerChange: (open: boolean) => void;
-  onBgPresetChange: (preset: BgPreset) => void;
   hideModeToggle?: boolean;
 }
 
@@ -22,7 +21,6 @@ export function EditorHeaderBar({
   bgPreset,
   showBgPicker,
   onShowBgPickerChange,
-  onBgPresetChange,
   hideModeToggle = false,
 }: EditorHeaderBarProps) {
   const updateSettings = usePersonaStore((s) => s.updateSettings);
@@ -35,12 +33,7 @@ export function EditorHeaderBar({
     editorMode !== "agent-history";
 
   const persistPreset = (p: BgPreset) => {
-    onBgPresetChange(p);
-    if (p.id === CUSTOM_PRESET_ID) {
-      updateSettings({ editorBgPresetId: CUSTOM_PRESET_ID, editorBgCustomColor: p.bg });
-    } else {
-      updateSettings({ editorBgPresetId: p.id });
-    }
+    updateSettings(appThemeSelectionPatch(p.id, p.bg));
   };
 
   return (

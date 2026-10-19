@@ -1,7 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useStore } from "@/store/useStore";
+import { useEffect } from "react";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 import type { ExecutionScope } from "@/types/persona";
 import { ccSelectCls, Hint, SegmentButton, SubsectionLabel } from "../shared/ui";
+import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 
 interface AITabScopeSelectorProps {
   scope: ExecutionScope;
@@ -26,6 +27,19 @@ export function AITabScopeSelector({
   setIncludeImages,
   showIncludeImages,
 }: AITabScopeSelectorProps) {
+  const plannerOn = useCorePluginEnabled("planner");
+  const segments: { type: "none" | "current-file" | "specific-folder" | "full-vault" | "planner"; label: string }[] = [
+    { type: "none", label: "No Selection" },
+    { type: "current-file", label: "File" },
+    { type: "specific-folder", label: "Folder" },
+    { type: "full-vault", label: "Vault" },
+  ];
+  if (plannerOn) segments.push({ type: "planner", label: "Planner" });
+
+  useEffect(() => {
+    if (!plannerOn && scope.type === "planner") setScope({ type: "none" });
+  }, [plannerOn, scope.type, setScope]);
+
   return (
     <div className="shrink-0 border-b border-border px-3 py-2.5">
       <div className="rounded-md border border-border bg-surface-overlay p-2.5 space-y-2">
@@ -47,15 +61,7 @@ export function AITabScopeSelector({
           )}
         </div>
         <div className="flex flex-wrap gap-1">
-          {(
-            [
-              { type: "none", label: "No Selection" },
-              { type: "current-file", label: "File" },
-              { type: "specific-folder", label: "Folder" },
-              { type: "full-vault", label: "Vault" },
-              { type: "planner", label: "Planner" },
-            ] as const
-          ).map((seg) => (
+          {segments.map((seg) => (
             <SegmentButton
               key={seg.type}
               title={
@@ -135,12 +141,7 @@ export function AITabScopeSelector({
               value={scope.type === "specific-file" ? scope.filePath : (activeFilePath ?? "")}
               onChange={async (e) => {
                 const selected = e.target.value;
-                try {
-                  const content = await invoke<string>("get_file_content", { path: selected });
-                  useStore.getState().setActiveFile(selected, content);
-                } catch {
-                  // If the read fails, still update the scope so the AI can try.
-                }
+                await openVaultNotePath(selected, { quiet: true });
                 if (selected === activeFilePath) {
                   setScope({ type: "current-file" });
                 } else {

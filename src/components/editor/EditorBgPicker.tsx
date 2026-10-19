@@ -1,10 +1,12 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import {
+  APP_THEME_WHEEL_SWATCH,
   BG_PRESETS,
   CUSTOM_PRESET_ID,
   buildCustomBgPreset,
   type BgPreset,
 } from "./bgPresets";
+import { DEFAULT_APP_THEME_BG } from "@/utils/themeColors";
 import { AppThemeWheelPicker } from "./AppThemeWheelPicker";
 
 export interface EditorBgPickerProps {
@@ -21,7 +23,7 @@ export default function EditorBgPicker({
   onSelectPreset,
 }: EditorBgPickerProps) {
   const customActive = bgPreset.id === CUSTOM_PRESET_ID;
-  const customSwatch = customActive ? bgPreset.bg : "#16171a";
+  const customSwatch = customActive ? bgPreset.bg : DEFAULT_APP_THEME_BG;
   const [wheelOpen, setWheelOpen] = useState(false);
 
   useEffect(() => {
@@ -113,7 +115,7 @@ export default function EditorBgPicker({
                     customActive || wheelOpen ? "border-accent scale-110" : "border-white/20"
                   }`}
                   style={{
-                    background: `conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444)`,
+                    background: APP_THEME_WHEEL_SWATCH,
                   }}
                 >
                   <span

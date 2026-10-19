@@ -6,9 +6,6 @@ export type PlannerUiSlice = Pick<
   MetisState,
   | "setEditorTab"
   | "openPlannerTab"
-  | "setPlannerSetupModalOpen"
-  | "setPlannerRestoreOffer"
-  | "setPlannerConfig"
   | "bumpPlannerReload"
   | "setPlannerSyncStatus"
   | "navigatePlannerTo"
@@ -27,21 +24,10 @@ export const createPlannerUiSlice: StateCreator<MetisState, [], [], PlannerUiSli
 
   openPlannerTab: () => {
     if (!isCorePluginEnabled("planner")) return;
-    const { vaultPath, isMetisVault, plannerSetupRequired } = get();
+    const { vaultPath } = get();
     if (!vaultPath) return;
-    if (isMetisVault && plannerSetupRequired) {
-      set({ plannerSetupModalOpen: true });
-      return;
-    }
     set({ editorTab: "planner" });
   },
-
-  setPlannerSetupModalOpen: (open) => set({ plannerSetupModalOpen: open }),
-
-  setPlannerRestoreOffer: (offer) => set({ plannerRestoreOffer: offer }),
-
-  setPlannerConfig: (mode, setupRequired) =>
-    set({ plannerMode: mode, plannerSetupRequired: setupRequired }),
 
   bumpPlannerReload: () => set((s) => ({ plannerReloadKey: s.plannerReloadKey + 1 })),
 
@@ -50,11 +36,8 @@ export const createPlannerUiSlice: StateCreator<MetisState, [], [], PlannerUiSli
 
   navigatePlannerTo: (target) => {
     if (!isCorePluginEnabled("planner")) return;
-    const { vaultPath, isMetisVault, plannerSetupRequired } = get();
-    if (vaultPath && isMetisVault && plannerSetupRequired) {
-      set({ plannerNavigateTo: target, plannerSetupModalOpen: true });
-      return;
-    }
+    const { vaultPath } = get();
+    if (!vaultPath) return;
     set({ plannerNavigateTo: target, editorTab: "planner" });
   },
 

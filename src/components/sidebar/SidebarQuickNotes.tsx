@@ -1,18 +1,14 @@
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { resolveNotePaths } from "@/utils/noteNavigation";
-import { QuickNoteList, RECENT_DROPDOWN_LIMIT } from "./QuickNoteList";
+import { RECENT_NOTES_SHOWN, splitQuickNotes } from "@/utils/noteNavigation";
+import { QuickNoteList } from "./QuickNoteList";
 
 export function SidebarQuickNotes({ vaultPath }: { vaultPath: string }) {
   const noteIndex = useStore((s) => s.noteIndex);
   const activeFilePath = useStore((s) => s.activeFilePath);
   const nav = usePersonaStore((s) => s.settings.vaultNoteNavigation?.[vaultPath]);
 
-  const pinned = resolveNotePaths(nav?.pinned ?? [], noteIndex);
-  const pinnedSet = new Set(nav?.pinned ?? []);
-  const recent = resolveNotePaths(nav?.recent ?? [], noteIndex).filter(
-    (n) => !pinnedSet.has(n.path),
-  );
+  const { pinned, recent } = splitQuickNotes(nav, noteIndex);
 
   if (pinned.length === 0 && recent.length === 0) return null;
 
@@ -28,7 +24,7 @@ export function SidebarQuickNotes({ vaultPath }: { vaultPath: string }) {
         title="Recent"
         notes={recent}
         activeFilePath={activeFilePath}
-        limit={RECENT_DROPDOWN_LIMIT}
+        limit={RECENT_NOTES_SHOWN}
         dropdown
       />
     </div>

@@ -1,7 +1,7 @@
 import Wheel from "@uiw/react-color-wheel";
 import ShadeSlider from "@uiw/react-color-shade-slider";
 import { hexToHsva, hsvaToHex, type HsvaColor } from "@uiw/color-convert";
-import { normalizeHex } from "@/utils/themeColors";
+import { DEFAULT_APP_THEME_BG, normalizeHex } from "@/utils/themeColors";
 
 export interface AppThemeWheelPickerProps {
   color: string;
@@ -11,7 +11,7 @@ export interface AppThemeWheelPickerProps {
 }
 
 export function AppThemeWheelPicker({ color, onChange, size = 168 }: AppThemeWheelPickerProps) {
-  const safeHex = normalizeHex(color) ?? "#16171a";
+  const safeHex = normalizeHex(color) ?? DEFAULT_APP_THEME_BG;
   const hsva = hexToHsva(safeHex);
 
   const applyHsva = (next: HsvaColor) => {

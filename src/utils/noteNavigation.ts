@@ -1,6 +1,8 @@
 import type { NoteMetadata } from "@/store/useStore";
 
 export const MAX_RECENT_NOTES = 12;
+/** How many recent notes the sidebar and empty state show. */
+export const RECENT_NOTES_SHOWN = 5;
 export const MAX_PINNED_NOTES = 24;
 
 export interface VaultNoteNavigation {
@@ -45,6 +47,19 @@ export function mergeVaultNavigation(
   entry: VaultNoteNavigation,
 ): Record<string, VaultNoteNavigation> {
   return { ...(all ?? {}), [vaultPath]: entry };
+}
+
+/** Pinned notes, then recent notes that are not already pinned. */
+export function splitQuickNotes(
+  nav: VaultNoteNavigation | undefined,
+  noteIndex: NoteMetadata[],
+): { pinned: NoteMetadata[]; recent: NoteMetadata[] } {
+  const pinned = resolveNotePaths(nav?.pinned ?? [], noteIndex);
+  const pinnedSet = new Set(nav?.pinned ?? []);
+  const recent = resolveNotePaths(nav?.recent ?? [], noteIndex).filter(
+    (note) => !pinnedSet.has(note.path),
+  );
+  return { pinned, recent };
 }
 
 /** Keep only paths that still exist in the vault index. */

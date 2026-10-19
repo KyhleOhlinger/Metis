@@ -1,12 +1,10 @@
 /**
- * Disk-backed planner persistence (shared profile dir or vault `.metis/planner/`).
+ * Disk-backed planner persistence. Files live in `<vault>/.metis/planner/`.
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
-
-export type PlannerStorageMode = "shared" | "vault";
 
 export type PlannerFileKey =
   | "manifest.json"
@@ -17,28 +15,7 @@ export type PlannerFileKey =
   | "field-heights.json";
 
 export interface PlannerConfig {
-  mode: PlannerStorageMode;
-  setup_required: boolean;
   active_dir: string;
-  mirror_dir: string;
-  mirror_last_synced_unix?: number | null;
-}
-
-export interface PlannerMirrorStatus {
-  mode: PlannerStorageMode;
-  mirror_dir: string;
-  mirror_last_synced_unix?: number | null;
-  registered_vault_count: number;
-}
-
-export interface PlannerRestoreCheck {
-  offer_restore: boolean;
-  vault_mirror_has_data: boolean;
-  shared_empty: boolean;
-}
-
-interface PlannerSaveResult {
-  mirror_error?: string | null;
 }
 
 const LEGACY_LOCAL_STORAGE_MAP: Record<PlannerFileKey, string> = {
@@ -51,7 +28,6 @@ const LEGACY_LOCAL_STORAGE_MAP: Record<PlannerFileKey, string> = {
 };
 
 let activeVaultPath: string | null = null;
-let activeMode: PlannerStorageMode = "shared";
 let ready = false;
 let initGeneration = 0;
 const cache = new Map<PlannerFileKey, string | null>();
@@ -116,12 +92,11 @@ async function migrateLegacyLocalStorage(vaultPath: string): Promise<void> {
   }
   if (Object.keys(bundle).length === 0) return;
 
-  const sharedManifest = await loadFileFromDisk(vaultPath, "manifest.json");
-  if (sharedManifest) return;
+  const manifest = await loadFileFromDisk(vaultPath, "manifest.json");
+  if (manifest) return;
 
   await invoke("planner_import_bundle", {
     vaultPath,
-    target: "shared",
     files: bundle,
   });
   clearLegacyLocalStorage();
@@ -141,17 +116,11 @@ async function flushDirtyFiles(): Promise<void> {
 
   setPlannerSyncStatus("saving");
   try {
-    const result = await invoke<PlannerSaveResult>("planner_save_files", { vaultPath, files });
+    await invoke("planner_save_files", { vaultPath, files });
     for (const fileKey of filesToSave) {
       if (files[fileKey] != null) dirtyFiles.delete(fileKey);
     }
-    if (result.mirror_error) {
-      const msg = `Saved; backup sync failed: ${result.mirror_error}`;
-      setPlannerSyncStatus("saved", msg);
-      toastError(msg);
-    } else {
-      setPlannerSyncStatus("saved");
-    }
+    setPlannerSyncStatus("saved");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setPlannerSyncStatus("error", message);
@@ -164,39 +133,11 @@ export function isPlannerPersistenceReady(): boolean {
   return ready;
 }
 
-export function getPlannerStorageMode(): PlannerStorageMode {
-  return activeMode;
-}
-
-export async function checkPlannerRestore(vaultPath: string): Promise<PlannerRestoreCheck> {
-  return invoke<PlannerRestoreCheck>("planner_check_restore", { vaultPath });
-}
-
-export async function restoreSharedFromVault(vaultPath: string): Promise<void> {
-  await invoke("planner_restore_shared_from_vault", { vaultPath });
-}
-
-export async function syncSharedMirror(vaultPath: string): Promise<void> {
-  setPlannerSyncStatus("syncing");
-  try {
-    await invoke("planner_sync_shared_mirror", { vaultPath });
-    setPlannerSyncStatus("saved");
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    setPlannerSyncStatus("error", message);
-    throw err;
-  }
-}
-
-export async function initPlannerPersistence(
-  vaultPath: string,
-  mode: PlannerStorageMode,
-): Promise<void> {
+export async function initPlannerPersistence(vaultPath: string): Promise<void> {
   await flushPlannerSaves();
 
   const gen = ++initGeneration;
   activeVaultPath = vaultPath;
-  activeMode = mode;
   ready = false;
   cache.clear();
   dirtyFiles.clear();
@@ -224,7 +165,6 @@ export async function resetPlannerPersistence(): Promise<void> {
   initGeneration++;
   await flushPlannerSaves();
   activeVaultPath = null;
-  activeMode = "shared";
   ready = false;
   cache.clear();
   dirtyFiles.clear();
@@ -267,80 +207,7 @@ export async function flushPlannerSaves(): Promise<void> {
   });
 }
 
-export async function switchPlannerVaultMode(
-  vaultPath: string,
-  mode: PlannerStorageMode,
-  seedFromShared: boolean,
-): Promise<PlannerConfig> {
-  await flushPlannerSaves();
-  const cfg = await setPlannerVaultMode(vaultPath, mode, seedFromShared);
-  useStore.getState().setPlannerConfig(cfg.mode, cfg.setup_required);
-  useStore.getState().bumpPlannerReload();
-  return cfg;
-}
-
 export async function fetchPlannerConfig(vaultPath: string): Promise<PlannerConfig> {
-  const config = await invoke<{
-    mode: string;
-    setup_required: boolean;
-    active_dir: string;
-    mirror_dir: string;
-    mirror_last_synced_unix?: number | null;
-  }>("planner_get_config", { vaultPath });
-  return {
-    mode: config.mode === "vault" ? "vault" : "shared",
-    setup_required: config.setup_required,
-    active_dir: config.active_dir,
-    mirror_dir: config.mirror_dir,
-    mirror_last_synced_unix: config.mirror_last_synced_unix ?? null,
-  };
-}
-
-export async function fetchPlannerMirrorStatus(vaultPath: string): Promise<PlannerMirrorStatus> {
-  const status = await invoke<{
-    mode: string;
-    mirror_dir: string;
-    mirror_last_synced_unix?: number | null;
-    registered_vault_count: number;
-  }>("planner_get_mirror_status", { vaultPath });
-  return {
-    mode: status.mode === "vault" ? "vault" : "shared",
-    mirror_dir: status.mirror_dir,
-    mirror_last_synced_unix: status.mirror_last_synced_unix ?? null,
-    registered_vault_count: status.registered_vault_count,
-  };
-}
-
-export async function setPlannerVaultMode(
-  vaultPath: string,
-  mode: PlannerStorageMode,
-  seedFromShared: boolean,
-): Promise<PlannerConfig> {
-  const config = await invoke<{
-    mode: string;
-    setup_required: boolean;
-    active_dir: string;
-    mirror_dir: string;
-    mirror_last_synced_unix?: number | null;
-  }>("planner_set_vault_mode", { vaultPath, mode, seedFromShared });
-  return {
-    mode: config.mode === "vault" ? "vault" : "shared",
-    setup_required: config.setup_required,
-    active_dir: config.active_dir,
-    mirror_dir: config.mirror_dir,
-    mirror_last_synced_unix: config.mirror_last_synced_unix ?? null,
-  };
-}
-
-export async function copyVaultPlannerToShared(vaultPath: string): Promise<void> {
-  await invoke("planner_copy_vault_to_shared", { vaultPath });
-}
-
-export async function copySharedPlannerToVault(vaultPath: string): Promise<void> {
-  await invoke("planner_copy_shared_to_vault", { vaultPath });
-}
-
-export function formatMirrorSyncTime(unix: number | null | undefined): string {
-  if (!unix) return "Never";
-  return new Date(unix * 1000).toLocaleString();
+  const config = await invoke<{ active_dir: string }>("planner_get_config", { vaultPath });
+  return { active_dir: config.active_dir };
 }

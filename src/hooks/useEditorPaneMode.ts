@@ -1,27 +1,18 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { EditorView } from "@codemirror/view";
-import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
-import { resolveBgPreset, type BgPreset } from "@/components/editor/bgPresets";
+import { useAppTheme } from "@/hooks/useAppTheme";
 
 /** Background preset, visual scroll anchor, and mode-transition effects for the editor pane. */
 export function useEditorPaneMode(
   editorMode: string,
   viewRef: MutableRefObject<EditorView | null>,
 ) {
-  const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
-  const editorBgCustomColor = usePersonaStore((s) => s.settings.editorBgCustomColor);
-  const [bgPreset, setBgPreset] = useState<BgPreset>(() =>
-    resolveBgPreset(editorBgPresetId, editorBgCustomColor),
-  );
+  const bgPreset = useAppTheme();
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [visualScrollAnchor, setVisualScrollAnchor] = useState<number | null>(null);
   const prevEditorModeRef = useRef(editorMode);
   const activeFilePath = useStore((s) => s.activeFilePath);
-
-  useEffect(() => {
-    setBgPreset(resolveBgPreset(editorBgPresetId, editorBgCustomColor));
-  }, [editorBgPresetId, editorBgCustomColor]);
 
   useEffect(() => {
     setShowBgPicker(false);
@@ -62,5 +53,5 @@ export function useEditorPaneMode(
     }
   }, [editorMode, viewRef]);
 
-  return { bgPreset, setBgPreset, showBgPicker, setShowBgPicker, visualScrollAnchor };
+  return { bgPreset, showBgPicker, setShowBgPicker, visualScrollAnchor };
 }

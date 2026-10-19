@@ -1,15 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import Fuse from "fuse.js";
-import { invoke } from "@tauri-apps/api/core";
 import { useStore, NoteMetadata } from "../store/useStore";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { PLANNER_PERSONA_ID } from "../types/persona";
 import { isCorePluginEnabled } from "@/plugins/usePluginStore";
 import { runSupernoteSync } from "@/services/supernoteSync";
+import { runBackupSync } from "@/services/backupSync";
 import { usePluginStore } from "@/plugins/usePluginStore";
 import { useSourceUpdateStore } from "../store/useSourceUpdateStore";
 import { STATUS_COLORS } from "../constants";
-import { toastError } from "../store/useToastStore";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { toIsoDate } from "@/planner/plannerStorage";
 
@@ -32,6 +32,9 @@ function paletteActionAllowed(id: string): boolean {
   if (id === "focus-ai" || id === "run-log") return isCorePluginEnabled("ai");
   if (id === "export" || id === "settings-export") return isCorePluginEnabled("export");
   if (id === "supernote-sync") return isCorePluginEnabled("supernote");
+  if (id === "backup-sync") return isCorePluginEnabled("backup");
+  if (id === "settings-planner") return isCorePluginEnabled("planner");
+  if (id === "settings-ai") return isCorePluginEnabled("ai");
   return true;
 }
 
@@ -46,7 +49,6 @@ export default function CommandPalette({ onClose }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const noteIndex = useStore((s) => s.noteIndex);
-  const setActiveFile = useStore((s) => s.setActiveFile);
   const openPlannerTab = useStore((s) => s.openPlannerTab);
   const navigatePlannerTo = useStore((s) => s.navigatePlannerTo);
   const setEditorTab = useStore((s) => s.setEditorTab);
@@ -105,6 +107,15 @@ export default function CommandPalette({ onClose }: Props) {
         hint: "handwritten/Supernote",
         run: () => {
           void runSupernoteSync();
+          onClose();
+        },
+      },
+      {
+        id: "backup-sync",
+        label: "Sync backup",
+        hint: "⌘⇧B",
+        run: () => {
+          void runBackupSync({ confirm: true });
           onClose();
         },
       },
@@ -434,13 +445,7 @@ export default function CommandPalette({ onClose }: Props) {
   }, []);
 
   const openFile = async (note: NoteMetadata) => {
-    try {
-      const content = await invoke<string>("get_file_content", { path: note.path });
-      setActiveFile(note.path, content);
-      onClose();
-    } catch (err) {
-      toastError(`Could not open note: ${String(err)}`);
-    }
+    if (await openVaultNotePath(note.path)) onClose();
   };
 
   const activateSelection = () => {

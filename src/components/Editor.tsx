@@ -18,6 +18,7 @@ import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 import { useEditorPaneMode } from "../hooks/useEditorPaneMode";
 import type { BgPreset } from "./editor/bgPresets";
 import { resolveBgPreset } from "./editor/bgPresets";
+import { DEFAULT_APP_THEME_ID } from "@/utils/themeColors";
 
 export default function Editor() {
   const editorHostRef = useRef<HTMLDivElement>(null);
@@ -32,7 +33,7 @@ export default function Editor() {
   const [findBarOpen, setFindBarOpen] = useState(false);
   const [findBarReplace, setFindBarReplace] = useState(false);
   const findBarRef = useRef<HTMLDivElement>(null);
-  const bgPresetRef = useRef<BgPreset>(resolveBgPreset("dark"));
+  const bgPresetRef = useRef<BgPreset>(resolveBgPreset(DEFAULT_APP_THEME_ID));
   const spellcheckRef = useRef(spellcheckEnabled);
   const spellcheckLangRef = useRef(spellcheckLang);
   const keymapOptsRef = useRef<EditorKeymapOpts>({
@@ -67,7 +68,7 @@ export default function Editor() {
     })),
   );
 
-  const { bgPreset, setBgPreset, showBgPicker, setShowBgPicker, visualScrollAnchor } =
+  const { bgPreset, showBgPicker, setShowBgPicker, visualScrollAnchor } =
     useEditorPaneMode(editorMode, viewRef);
 
   useEffect(() => {
@@ -219,7 +220,6 @@ export default function Editor() {
         bgPreset={bgPreset}
         showBgPicker={showBgPicker}
         onShowBgPickerChange={setShowBgPicker}
-        onBgPresetChange={setBgPreset}
         hideModeToggle={
           showEmpty ||
           skipMarkdownEditor ||

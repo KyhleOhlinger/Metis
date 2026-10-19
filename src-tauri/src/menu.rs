@@ -74,6 +74,11 @@ pub fn build_menu(app: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tau
                 .build(app)?,
         )
         .item(
+            &MenuItemBuilder::with_id("sync_backup", "Sync Backup")
+                .accelerator("CmdOrCtrl+Shift+B")
+                .build(app)?,
+        )
+        .item(
             &MenuItemBuilder::with_id("export_pdf", "Export PDF…")
                 .build(app)?,
         )
@@ -236,6 +241,7 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         "open_vault" => Some("open-vault"),
         "new_vault" => Some("new-vault"),
         "save" => Some("save"),
+        "sync_backup" => Some("sync-backup"),
         "export_pdf" => Some("export-pdf"),
         "daily_note" => Some("daily-note"),
         "reveal_in_finder" => Some("reveal-in-finder"),
@@ -277,6 +283,24 @@ pub fn apply_menu_accelerators(
                 .set_accelerator(accel.as_deref())
                 .map_err(|e| format!("Failed to set accelerator for {menu_id}: {e}"))?;
         }
+    }
+    Ok(())
+}
+
+/// Enable or hide a native menu command when its core plugin is off.
+#[tauri::command]
+pub fn set_menu_item_enabled(
+    app_handle: tauri::AppHandle,
+    menu_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    if menu_id.len() > 64 || !menu_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err("Invalid menu id.".into());
+    }
+    if let Some(item) = find_menu_item(&app_handle, &menu_id) {
+        item
+            .set_enabled(enabled)
+            .map_err(|e| format!("Failed to update menu item: {e}"))?;
     }
     Ok(())
 }

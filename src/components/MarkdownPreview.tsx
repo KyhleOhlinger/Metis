@@ -56,7 +56,6 @@ interface Props {
 
 type PreviewContext = {
   noteIndex: NoteMetadata[];
-  setActiveFile: (path: string, content: string) => void;
   fileDir: string;
   filePath: string;
   vaultPath: string;
@@ -82,7 +81,6 @@ export default function MarkdownPreview({
   const contentRef = useRef<HTMLDivElement>(null);
   const ctxRef = useRef<PreviewContext>({
     noteIndex: [],
-    setActiveFile: () => {},
     fileDir: "",
     filePath: "",
     vaultPath: "",
@@ -92,11 +90,10 @@ export default function MarkdownPreview({
     revealLabel: "Reveal in Finder",
   });
 
-  const { noteIndex, assetIndex, setActiveFile } = useStore(
+  const { noteIndex, assetIndex } = useStore(
     useShallow((s) => ({
       noteIndex: s.noteIndex,
       assetIndex: s.assetIndex,
-      setActiveFile: s.setActiveFile,
     })),
   );
 
@@ -165,7 +162,6 @@ export default function MarkdownPreview({
 
   ctxRef.current = {
     noteIndex,
-    setActiveFile,
     fileDir,
     filePath,
     vaultPath,
@@ -229,7 +225,6 @@ export default function MarkdownPreview({
       if (a) {
         handlePreviewAnchorClick(e, a, {
           noteIndex: ctx.noteIndex,
-          setActiveFile: ctx.setActiveFile,
           fileDir: ctx.fileDir,
           vaultPath: ctx.vaultPath,
           filePath: ctx.filePath,
@@ -286,7 +281,7 @@ export default function MarkdownPreview({
           {
             label: "Open Note",
             onClick: () =>
-              openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.setActiveFile, ctx.vaultPath),
+              openNoteByWikilinkName(wiki, ctx.noteIndex, ctx.vaultPath),
           },
         ]);
         return;
@@ -318,7 +313,6 @@ export default function MarkdownPreview({
               fileDir: ctx.fileDir,
               vaultPath: ctx.vaultPath,
               filePath: ctx.filePath,
-              setActiveFile: ctx.setActiveFile,
               onSamePageFragment: (fragment) => scrollPreviewToFragment(root, fragment),
             }),
         },

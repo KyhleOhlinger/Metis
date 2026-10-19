@@ -10,6 +10,7 @@ import { toastError } from "../store/useToastStore";
 import { formatError } from "../utils/formatError";
 import { ChevronRight, CollapsedBtn } from "./sidebar/sidebarIcons";
 import { todayString, openOrCreateDailyNote } from "./sidebar/dailyNote";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 import { SidebarExpandedHeader } from "./sidebar/SidebarExpandedHeader";
 import { SidebarFileTreePanel } from "./sidebar/SidebarFileTreePanel";
@@ -40,7 +41,7 @@ function DragGhost() {
 export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestoring }: SidebarProps) {
   const {
     vaultPath, files, setVault, activeFilePath, isDirty,
-    refreshVault, setActiveFolderPath, setActiveFile,
+    refreshVault, setActiveFolderPath,
     pendingMenuAction, setPendingMenuAction,
     sidebarView, setSidebarView,
     editorTab, openPlannerTab,
@@ -53,7 +54,6 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
       isDirty: s.isDirty,
       refreshVault: s.refreshVault,
       setActiveFolderPath: s.setActiveFolderPath,
-      setActiveFile: s.setActiveFile,
       pendingMenuAction: s.pendingMenuAction,
       setPendingMenuAction: s.setPendingMenuAction,
       sidebarView: s.sidebarView,
@@ -149,8 +149,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
       if (type === "note") {
         const newPath = await invoke<string>("create_note", { dirPath: root, name });
         await refreshVault();
-        const content = await invoke<string>("get_file_content", { path: newPath });
-        useStore.setState({ activeFilePath: newPath, activeFileContent: content, isDirty: false });
+        await openVaultNotePath(newPath);
       } else {
         await invoke<string>("create_folder", { parentPath: root, name });
         await refreshVault();
@@ -184,7 +183,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
               {dailyEnabled && (
               <CollapsedBtn
                 title={`Daily note (${todayString()})`}
-                onClick={() => openOrCreateDailyNote(vaultPath, setActiveFile, refreshVault)}
+                onClick={() => openOrCreateDailyNote(vaultPath, refreshVault)}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -259,7 +258,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
           onOpenVault={() => void handleOpenVault()}
           onNewNote={() => setRootCreating("note")}
           onNewFolder={() => setRootCreating("folder")}
-          onDailyNote={() => openOrCreateDailyNote(vaultPath!, setActiveFile, refreshVault)}
+          onDailyNote={() => openOrCreateDailyNote(vaultPath!, refreshVault)}
           onToggleSearch={() => setSidebarView(sidebarView === "search" ? "files" : "search")}
           onToggleExpandAll={() => setExpandVersion({ value: allCollapsed })}
           onCollapseSidebar={onToggle}

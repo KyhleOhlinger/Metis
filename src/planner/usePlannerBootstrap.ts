@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
-import type { PlannerStorageMode } from "@/planner/plannerPersistence";
-import {
-  initPlannerPersistence,
-  resetPlannerPersistence,
-} from "@/planner/plannerPersistence";
+import { initPlannerPersistence, resetPlannerPersistence } from "@/planner/plannerPersistence";
 import {
   type GoalSection,
   type PlannerLayoutTemplates,
@@ -18,11 +14,7 @@ import {
   saveLayoutTemplates,
 } from "@/planner/plannerStorage";
 
-export function usePlannerBootstrap(
-  vaultPath: string | null,
-  plannerMode: PlannerStorageMode,
-  plannerReloadKey: number,
-) {
+export function usePlannerBootstrap(vaultPath: string | null, plannerReloadKey: number) {
   const [plannerReady, setPlannerReady] = useState(false);
   const [plannerInitError, setPlannerInitError] = useState<string | null>(null);
   const [hydrationComplete, setHydrationComplete] = useState(false);
@@ -47,7 +39,7 @@ export function usePlannerBootstrap(
     setHydrationComplete(false);
     void (async () => {
       try {
-        await initPlannerPersistence(vaultPath, plannerMode);
+        await initPlannerPersistence(vaultPath);
         if (cancelled) return;
         const layout = loadLayoutTemplates();
         setManifest(loadManifest());
@@ -67,7 +59,7 @@ export function usePlannerBootstrap(
       cancelled = true;
       void resetPlannerPersistence();
     };
-  }, [vaultPath, plannerMode, plannerReloadKey]);
+  }, [vaultPath, plannerReloadKey]);
 
   useEffect(() => {
     if (!plannerReady) {
@@ -76,7 +68,7 @@ export function usePlannerBootstrap(
     }
     const id = requestAnimationFrame(() => setHydrationComplete(true));
     return () => cancelAnimationFrame(id);
-  }, [plannerReady, vaultPath, plannerMode, plannerReloadKey]);
+  }, [plannerReady, vaultPath, plannerReloadKey]);
 
   useEffect(() => {
     if (!hydrationComplete) return;

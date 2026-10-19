@@ -1,5 +1,24 @@
+use crate::state::CurrentVault;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+/// Vault registered for this window, canonicalized.
+///
+/// SECURITY: Help webview is rejected. Callers still check that target paths
+/// stay inside the returned directory.
+pub(crate) fn registered_vault(
+    window: &tauri::WebviewWindow,
+    vault_state: &tauri::State<'_, CurrentVault>,
+) -> Result<PathBuf, String> {
+    reject_untrusted_webview(window)?;
+    let lock = vault_state.0.lock().unwrap();
+    let vault_str = lock
+        .get(window.label())
+        .ok_or("No vault registered for this window.")?
+        .clone();
+    drop(lock);
+    canon_vault(Path::new(&vault_str))
+}
 
 /// Help webview must not invoke vault or settings IPC (defense in depth with capabilities).
 pub fn reject_untrusted_webview(window: &tauri::WebviewWindow) -> Result<(), String> {

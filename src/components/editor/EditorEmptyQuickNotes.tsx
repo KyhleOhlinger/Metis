@@ -1,7 +1,7 @@
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { useStore } from "@/store/useStore";
-import { QuickNoteList, RECENT_DROPDOWN_LIMIT } from "@/components/sidebar/QuickNoteList";
-import { resolveNotePaths } from "@/utils/noteNavigation";
+import { QuickNoteList } from "@/components/sidebar/QuickNoteList";
+import { RECENT_NOTES_SHOWN, splitQuickNotes } from "@/utils/noteNavigation";
 
 interface EditorEmptyQuickNotesProps {
   vaultPath: string;
@@ -11,14 +11,9 @@ interface EditorEmptyQuickNotesProps {
 export function EditorEmptyQuickNotes({ vaultPath }: EditorEmptyQuickNotesProps) {
   const noteIndex = useStore((s) => s.noteIndex);
   const activeFilePath = useStore((s) => s.activeFilePath);
-  const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
   const nav = usePersonaStore((s) => s.settings.vaultNoteNavigation?.[vaultPath]);
 
-  const pinned = resolveNotePaths(nav?.pinned ?? [], noteIndex);
-  const pinnedSet = new Set(nav?.pinned ?? []);
-  const recent = resolveNotePaths(nav?.recent ?? [], noteIndex).filter(
-    (n) => !pinnedSet.has(n.path),
-  );
+  const { pinned, recent } = splitQuickNotes(nav, noteIndex);
 
   if (pinned.length === 0 && recent.length === 0) return null;
 
@@ -35,15 +30,10 @@ export function EditorEmptyQuickNotes({ vaultPath }: EditorEmptyQuickNotesProps)
         title="Recent"
         notes={recent}
         activeFilePath={activeFilePath}
-        limit={RECENT_DROPDOWN_LIMIT}
+        limit={RECENT_NOTES_SHOWN}
         dropdown
         compact
       />
-      {plannerSetupRequired && (
-        <p className="mt-1 border-t border-border px-2 pt-2 text-[10px] text-text-muted">
-          Planner needs setup — open Settings → Planner or the Planner tab to finish configuration.
-        </p>
-      )}
     </div>
   );
 }

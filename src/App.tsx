@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState, useRef, useMemo, Component } from "react";
+import { useEffect, useCallback, useState, useRef, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -6,11 +6,8 @@ import Sidebar from "./components/Sidebar";
 import Editor from "./components/Editor";
 import CommandCenter from "./components/commandCenter";
 import SettingsModal from "./components/settings/SettingsModal";
-import { usePersonaStore } from "./store/usePersonaStore";
 import CommandPalette from "./components/CommandPalette";
 import ConvertVaultModal from "./components/ConvertVaultModal";
-import PlannerSetupModal from "./components/PlannerSetupModal";
-import PlannerRestoreModal from "./components/PlannerRestoreModal";
 import ExportPdfModal from "./components/ExportPdfModal";
 import ExportHubModal from "./components/ExportHubModal";
 import ConvertToJekyllModal from "./components/ConvertToJekyllModal";
@@ -18,21 +15,22 @@ import ToastHost from "./components/ToastHost";
 import { SourceUpdateBanner } from "./components/SourceUpdateBanner";
 import { useStore, VaultData } from "./store/useStore";
 import { useMenuEvents } from "./hooks/useMenuEvents";
+import { openOrCreateDailyNote } from "./components/sidebar/dailyNote";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { LAST_VAULT_KEY } from "./constants";
 import {
-  checkPlannerRestore,
   flushPlannerSaves,
-  syncSharedMirror,
 } from "./planner/plannerPersistence";
 import { toastError } from "./store/useToastStore";
 import { useSourceUpdateSchedule } from "./hooks/useSourceUpdateSchedule";
 import { useSupernoteSyncSchedule } from "./hooks/useSupernoteSyncSchedule";
+import { useBackupSyncSchedule } from "./hooks/useBackupSyncSchedule";
 import { formatError } from "./utils/formatError";
 import { CommunityPluginStyles } from "./plugins/CommunityPluginStyles";
 import { isCorePluginEnabled } from "./plugins/usePluginStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { editorPaneThemeVars, applyAppThemeToDocument, resolveBgPreset } from "./components/editor/bgPresets";
+import { editorPaneThemeVars, applyAppThemeToDocument } from "./components/editor/bgPresets";
+import { useAppTheme } from "./hooks/useAppTheme";
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
 // Catches any React render errors and shows a human-readable message instead of
@@ -84,16 +82,6 @@ class AppErrorBoundary extends Component<
  *  │          │                             │  (240 px)    │
  *  └──────────┴─────────────────────────────┴──────────────┘
  */
-// Returns today's date as YYYY-MM-DD in LOCAL time (not UTC).
-// toISOString() would give UTC, which can be yesterday for users in UTC+ zones.
-function todayString(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
 // ── Resizable pane constants ──────────────────────────────────────────────────
 const SIDEBAR_MIN  = 140;   // px — reduced so narrow windows still work
 const SIDEBAR_MAX  = 520;
@@ -115,13 +103,6 @@ export default function App() {
   const vaultPath    = useStore((s) => s.vaultPath);
   const isMetisVault = useStore((s) => s.isMetisVault);
   const refreshVault = useStore((s) => s.refreshVault);
-  const plannerSetupModalOpen = useStore((s) => s.plannerSetupModalOpen);
-  const setPlannerSetupModalOpen = useStore((s) => s.setPlannerSetupModalOpen);
-  const plannerMode = useStore((s) => s.plannerMode);
-  const plannerSetupRequired = useStore((s) => s.plannerSetupRequired);
-  const plannerReloadKey = useStore((s) => s.plannerReloadKey);
-  const setPlannerRestoreOffer = useStore((s) => s.setPlannerRestoreOffer);
-  const clearPlannerNavigateTo = useStore((s) => s.clearPlannerNavigateTo);
   const [vaultRestoring, setVaultRestoring] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exportPdfOpen, setExportPdfOpen] = useState(false);
@@ -141,12 +122,7 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(initSidebarWidth);
   const [ccWidth, setCcWidth]           = useState(initCcWidth);
 
-  const editorBgPresetId = usePersonaStore((s) => s.settings.editorBgPresetId ?? "dark");
-  const editorBgCustomColor = usePersonaStore((s) => s.settings.editorBgCustomColor);
-  const bgPreset = useMemo(
-    () => resolveBgPreset(editorBgPresetId, editorBgCustomColor),
-    [editorBgPresetId, editorBgCustomColor],
-  );
+  const bgPreset = useAppTheme();
 
   useEffect(() => {
     applyAppThemeToDocument(bgPreset);
@@ -242,20 +218,9 @@ export default function App() {
   const lastPaneRef = useRef<"sidebar" | "editor" | "cc">("editor");
 
   const openDailyNote = useCallback(() => {
-    const { vaultPath: vp, setActiveFile, refreshVault: rv } = useStore.getState();
+    const { vaultPath: vp, refreshVault: rv } = useStore.getState();
     if (!vp) return;
-    const date = todayString();
-    const fileName = `${date}.md`;
-    const filePath = `${vp}/daily/${fileName}`;
-    invoke<string>("get_file_content", { path: filePath })
-      .then((content) => setActiveFile(filePath, content))
-      .catch(() => {
-        invoke<void>("create_note", { dirPath: `${vp}/daily`, name: fileName })
-          .then(() => rv())
-          .then(() => invoke<string>("get_file_content", { path: filePath }))
-          .then((content) => setActiveFile(filePath, content))
-          .catch(console.error);
-      });
+    void openOrCreateDailyNote(vp, rv);
   }, []);
 
   const onForeignVault = useCallback((path: string, hint?: string) => {
@@ -378,39 +343,7 @@ export default function App() {
 
   useSourceUpdateSchedule();
   useSupernoteSyncSchedule();
-
-  // Shared planner: flush pending writes, then mirror to registered vaults when a vault opens.
-  useEffect(() => {
-    if (!vaultPath || plannerMode !== "shared" || plannerSetupRequired) return;
-    void flushPlannerSaves()
-      .then(() => syncSharedMirror(vaultPath))
-      .catch((err) => {
-        toastError(`Planner backup sync failed: ${formatError(err)}`);
-      });
-  }, [vaultPath, plannerMode, plannerSetupRequired, plannerReloadKey]);
-
-  // Prompt planner setup when a Metis vault requires first-time configuration.
-  useEffect(() => {
-    if (!vaultPath || !isMetisVault || !plannerSetupRequired || plannerSetupModalOpen) return;
-    setPlannerSetupModalOpen(true);
-  }, [vaultPath, isMetisVault, plannerSetupRequired, plannerSetupModalOpen, setPlannerSetupModalOpen]);
-
-  // Offer restore when shared planner is empty but vault has a backup mirror.
-  useEffect(() => {
-    if (!vaultPath || plannerMode !== "shared" || plannerSetupRequired) {
-      setPlannerRestoreOffer(false);
-      return;
-    }
-    let cancelled = false;
-    void checkPlannerRestore(vaultPath)
-      .then((check) => {
-        if (!cancelled) setPlannerRestoreOffer(check.offer_restore);
-      })
-      .catch(console.error);
-    return () => {
-      cancelled = true;
-    };
-  }, [vaultPath, plannerMode, plannerSetupRequired, plannerReloadKey, setPlannerRestoreOffer]);
+  useBackupSyncSchedule();
 
   // Flush pending planner writes before window close.
   useEffect(() => {
@@ -492,21 +425,6 @@ export default function App() {
           onDismiss={() => setConvertPrompt(null)}
         />
       )}
-
-      {plannerSetupModalOpen && vaultPath && (
-        <PlannerSetupModal
-          onComplete={() => {
-            setPlannerSetupModalOpen(false);
-            useStore.getState().setEditorTab("planner");
-          }}
-          onDismiss={() => {
-            setPlannerSetupModalOpen(false);
-            clearPlannerNavigateTo();
-          }}
-        />
-      )}
-
-      <PlannerRestoreModal />
 
       <SourceUpdateBanner />
 

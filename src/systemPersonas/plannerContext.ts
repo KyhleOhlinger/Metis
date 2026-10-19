@@ -1,6 +1,6 @@
 /**
- * Planner context for AI — markdown from the **active** planner
- * (shared or vault, whichever this vault currently uses).
+ * Planner context for AI — markdown from this vault’s planner
+ * (`<vault>/.metis/planner/`).
  *
  * Default: every tab (Daily Log, Weekly/Monthly Review, Reviews, Goals,
  * Templates, PTO & Events) and all dated entries. Sections are omitted only
@@ -12,11 +12,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import {
-  fetchPlannerConfig,
-  flushPlannerSaves,
-  type PlannerStorageMode,
-} from "@/planner/plannerPersistence";
+import { flushPlannerSaves } from "@/planner/plannerPersistence";
 import {
   exportPlannerMonthMarkdown,
   exportPlannerWeekMarkdown,
@@ -90,7 +86,6 @@ export function plannerJobTrigger(job: PlannerPersonaJob): string {
 export type PlannerContextResult = {
   context: string;
   chars: number;
-  mode: PlannerStorageMode;
   empty: boolean;
   excludedSections: PlannerTab[];
 };
@@ -274,7 +269,6 @@ function exportCalendarMarkdown(
 }
 
 async function loadActivePlannerFiles(vaultPath: string): Promise<{
-  mode: PlannerStorageMode;
   manifest: TaskManifest;
   layout: PlannerLayoutTemplates;
   goals: GoalSection[];
@@ -282,7 +276,6 @@ async function loadActivePlannerFiles(vaultPath: string): Promise<{
   reviews: ReviewsTableState;
 }> {
   await flushPlannerSaves();
-  const config = await fetchPlannerConfig(vaultPath);
   const [manifestRaw, layoutRaw, goalsRaw, templatesRaw, reviewsRaw] = await Promise.all([
     invoke<string | null>("planner_load_file", { vaultPath, fileKey: "manifest.json" }),
     invoke<string | null>("planner_load_file", { vaultPath, fileKey: "layout-templates.json" }),
@@ -291,7 +284,6 @@ async function loadActivePlannerFiles(vaultPath: string): Promise<{
     invoke<string | null>("planner_load_file", { vaultPath, fileKey: "reviews.json" }),
   ]);
   return {
-    mode: config.mode,
     manifest: parseManifestJson(manifestRaw),
     layout: parseLayoutTemplatesJson(layoutRaw),
     goals: parseGoalSectionsJson(goalsRaw),
@@ -300,10 +292,8 @@ async function loadActivePlannerFiles(vaultPath: string): Promise<{
   };
 }
 
-function modeLabel(mode: PlannerStorageMode): string {
-  return mode === "vault"
-    ? "vault (this vault only)"
-    : "shared (profile-wide; same calendar in every shared-mode vault)";
+function modeLabel(): string {
+  return "vault (this vault only, under .metis/planner/)";
 }
 
 /**
@@ -312,7 +302,7 @@ function modeLabel(mode: PlannerStorageMode): string {
 export async function buildPlannerUpcomingSection(vaultPath: string): Promise<string> {
   const excluded = readPlannerAiExcludedSections();
   if (!sectionEnabled(excluded, "tracker")) return "";
-  const { mode, manifest } = await loadActivePlannerFiles(vaultPath);
+  const { manifest } = await loadActivePlannerFiles(vaultPath);
   const tracker = getTracker(manifest);
   const hasRows =
     tracker.public_holidays.length +
@@ -324,7 +314,7 @@ export async function buildPlannerUpcomingSection(vaultPath: string): Promise<st
   return [
     `## Active planner — PTO & Events`,
     ``,
-    `_Mode: ${modeLabel(mode)}. Flag or skip vault tasks that fall on PTO, holidays, or trips._`,
+    `_Mode: ${modeLabel()}. Flag or skip vault tasks that fall on PTO, holidays, or trips._`,
     ``,
     formatTrackerMarkdown(tracker),
   ].join("\n");
@@ -340,7 +330,7 @@ export async function buildPlannerContext(
   },
 ): Promise<PlannerContextResult> {
   const excluded = options?.excludedSections ?? readPlannerAiExcludedSections();
-  const { mode, manifest, layout, goals, templates, reviews } =
+  const { manifest, layout, goals, templates, reviews } =
     await loadActivePlannerFiles(vaultPath);
 
   const excludedLabels = excluded
@@ -350,11 +340,10 @@ export async function buildPlannerContext(
   const parts: string[] = [
     `# Active planner`,
     ``,
-    `- Storage: ${modeLabel(mode)}`,
+    `- Storage: ${modeLabel()}`,
     `- Generated: ${new Date().toISOString().slice(0, 10)}`,
     `- Sections: all planner tabs` +
       (excludedLabels ? ` except ${excludedLabels} (Settings → Planner)` : " (no Settings exclusions)"),
-    `- Not included: the inactive planner store.`,
     ``,
   ];
 
@@ -386,7 +375,6 @@ export async function buildPlannerContext(
   return {
     context,
     chars: context.length,
-    mode,
     empty: context.length < 200,
     excludedSections: excluded,
   };

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openVaultNotePath } from "@/utils/openVaultNote";
 
 // ── Daily Note helper ─────────────────────────────────────────────────────────
 
@@ -13,21 +14,13 @@ export function todayString(): string {
 
 export async function openOrCreateDailyNote(
   vaultPath: string,
-  setActiveFile: (path: string, content: string) => void,
   refreshVault: () => Promise<void>,
 ): Promise<void> {
   const date = todayString();
   const dailyDir = `${vaultPath}/daily`;
   const notePath = `${dailyDir}/${date}.md`;
 
-  // Try to open an existing note first
-  try {
-    const content = await invoke<string>("get_file_content", { path: notePath });
-    setActiveFile(notePath, content);
-    return;
-  } catch {
-    // Not found — create it below
-  }
+  if (await openVaultNotePath(notePath, { quiet: true })) return;
 
   // Ensure the /daily directory exists (ignore "already exists" errors)
   try {
@@ -40,5 +33,5 @@ export async function openOrCreateDailyNote(
   const template = `# ${date}\n\n## Tasks\n- [ ] \n\n## Notes\n\n`;
   await invoke("save_note", { path: notePath, content: template });
   await refreshVault();
-  setActiveFile(notePath, template);
+  await openVaultNotePath(notePath, { content: template });
 }

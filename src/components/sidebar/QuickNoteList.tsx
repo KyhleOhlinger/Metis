@@ -3,8 +3,6 @@ import type { NoteMetadata } from "@/store/useStore";
 import { noteDisplayTitle } from "@/utils/noteNavigation";
 import { openVaultNotePath } from "@/utils/openVaultNote";
 
-export const RECENT_DROPDOWN_LIMIT = 5;
-
 interface QuickNoteListProps {
   title: string;
   notes: NoteMetadata[];

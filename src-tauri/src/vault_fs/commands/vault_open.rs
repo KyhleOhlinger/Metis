@@ -78,7 +78,7 @@ pub fn open_vault(
         created_at_unix: 0,
         metis_version: env!("CARGO_PKG_VERSION").into(),
         default_image_dir: default_image_dir_str(),
-        planner_mode: None,
+        planner_mode: Some("vault".into()),
         planner_setup_required: false,
     });
     Ok(VaultData {
@@ -126,7 +126,8 @@ pub fn create_vault(
     // normally; the user would just see the conversion prompt next time.
     let _ = write_vault_meta(&vault);
     if let Ok(mut meta) = read_vault_meta(&vault) {
-        meta.planner_setup_required = true;
+        meta.planner_mode = Some("vault".into());
+        meta.planner_setup_required = false;
         let _ = write_vault_meta_full(&vault, &meta);
     }
 
@@ -143,8 +144,8 @@ pub fn create_vault(
         created_at_unix: 0,
         metis_version: env!("CARGO_PKG_VERSION").into(),
         default_image_dir: default_image_dir_str(),
-        planner_mode: None,
-        planner_setup_required: true,
+        planner_mode: Some("vault".into()),
+        planner_setup_required: false,
     });
     Ok(VaultData {
         path: vault_path_str,

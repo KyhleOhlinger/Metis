@@ -6,13 +6,17 @@ import { useSourceUpdateStore } from "@/store/useSourceUpdateStore";
 import { STICKY_COLOR_PRESETS } from "@/utils/stickyNotes";
 import metisIconUrl from "@/assets/metis_icon.png";
 import {
+  APP_THEME_WHEEL_SWATCH,
   BG_PRESETS,
   CUSTOM_PRESET_ID,
+  appThemeSelectionPatch,
 } from "../../editor/bgPresets";
+import { DEFAULT_APP_THEME_BG, DEFAULT_APP_THEME_ID } from "@/utils/themeColors";
 import { AppThemeWheelPicker } from "../../editor/AppThemeWheelPicker";
 import { normalizeHex } from "@/utils/themeColors";
-import { SETTINGS_NAV } from "../../settings/settingsNav";
+import { useVisibleSettingsNav } from "../../settings/settingsNav";
 import { ExportSettings } from "../../settings/ExportSettings";
+import { BackupSyncSettings } from "../../settings/BackupSyncSettings";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
 import { PluginsSettingsSection } from "../../settings/PluginsSettingsSection";
@@ -45,6 +49,11 @@ export function SettingsPanel({
   onUpdateSettings: (patch: Partial<Settings>) => void;
 }) {
   const navWidth = layout === "modal" ? "w-40" : "w-32";
+  const nav = useVisibleSettingsNav();
+
+  useEffect(() => {
+    if (!nav.some((item) => item.id === section)) onSectionChange("general");
+  }, [nav, section, onSectionChange]);
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -52,7 +61,7 @@ export function SettingsPanel({
         className={`${navWidth} shrink-0 overflow-y-auto border-r border-border bg-surface-base py-2`}
         aria-label="Settings categories"
       >
-        {SETTINGS_NAV.map((item) => (
+        {nav.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -123,6 +132,11 @@ export function SettingsPanel({
             <ExportSettings settings={settings} onUpdate={onUpdateSettings} />
           </SettingsSection>
         )}
+        {section === "backup" && (
+          <SettingsSection title="Backup">
+            <BackupSyncSettings />
+          </SettingsSection>
+        )}
         {section === "about" && (
           <SettingsSection title="About Metis">
             <AboutSettingsSection settings={settings} onUpdate={onUpdateSettings} />
@@ -189,11 +203,11 @@ function EditorSettingsSection({
   settings: Settings;
   onUpdate: (patch: Partial<Settings>) => void;
 }) {
-  const activeId = settings.editorBgPresetId ?? "dark";
-  const customHex = normalizeHex(settings.editorBgCustomColor ?? "#16171a") ?? "#16171a";
+  const activeId = settings.editorBgPresetId ?? DEFAULT_APP_THEME_ID;
+  const customHex = normalizeHex(settings.editorBgCustomColor ?? DEFAULT_APP_THEME_BG) ?? DEFAULT_APP_THEME_BG;
 
   const applyCustomHex = (hex: string) => {
-    onUpdate({ editorBgPresetId: CUSTOM_PRESET_ID, editorBgCustomColor: hex });
+    onUpdate(appThemeSelectionPatch(CUSTOM_PRESET_ID, hex));
   };
 
   return (
@@ -207,7 +221,7 @@ function EditorSettingsSection({
           <button
             key={p.id}
             type="button"
-            onClick={() => onUpdate({ editorBgPresetId: p.id })}
+            onClick={() => onUpdate(appThemeSelectionPatch(p.id))}
             className={[
               "flex items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors",
               activeId === p.id
@@ -225,7 +239,7 @@ function EditorSettingsSection({
 
         <button
           type="button"
-          onClick={() => onUpdate({ editorBgPresetId: CUSTOM_PRESET_ID })}
+          onClick={() => onUpdate(appThemeSelectionPatch(CUSTOM_PRESET_ID, customHex))}
           className={[
             "flex cursor-pointer items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors",
             activeId === CUSTOM_PRESET_ID
@@ -236,7 +250,7 @@ function EditorSettingsSection({
           <span
             className="h-5 w-5 shrink-0 rounded border border-white/20"
             style={{
-              background: `conic-gradient(from 0deg, #ef4444, #f59e0b, #22c55e, #3b82f6, #a855f7, #ef4444)`,
+              background: APP_THEME_WHEEL_SWATCH,
             }}
           />
           <span className="text-xs text-text-primary">Custom colour</span>

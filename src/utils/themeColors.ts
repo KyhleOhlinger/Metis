@@ -14,6 +14,10 @@ export interface DerivedThemePalette {
   plannerHeaderFg: string;
 }
 
+/** Built-in App theme id and the custom-colour fallback. Matches the Dark preset. */
+export const DEFAULT_APP_THEME_ID = "dark";
+export const DEFAULT_APP_THEME_BG = "#16171a";
+
 const HEX6 = /^#?([0-9a-f]{6})$/i;
 
 export function normalizeHex(hex: string): string | null {

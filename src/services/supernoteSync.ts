@@ -20,24 +20,28 @@ export async function ensureSupernoteFolder(): Promise<void> {
   await invoke<string>("ensure_supernote_folder");
 }
 
-export async function runSupernoteSync(): Promise<SupernoteSyncResult | null> {
-  if (!isCorePluginEnabled("supernote")) {
-    toastError("Enable the Supernote plugin in Settings → Plugins.");
+export async function runSupernoteSync(options?: {
+  quiet?: boolean;
+}): Promise<SupernoteSyncResult | null> {
+  const quiet = options?.quiet === true;
+  const fail = (message: string) => {
+    if (!quiet) toastError(message);
     return null;
+  };
+  if (!isCorePluginEnabled("supernote")) {
+    return fail("Enable the Supernote plugin in Settings → Plugins.");
   }
   if (!useStore.getState().vaultPath) {
-    toastError("Open a vault first.");
-    return null;
+    return fail("Open a vault first.");
   }
   const { supernoteDeviceIp, supernoteDevicePort } = usePersonaStore.getState().settings;
   const ip = (supernoteDeviceIp ?? "").trim();
   if (!ip) {
-    toastError(
+    return fail(
       import.meta.env.DEV
         ? "Set the Nomad IP on the Supernote folder (no port)."
         : "Set the Nomad IP on the Supernote folder. The packaged app does not use the IP saved in `tauri dev`.",
     );
-    return null;
   }
   const port = supernoteDevicePort ?? SUPERNOTE_DEFAULT_PORT;
   try {
@@ -49,6 +53,7 @@ export async function runSupernoteSync(): Promise<SupernoteSyncResult | null> {
     await useStore.getState().refreshVault();
     await ensureSupernoteCompanionNotes();
     notifySupernoteFilesChanged();
+    if (quiet) return result;
     if (result.downloaded === 0 && result.skipped === 0 && (result.updated ?? 0) === 0) {
       toastInfo("No files found. Enable Browse & Access on the Nomad and confirm the popup.");
     } else if ((result.downloaded ?? 0) === 0 && (result.updated ?? 0) === 0) {
@@ -65,7 +70,6 @@ export async function runSupernoteSync(): Promise<SupernoteSyncResult | null> {
     }
     return result;
   } catch (err) {
-    toastError(`Supernote sync failed: ${formatError(err)}`);
-    return null;
+    return fail(`Supernote sync failed: ${formatError(err)}`);
   }
 }
