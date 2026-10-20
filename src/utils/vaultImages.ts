@@ -23,7 +23,7 @@ export function resolveMarkdownImageAbsPath(
   // Name-only raster images and `.note` notebooks: vault-wide lookup (Obsidian-style).
   if ((IMAGE_EXT.test(trimmed) || /\.note$/i.test(trimmed)) && !trimmed.includes("/")) {
     const index = assetIndex ?? useStore.getState().assetIndex;
-    const resolved = resolveWikilinkAssetPath(trimmed, index, vaultPath);
+    const resolved = resolveWikilinkAssetPath(trimmed, index, vaultPath, fileDir);
     const normalized = normalizePosixPath(resolved);
     return isPathWithinVault(normalized, vaultPath) ? normalized : null;
   }
@@ -51,6 +51,27 @@ export function safeConvertFileSrc(absPath: string, vaultPath: string): string {
   const normalized = normalizePosixPath(absPath);
   if (!isPathWithinVault(normalized, vaultPath)) return "";
   return convertFileSrc(normalized);
+}
+
+/**
+ * Absolute path and `asset://` URL for a `![[file]]` embed.
+ * Returns null when the resolved path is outside the vault.
+ * SECURITY: `convertFileSrc` runs only after the vault check.
+ */
+export function resolveWikilinkEmbed(
+  filename: string,
+  vaultPath: string,
+  assetIndex?: AssetMetadata[],
+  nearDir?: string,
+): { absPath: string; src: string } | null {
+  const index = assetIndex ?? useStore.getState().assetIndex;
+  const absPath = normalizePosixPath(
+    resolveWikilinkAssetPath(filename, index, vaultPath, nearDir),
+  );
+  if (!isPathWithinVault(absPath, vaultPath)) return null;
+  const src = safeConvertFileSrc(absPath, vaultPath);
+  if (!src) return null;
+  return { absPath, src };
 }
 
 /** Resolve image src to a display URL (`asset://` for vault files only). */

@@ -1,11 +1,9 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
 import { formatError } from "@/utils/formatError";
+import { loadVaultFile } from "@/utils/vaultRead";
 
-export async function loadVaultFile(path: string): Promise<string> {
-  return invoke<string>("get_file_content", { path });
-}
+export { loadVaultFile, loadVaultFiles } from "@/utils/vaultRead";
 
 /**
  * Load a vault file and show it. Recent-note tracking happens inside setActiveFile.

@@ -11,12 +11,14 @@ import {
 } from "@codemirror/view";
 import { syntaxTree } from "@codemirror/language";
 import { RangeSetBuilder, StateField, EditorState } from "@codemirror/state";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
-import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
-import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
-import { resolveMarkdownImageAbsPath, resolveMarkdownImageSrc } from "@/utils/vaultImages";
+import {
+  resolveMarkdownImageAbsPath,
+  resolveMarkdownImageSrc,
+  resolveWikilinkEmbed,
+} from "@/utils/vaultImages";
 import { isSupernoteNoteFile } from "@/constants/supernote";
 import { mountSupernotePager } from "@/utils/mountSupernotePager";
 import { selectionIntersectsRange } from "./editorPluginUtils";
@@ -298,17 +300,6 @@ function resolveImageSrc(rawSrc: string, activeFilePath: string, vaultPath: stri
   return resolveMarkdownImageSrc(rawSrc, vaultPath, dir);
 }
 
-// Use vault-wide asset resolution for wikilink images so that Obsidian vaults
-// work without manual path adjustments.
-function resolveWikiSrc(filename: string, vaultPath: string): string {
-  const { assetIndex } = useStore.getState();
-  const resolved = normalizePosixPath(
-    resolveWikilinkAssetPath(filename, assetIndex, vaultPath),
-  );
-  if (!isPathWithinVault(resolved, vaultPath)) return "";
-  return convertFileSrc(resolved);
-}
-
 // Node types whose text should be dimmed when the cursor is not on the same line
 const DIM_NODE_NAMES = new Set([
   "HeaderMark",
@@ -392,23 +383,23 @@ function buildVisualDecorations(
     const from = vpFrom + wm.index;
     const to = from + wm[0].length;
     if (!selectionIntersectsRange(state.selection, from, to)) {
-      const abs = normalizePosixPath(
-        resolveWikilinkAssetPath(wm[1], useStore.getState().assetIndex, vaultPath),
-      );
-      if (isPathWithinVault(abs, vaultPath) && isSupernoteNoteFile(abs)) {
+      const noteDir = activeFilePath.substring(0, activeFilePath.lastIndexOf("/"));
+      const embed = resolveWikilinkEmbed(wm[1], vaultPath, undefined, noteDir);
+      if (embed && isSupernoteNoteFile(embed.absPath)) {
         ranges.push({
           from,
           to,
           deco: Decoration.replace({
-            widget: new VisualSupernoteWidget(abs, vaultPath),
+            widget: new VisualSupernoteWidget(embed.absPath, vaultPath),
           }),
         });
       } else {
-        const src = resolveWikiSrc(wm[1], vaultPath);
         ranges.push({
           from,
           to,
-          deco: Decoration.replace({ widget: new ImageWidget(src, wm[1]) }),
+          deco: Decoration.replace({
+            widget: new ImageWidget(embed?.src ?? "", wm[1]),
+          }),
         });
       }
     }

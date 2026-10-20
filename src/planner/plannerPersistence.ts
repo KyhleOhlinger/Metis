@@ -80,8 +80,23 @@ function clearLegacyLocalStorage(): void {
   }
 }
 
+/** One IPC call prepares the vault planner and returns each requested file (null when missing). */
+export async function loadPlannerFileMap(
+  vaultPath: string,
+  fileKeys: PlannerFileKey[],
+): Promise<Map<PlannerFileKey, string | null>> {
+  const files = await invoke<Record<string, string | null>>("planner_load_files", {
+    vaultPath,
+    fileKeys,
+  });
+  const out = new Map<PlannerFileKey, string | null>();
+  for (const key of fileKeys) out.set(key, files[key] ?? null);
+  return out;
+}
+
 async function loadFileFromDisk(vaultPath: string, fileKey: PlannerFileKey): Promise<string | null> {
-  return invoke<string | null>("planner_load_file", { vaultPath, fileKey });
+  const files = await loadPlannerFileMap(vaultPath, [fileKey]);
+  return files.get(fileKey) ?? null;
 }
 
 async function migrateLegacyLocalStorage(vaultPath: string): Promise<void> {
@@ -149,13 +164,11 @@ export async function initPlannerPersistence(vaultPath: string): Promise<void> {
   await migrateLegacyLocalStorage(vaultPath);
   if (gen !== initGeneration) return;
 
-  await Promise.all(
-    allFileKeys().map(async (fileKey) => {
-      const raw = await loadFileFromDisk(vaultPath, fileKey);
-      if (gen !== initGeneration) return;
-      cache.set(fileKey, raw);
-    }),
-  );
+  const loaded = await loadPlannerFileMap(vaultPath, allFileKeys());
+  if (gen !== initGeneration) return;
+  for (const fileKey of allFileKeys()) {
+    cache.set(fileKey, loaded.get(fileKey) ?? null);
+  }
 
   if (gen !== initGeneration) return;
   ready = true;

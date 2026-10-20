@@ -1,5 +1,6 @@
 import { useCallback, useMemo, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { loadVaultFile, loadVaultFiles } from "@/utils/vaultRead";
 import { useStore, type DiskWrite } from "@/store/useStore";
 import { syncUiAfterDiskWrites } from "@/store/vaultSync";
 import { usePersonaStore, selectProfileForPersona } from "@/store/usePersonaStore";
@@ -302,7 +303,7 @@ const handleTaskSync = useCallback(async () => {
 
   try {
     // 1) Apply todo.md checkbox state changes back into source notes.
-    const todoContent = await invoke<string>("get_file_content", { path: todoPath }).catch(() => "");
+    const todoContent = await loadVaultFile(todoPath).catch(() => "");
     const todoEntries = parseTodoTaskEntries(todoContent);
 
     const updatesByPath = new Map<string, Array<{ text: string; checked: boolean }>>();
@@ -316,8 +317,12 @@ const handleTaskSync = useCallback(async () => {
 
     let updatedNotes = 0;
     const diskWrites: DiskWrite[] = [];
-    for (const [path, updates] of updatesByPath) {
-      const content = await invoke<string>("get_file_content", { path }).catch(() => "");
+    const updatePaths = [...updatesByPath.keys()];
+    const updateBodies = await loadVaultFiles(updatePaths);
+    for (let i = 0; i < updatePaths.length; i++) {
+      const path = updatePaths[i];
+      const updates = updatesByPath.get(path) ?? [];
+      const content = updateBodies[i] ?? "";
       if (!content) continue;
       const applied = applyTaskStatusUpdates(content, updates);
       if (!applied.changed) continue;

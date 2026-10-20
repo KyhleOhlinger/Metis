@@ -21,6 +21,7 @@ export function resolveWikilinkAssetPath(
   wikilinkName: string,
   assetIndex: AssetMetadata[],
   vaultPath: string,
+  nearDir?: string,
 ): string {
   // Rule 1 — explicit sub-path: treat as vault-root-relative
   if (wikilinkName.includes("/")) {
@@ -31,12 +32,22 @@ export function resolveWikilinkAssetPath(
     return resolved;
   }
 
-  // Rule 2 — vault-wide name search (Obsidian-compatible)
   const lower = wikilinkName.toLowerCase();
-  const match = assetIndex.find((a) => a.name.toLowerCase() === lower);
-  if (match) return match.path;
+  const named = assetIndex.filter((a) => a.name.toLowerCase() === lower);
+  const sibling = nearDir ? normalizePosixPath(`${nearDir}/${wikilinkName}`) : "";
+  const beside =
+    sibling && named.find((a) => normalizePosixPath(a.path) === sibling);
+  if (beside) return beside.path;
 
-  // Rule 3 — fallback: assume vault root (original Metis behaviour)
+  // A `.note` embed beside a markdown companion must not open another folder's copy.
+  if (sibling && /\.note$/i.test(wikilinkName) && isPathWithinVault(sibling, vaultPath)) {
+    return sibling;
+  }
+
+  if (named.length > 0) return named[0].path;
+
+  if (sibling && isPathWithinVault(sibling, vaultPath)) return sibling;
+
   return `${vaultPath}/${wikilinkName}`;
 }
 

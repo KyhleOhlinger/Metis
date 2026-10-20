@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { StateCreator } from "zustand";
 import { buildBacklinkIndex } from "../utils/linkGraph";
 import { formatError } from "../utils/formatError";
+import { loadVaultFiles } from "../utils/vaultRead";
 import { toastError } from "./useToastStore";
 import { resetPlannerPersistence } from "../planner/plannerPersistence";
 import { usePluginStore } from "../plugins/usePluginStore";
@@ -17,7 +18,7 @@ import {
   parseNoteMeta,
 } from "./noteIndexUtils";
 import type { VaultData } from "./vaultTypes";
-import type { MetisState } from "./metisState";
+import { clearedVaultSession, type MetisState } from "./metisState";
 
 export type VaultSlice = Pick<
   MetisState,
@@ -41,20 +42,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       plannerReloadKey: get().plannerReloadKey + 1,
       noteIndex,
       assetIndex,
-      backlinkIndex: {},
-      saveStatus: "idle",
-      saveError: null,
-      activeFilePath: null,
-      activeFileContent: "",
-      isDirty: false,
-      cursorOffset: 0,
-      selectedText: "",
-      selectionCoords: null,
-      selectionEndOffset: 0,
-      activeFolderPath: null,
-      editorNavigateTo: null,
-      plannerNavigateTo: null,
-      commandCenterRequest: null,
+      ...clearedVaultSession(),
     });
     setTimeout(() => get().enrichNoteIndex(), 0);
     void usePluginStore.getState().loadForVault();
@@ -95,26 +83,7 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
     for (let i = 0; i < noteIndex.length; i += BATCH) {
       if (get().vaultPath !== runVaultPath) return;
       const slice = noteIndex.slice(i, i + BATCH);
-      const paths = slice.map((n) => n.path);
-
-      let contents: string[];
-      try {
-        const batch = await invoke<string[]>("get_file_contents_batch", { paths });
-        contents =
-          Array.isArray(batch) && batch.length === paths.length
-            ? batch
-            : await Promise.all(
-                paths.map((path) =>
-                  invoke<string>("get_file_content", { path }).catch(() => ""),
-                ),
-              );
-      } catch {
-        contents = await Promise.all(
-          paths.map((path) =>
-            invoke<string>("get_file_content", { path }).catch(() => ""),
-          ),
-        );
-      }
+      const contents = await loadVaultFiles(slice.map((n) => n.path));
 
       contents.forEach((content, j) => {
         const path = slice[j].path;
@@ -172,26 +141,9 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       files: [],
       defaultImageFolder: "assets",
       plannerReloadKey: 0,
-      activeFilePath: null,
-      activeFileContent: "",
-      isDirty: false,
-      cursorOffset: 0,
-      selectedText: "",
-      selectionCoords: null,
-      selectionEndOffset: 0,
-      activeFolderPath: null,
       noteIndex: [],
       assetIndex: [],
-      backlinkIndex: {},
-      saveStatus: "idle",
-      saveError: null,
-      plannerSyncStatus: "idle",
-      plannerSyncError: null,
-      pendingMenuAction: null,
-      sidebarView: "files",
-      editorNavigateTo: null,
-      plannerNavigateTo: null,
-      commandCenterRequest: null,
+      ...clearedVaultSession(),
     });
   },
 });

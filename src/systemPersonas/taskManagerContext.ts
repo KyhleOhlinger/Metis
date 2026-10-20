@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { loadVaultFiles } from "@/utils/vaultRead";
 // ── Task Manager: extract open tasks from every note ─────────────────────────
 //
 // Scans all vault notes for Markdown checkbox items (`- [ ] …`), groups only
@@ -19,17 +19,12 @@ export async function buildTaskContext(
 
   onStatus("Scanning vault for tasks…");
 
-  // Read in parallel batches of 20
-  const BATCH = 20;
+  const BATCH = 100;
   const tasksByNote: { name: string; path: string; tasks: string[] }[] = [];
 
   for (let i = 0; i < mdNotes.length; i += BATCH) {
     const slice = mdNotes.slice(i, i + BATCH);
-    const contents = await Promise.all(
-      slice.map((n) =>
-        invoke<string>("get_file_content", { path: n.path }).catch(() => ""),
-      ),
-    );
+    const contents = await loadVaultFiles(slice.map((n) => n.path));
     contents.forEach((content, j) => {
       const note = slice[j];
       // Match incomplete markdown tasks across list marker styles (including indented items):
@@ -149,16 +144,12 @@ export async function collectVaultTasksForTodo(
   const isTodoPath = (path: string) =>
     /(?:^|[\\/])summaries[\\/]todo\.md$/i.test(path);
   const mdNotes = noteIndex.filter((n) => n.path.endsWith(".md") && !isTodoPath(n.path));
-  const BATCH = 20;
+  const BATCH = 100;
   const out: Array<{ name: string; path: string; tasks: Array<{ text: string; checked: boolean; dueDate: string | null }> }> = [];
 
   for (let i = 0; i < mdNotes.length; i += BATCH) {
     const slice = mdNotes.slice(i, i + BATCH);
-    const contents = await Promise.all(
-      slice.map((n) =>
-        invoke<string>("get_file_content", { path: n.path }).catch(() => ""),
-      ),
-    );
+    const contents = await loadVaultFiles(slice.map((n) => n.path));
     contents.forEach((content, j) => {
       const note = slice[j];
       const tasks = [...content.matchAll(/^[ \t]*(?:[-*+]|\d+\.)\s+\[([ xX])\]\s+(.+)$/gm)].map(

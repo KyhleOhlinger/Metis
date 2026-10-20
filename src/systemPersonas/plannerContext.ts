@@ -10,9 +10,8 @@
  * first so the model sees the same cells the user just edited.
  */
 
-import { invoke } from "@tauri-apps/api/core";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { flushPlannerSaves } from "@/planner/plannerPersistence";
+import { flushPlannerSaves, loadPlannerFileMap } from "@/planner/plannerPersistence";
 import {
   exportPlannerMonthMarkdown,
   exportPlannerWeekMarkdown,
@@ -276,19 +275,19 @@ async function loadActivePlannerFiles(vaultPath: string): Promise<{
   reviews: ReviewsTableState;
 }> {
   await flushPlannerSaves();
-  const [manifestRaw, layoutRaw, goalsRaw, templatesRaw, reviewsRaw] = await Promise.all([
-    invoke<string | null>("planner_load_file", { vaultPath, fileKey: "manifest.json" }),
-    invoke<string | null>("planner_load_file", { vaultPath, fileKey: "layout-templates.json" }),
-    invoke<string | null>("planner_load_file", { vaultPath, fileKey: "goals.json" }),
-    invoke<string | null>("planner_load_file", { vaultPath, fileKey: "templates.json" }),
-    invoke<string | null>("planner_load_file", { vaultPath, fileKey: "reviews.json" }),
+  const files = await loadPlannerFileMap(vaultPath, [
+    "manifest.json",
+    "layout-templates.json",
+    "goals.json",
+    "templates.json",
+    "reviews.json",
   ]);
   return {
-    manifest: parseManifestJson(manifestRaw),
-    layout: parseLayoutTemplatesJson(layoutRaw),
-    goals: parseGoalSectionsJson(goalsRaw),
-    templates: parseTemplatesJson(templatesRaw),
-    reviews: parseReviewsJson(reviewsRaw),
+    manifest: parseManifestJson(files.get("manifest.json")),
+    layout: parseLayoutTemplatesJson(files.get("layout-templates.json")),
+    goals: parseGoalSectionsJson(files.get("goals.json")),
+    templates: parseTemplatesJson(files.get("templates.json")),
+    reviews: parseReviewsJson(files.get("reviews.json")),
   };
 }
 

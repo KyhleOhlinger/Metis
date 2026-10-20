@@ -77,6 +77,7 @@ pub fn run() {
             planner::get_planner_storage_dir,
             planner::planner_get_config,
             planner::planner_load_file,
+            planner::planner_load_files,
             planner::planner_save_file,
             planner::planner_save_files,
             planner::planner_import_bundle,

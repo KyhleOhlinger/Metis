@@ -242,7 +242,7 @@ fn lan_http_get(url: &str, timeout_secs: u64, max_bytes: usize) -> Result<LanGet
         .build()
         .map_err(|e| format!("Could not create HTTP client: {e}"))?;
     let res = client
-        .get(url)
+        .get(encode_url_for_request(url))
         .send()
         .map_err(|e| map_browse_http_error(&e))?;
     let status = res.status().as_u16();
@@ -382,7 +382,96 @@ fn listing_path_from_url(url: &str, ip: [u8; 4], port: u16) -> String {
         "http://{}.{}.{}.{}:{port}",
         ip[0], ip[1], ip[2], ip[3]
     );
-    url.strip_prefix(&prefix).unwrap_or("/").to_string()
+    percent_decode(url.strip_prefix(&prefix).unwrap_or("/"))
+}
+
+fn url_file_name(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    let last = path.rsplit('/').next().unwrap_or("");
+    percent_decode(last)
+}
+
+/// Download URL for one listing row.
+///
+/// Absolute `uri` values are kept when their file name matches `name`.
+/// A `uri` that names a different notebook is ignored, and the file is taken
+/// from the folder being listed plus `name`. Otherwise every nested folder
+/// can save the first notebook's bytes under the later note's name.
+fn resolve_listing_file_url(page_url: &str, name: &str, uri: &str) -> Option<String> {
+    let name = name.trim();
+    let uri = uri.trim();
+    let from_uri = if uri.is_empty() {
+        None
+    } else {
+        join_url(page_url, uri)
+    };
+    if let Some(abs) = &from_uri {
+        if name.is_empty() || url_file_name(abs).eq_ignore_ascii_case(name) {
+            return Some(abs.clone());
+        }
+    }
+    if name.is_empty() {
+        return from_uri;
+    }
+    join_url(page_url, name)
+}
+
+fn encode_path_segment(seg: &str) -> String {
+    let bytes = seg.as_bytes();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && bytes[i + 1].is_ascii_hexdigit()
+            && bytes[i + 2].is_ascii_hexdigit()
+        {
+            out.push('%');
+            out.push(bytes[i + 1] as char);
+            out.push(bytes[i + 2] as char);
+            i += 3;
+            continue;
+        }
+        let c = bytes[i];
+        if c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'~') {
+            out.push(c as char);
+        } else {
+            out.push_str(&format!("%{c:02X}"));
+        }
+        i += 1;
+    }
+    out
+}
+
+fn encode_url_for_request(url: &str) -> String {
+    let Some(scheme) = url.find("://") else {
+        return url.to_string();
+    };
+    let rest = &url[scheme + 3..];
+    let Some(slash) = rest.find('/') else {
+        return url.to_string();
+    };
+    let origin = &url[..scheme + 3 + slash];
+    let path_and_query = &rest[slash..];
+    let (path, query) = match path_and_query.split_once('?') {
+        Some((p, q)) => (p, Some(q)),
+        None => (path_and_query, None),
+    };
+    let encoded = path
+        .split('/')
+        .map(|seg| {
+            if seg.is_empty() {
+                String::new()
+            } else {
+                encode_path_segment(seg)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    match query {
+        Some(q) => format!("{origin}{encoded}?{q}"),
+        None => format!("{origin}{encoded}"),
+    }
 }
 
 fn relative_under_note(url_path: &str) -> PathBuf {
@@ -527,7 +616,7 @@ fn extract_listing_json(html: &str) -> Option<serde_json::Value> {
 
 fn links_from_json(
     html: &str,
-    origin: &str,
+    page_url: &str,
     octets: [u8; 4],
     port: u16,
 ) -> Option<Vec<ListingLink>> {
@@ -556,8 +645,13 @@ fn links_from_json(
         if is_dir && skip_dir_name(name) {
             continue;
         }
-        let href = if uri.is_empty() { name } else { uri };
-        let Some(abs) = join_url(&format!("{origin}/"), href) else {
+        let abs = if is_dir {
+            let href = if uri.is_empty() { name } else { uri };
+            join_url(page_url, href)
+        } else {
+            resolve_listing_file_url(page_url, name, uri)
+        };
+        let Some(abs) = abs else {
             continue;
         };
         if !url_on_device(&abs, octets, port) {
@@ -629,11 +723,10 @@ fn links_from_hrefs(html: &str, page_url: &str, octets: [u8; 4], port: u16) -> V
 fn listing_links(
     html: &str,
     page_url: &str,
-    origin: &str,
     octets: [u8; 4],
     port: u16,
 ) -> Vec<ListingLink> {
-    links_from_json(html, origin, octets, port)
+    links_from_json(html, page_url, octets, port)
         .unwrap_or_else(|| links_from_hrefs(html, page_url, octets, port))
 }
 
@@ -747,7 +840,7 @@ fn pull_browse_access(
             Err(_) => continue,
         };
 
-        for link in listing_links(&html, &page_url, &origin, octets, port) {
+        for link in listing_links(&html, &page_url, octets, port) {
             if link.is_dir {
                 if !visited.contains(&link.abs) {
                     queue.push((link.abs, depth + 1));
@@ -906,4 +999,53 @@ pub fn get_supernote_sync_meta(
         }));
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nested_file_uses_its_own_uri_when_the_name_matches() {
+        let page = "http://10.0.0.8:8089/Note/Folder%202/Subfolder%202/";
+        let url = resolve_listing_file_url(
+            page,
+            "Note 2.note",
+            "/Note/Folder 2/Subfolder 2/Note 2.note",
+        )
+        .unwrap();
+        assert!(url.ends_with("/Note/Folder 2/Subfolder 2/Note 2.note"));
+    }
+
+    #[test]
+    fn uri_pointing_at_another_note_is_not_used() {
+        let page = "http://10.0.0.8:8089/Note/Folder 2/Subfolder 2/";
+        let url = resolve_listing_file_url(
+            page,
+            "Note 2.note",
+            "/Note/Folder 2/Subfolder 1/Note 1.note",
+        )
+        .unwrap();
+        assert!(url.ends_with("/Note/Folder 2/Subfolder 2/Note 2.note"));
+        assert!(!url.contains("Note 1"));
+    }
+
+    #[test]
+    fn relative_name_stays_in_the_listed_folder() {
+        let page = "http://10.0.0.8:8089/Note/Folder 2/Subfolder 2/";
+        let url = resolve_listing_file_url(page, "Note 2.note", "Note 2.note").unwrap();
+        assert_eq!(
+            url,
+            "http://10.0.0.8:8089/Note/Folder 2/Subfolder 2/Note 2.note"
+        );
+    }
+
+    #[test]
+    fn request_encodes_spaces_without_double_encoding() {
+        let raw = "http://10.0.0.8:8089/Note/Folder 2/Note%202.note";
+        assert_eq!(
+            encode_url_for_request(raw),
+            "http://10.0.0.8:8089/Note/Folder%202/Note%202.note"
+        );
+    }
 }

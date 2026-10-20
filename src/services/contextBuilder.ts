@@ -23,6 +23,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { loadVaultFile } from "@/utils/vaultRead";
 import type { AiProviderProfile, Persona, ExecutionScope, PlannerPeriod } from "../types/persona";
 import { curatedSmallModelId, generateCompletion } from "./llmService";
 import { isGoogleProvider } from "./providerRegistry";
@@ -179,7 +180,7 @@ export async function buildSmartContext(
     onStatus?.(`Reading ${scope.filePath.split("/").pop() ?? "note"}…`);
     let content: string;
     try {
-      content = await invoke<string>("get_file_content", { path: scope.filePath });
+      content = await loadVaultFile(scope.filePath);
     } catch {
       content = "(could not read file)";
     }
@@ -220,64 +221,39 @@ export async function buildSmartContext(
   const totalChars = summaries.reduce((s, f) => s + f.char_count, 0);
   const overhead = persona.systemPrompt.length + userMessage.length + 500;
   const budget = charBudget(persona.model, overhead);
+  const pick = pickScopedNotes(summaries, userMessage, budget, totalChars, profile);
 
-  // ── Tier 1: DIRECT — everything fits ───────────────────────────────────
-  if (totalChars <= budget) {
+  if (pick.tier === "direct") {
     onStatus?.(`Loading ${summaries.length} note${summaries.length !== 1 ? "s" : ""}…`);
-    const context = await fetchContent(summaries.map((s) => s.path));
+    const context = await fetchContent(pick.files.map((s) => s.path));
     return {
       context,
       strategy: { type: "direct", files: summaries.length, chars: context.length },
     };
   }
 
-  // ── Tier 2: TF-IDF — moderate overflow, keyword scoring sufficient ──────
-  // Use 5× (not 3×) before scout so we send fewer extra API calls; strict
-  // provider RPM limits often allow a single curl but not scout + chat.
-  if (totalChars <= budget * 5) {
-    onStatus?.(`Filtering ${summaries.length} notes by relevance…`);
-    const ranked = scoreByRelevance(summaries, userMessage);
-    const selected = pickByBudget(ranked, budget);
-    onStatus?.(`Loading ${selected.length} of ${summaries.length} relevant notes…`);
-    const context = await fetchContent(selected.map((s) => s.path));
+  if (pick.tier === "tfidf" || pick.tier === "scout-skipped") {
+    onStatus?.(
+      pick.tier === "scout-skipped"
+        ? `Large vault — selecting notes by relevance (Gemini skips scout to avoid rate limits)…`
+        : `Filtering ${summaries.length} notes by relevance…`,
+    );
+    onStatus?.(`Loading ${pick.files.length} of ${summaries.length} relevant notes…`);
+    const context = await fetchContent(pick.files.map((s) => s.path));
     return {
       context,
       strategy: {
         type: "tfidf",
         total: summaries.length,
-        selected: selected.length,
+        selected: pick.files.length,
         chars: context.length,
       },
     };
   }
 
-  // ── Gemini, large vault: never call scout LLM ───────────────────────────
-  // Google AI Studio / Gemini free tiers frequently return HTTP 429 when Metis
-  // sends scout + main chat back-to-back; a single curl only hits one call.
-  // Use the same TF-IDF + budget pick as tier 2, over the full ranked list.
-  if (isGoogleProvider(profile)) {
-    onStatus?.(`Large vault — selecting notes by relevance (Gemini skips scout to avoid rate limits)…`);
-    const ranked = scoreByRelevance(summaries, userMessage);
-    const selected = pickByBudget(ranked, budget);
-    onStatus?.(`Loading ${selected.length} of ${summaries.length} notes…`);
-    const context = await fetchContent(selected.map((s) => s.path));
-    return {
-      context,
-      strategy: {
-        type: "tfidf",
-        total: summaries.length,
-        selected: selected.length,
-        chars: context.length,
-      },
-    };
-  }
-
-  // ── Tier 3: SCOUT — very large corpus, let the LLM pick ────────────────
-  // Pre-filter with TF-IDF first so the scout prompt itself stays small
-  // (max 60 candidates × ~350 char preview ≈ ~21 k chars for the scout call).
-  const MAX_SCOUT_CANDIDATES = 60;
+  // Scout: TF-IDF already capped the candidate list so the selector prompt stays small.
   onStatus?.(`Pre-filtering ${summaries.length} notes…`);
-  const candidates = scoreByRelevance(summaries, userMessage).slice(0, MAX_SCOUT_CANDIDATES);
+  const candidates = pick.tier === "scout" ? pick.candidates : [];
   onStatus?.(`AI scout scanning ${candidates.length} candidate notes…`);
 
   const selectedNames = await runScout(candidates, userMessage, persona, profile);
@@ -372,6 +348,41 @@ const STOPWORDS = new Set([
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Pick files in relevance order until the char budget is exhausted. */
+const TFIDF_OVERFLOW_FACTOR = 5;
+const SCOUT_CANDIDATE_LIMIT = 60;
+
+type ScopedNotePick =
+  | { tier: "direct"; files: FileSummary[] }
+  | { tier: "tfidf" | "scout-skipped"; files: FileSummary[] }
+  | { tier: "scout"; candidates: FileSummary[] };
+
+/** Same tier rules for the egress estimate and the notes that are actually sent. */
+function pickScopedNotes(
+  summaries: FileSummary[],
+  userMessage: string,
+  budget: number,
+  totalChars: number,
+  profile: AiProviderProfile,
+): ScopedNotePick {
+  if (totalChars <= budget) return { tier: "direct", files: summaries };
+  if (totalChars <= budget * TFIDF_OVERFLOW_FACTOR) {
+    return {
+      tier: "tfidf",
+      files: pickByBudget(scoreByRelevance(summaries, userMessage), budget),
+    };
+  }
+  if (isGoogleProvider(profile)) {
+    return {
+      tier: "scout-skipped",
+      files: pickByBudget(scoreByRelevance(summaries, userMessage), budget),
+    };
+  }
+  return {
+    tier: "scout",
+    candidates: scoreByRelevance(summaries, userMessage).slice(0, SCOUT_CANDIDATE_LIMIT),
+  };
+}
+
 function pickByBudget(ranked: FileSummary[], budget: number): FileSummary[] {
   const selected: FileSummary[] = [];
   let used = 0;
@@ -525,35 +536,26 @@ function planEgressFromSummaries(
   totalChars: number,
   profile: AiProviderProfile,
 ): Pick<EgressEstimate, "estimatedContextChars" | "plannedTier" | "extraScoutApiCall"> {
-  if (totalChars <= budget) {
+  const pick = pickScopedNotes(summaries, userMessage, budget, totalChars, profile);
+  if (pick.tier === "direct") {
     return {
       estimatedContextChars: totalChars,
       plannedTier: "direct",
       extraScoutApiCall: false,
     };
   }
-  if (totalChars <= budget * 5) {
-    const selected = pickByBudget(scoreByRelevance(summaries, userMessage), budget);
+  if (pick.tier === "scout") {
+    const selected = pickByBudget(pick.candidates, budget);
     return {
       estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
-      plannedTier: "tfidf",
-      extraScoutApiCall: false,
+      plannedTier: "scout",
+      extraScoutApiCall: true,
     };
   }
-  if (isGoogleProvider(profile)) {
-    const selected = pickByBudget(scoreByRelevance(summaries, userMessage), budget);
-    return {
-      estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
-      plannedTier: "scout-skipped",
-      extraScoutApiCall: false,
-    };
-  }
-  const candidates = scoreByRelevance(summaries, userMessage).slice(0, 60);
-  const selected = pickByBudget(candidates, budget);
   return {
-    estimatedContextChars: selected.reduce((s, f) => s + f.char_count, 0),
-    plannedTier: "scout",
-    extraScoutApiCall: true,
+    estimatedContextChars: pick.files.reduce((s, f) => s + f.char_count, 0),
+    plannedTier: pick.tier,
+    extraScoutApiCall: false,
   };
 }
 
@@ -658,7 +660,7 @@ export async function estimateContextEgress(
   if (scope.type === "specific-file") {
     let content = "";
     try {
-      content = await invoke<string>("get_file_content", { path: scope.filePath });
+      content = await loadVaultFile(scope.filePath);
     } catch {
       content = "";
     }

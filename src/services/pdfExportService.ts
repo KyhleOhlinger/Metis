@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { readVaultMarkdownBatch } from "@/utils/vaultRead";
 import type { NoteMetadata } from "@/store/useStore";
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
@@ -76,7 +77,7 @@ async function readNoteContents(
       total: paths.length,
       label: "Reading notes…",
     });
-    const bodies = await invoke<string[]>("get_file_contents_batch", { paths: batch });
+    const bodies = await readVaultMarkdownBatch(batch);
     batch.forEach((path, idx) => {
       out.set(path, bodies[idx] ?? "");
     });
