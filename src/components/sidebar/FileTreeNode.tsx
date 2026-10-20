@@ -3,6 +3,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Image, Copy, FileDown, FileOutput, Pin } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { openVaultNotePath } from "@/utils/openVaultNote";
+import { loadVaultFile } from "@/utils/vaultRead";
 import { useStore, FileNode } from "../../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../../store/usePersonaStore";
 import ContextMenu, { ContextMenuEntry } from "../ContextMenu";
@@ -24,6 +25,7 @@ import { InlineInput } from "./InlineInput";
 import { SupernoteSyncControl } from "./SupernoteSyncControl";
 import { useCorePluginEnabled } from "@/plugins/usePluginStore";
 import { isSupernoteNoteFile, isSupernoteSyncFolderNode } from "@/constants/supernote";
+import { isSidebarTreeEntry } from "./sidebarTree";
 import { openSupernoteCompanion } from "@/utils/openSupernoteCompanion";
 
 // ── FileTreeNode ──────────────────────────────────────────────────────────────
@@ -262,7 +264,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
         icon: <Copy className="h-3.5 w-3.5" />,
         onClick: async () => {
           try {
-            const content = await invoke<string>("get_file_content", { path: node.path });
+            const content = await loadVaultFile(node.path);
             const imagePaths = collectImagePathsFromMarkdown(
               content,
               node.path,
@@ -521,7 +523,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
       {node.is_dir && expanded && node.children && (
         <div>
           {[...node.children]
-            .filter((child) => child.is_dir || !isSupernoteNoteFile(child.name))
+            .filter(isSidebarTreeEntry)
             .sort((a, b) => {
               if (a.name.toLowerCase() === "todo.md") return -1;
               if (b.name.toLowerCase() === "todo.md") return  1;

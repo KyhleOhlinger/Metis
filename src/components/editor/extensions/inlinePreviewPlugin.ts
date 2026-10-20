@@ -6,9 +6,6 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { RangeSetBuilder, StateField, EditorState, EditorSelection, type Text } from "@codemirror/state";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { useStore } from "@/store/useStore";
-import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { normalizePosixPath, isPathWithinVault } from "@/utils/paths";
 import {
   followVaultHref,
@@ -19,6 +16,7 @@ import {
 import {
   resolveMarkdownImageAbsPath,
   resolveMarkdownImageSrc,
+  resolveWikilinkEmbed,
 } from "@/utils/vaultImages";
 import { isSupernoteNoteFile } from "@/constants/supernote";
 import { mountSupernotePager } from "@/utils/mountSupernotePager";
@@ -226,21 +224,19 @@ function buildInlineImageDecosFromState(
     // Wikilink embed: ![[filename.ext]] (images + .note notebooks)
     const wikiM = WIKI_EMBED_RE.exec(text);
     if (wikiM) {
-      const { assetIndex } = useStore.getState();
-      const resolvedPath = resolveWikilinkAssetPath(wikiM[1], assetIndex, vaultPath);
-      const normalizedPath = normalizePosixPath(resolvedPath);
-      if (!isPathWithinVault(normalizedPath, vaultPath)) continue;
-      if (isSupernoteNoteFile(normalizedPath)) {
-        const deco = supernoteWidgetDeco(normalizedPath, vaultPath);
+      const embed = resolveWikilinkEmbed(wikiM[1], vaultPath, undefined, fileDir);
+      if (!embed) continue;
+      if (isSupernoteNoteFile(embed.absPath)) {
+        const deco = supernoteWidgetDeco(embed.absPath, vaultPath);
         if (deco) builder.add(line.to, line.to, deco);
         continue;
       }
-      const src = convertFileSrc(normalizedPath);
+      const src = embed.src;
       builder.add(
         line.to,
         line.to,
         Decoration.widget({
-          widget: new InlineImageWidget(src, wikiM[1], normalizedPath, vaultPath),
+          widget: new InlineImageWidget(src, wikiM[1], embed.absPath, vaultPath),
           side: 1,
           block: true,
         }),
@@ -771,12 +767,9 @@ function makeLinkClickHandler(vaultPath: string, filePath: string) {
         const start = m.index;
         const end = start + m[0].length;
         if (col < start || col > end) continue;
-        const filename = m[1].trim();
-        const { assetIndex } = useStore.getState();
-        const resolvedPath = normalizePosixPath(
-          resolveWikilinkAssetPath(filename, assetIndex, vaultPath),
-        );
-        if (!resolvedPath.startsWith(`${vaultPath}/`)) break;
+        const embed = resolveWikilinkEmbed(m[1].trim(), vaultPath, undefined, fileDir);
+        if (!embed) break;
+        const resolvedPath = embed.absPath;
         event.preventDefault();
         openDomContextMenu(event.clientX, event.clientY, [
           {

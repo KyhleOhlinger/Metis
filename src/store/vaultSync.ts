@@ -1,5 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import { pathsEqual } from "../utils/paths";
+import { loadVaultFile } from "../utils/vaultRead";
 import type { DiskWrite } from "./vaultTypes";
 import { useStore } from "./useStore";
 
@@ -18,7 +18,7 @@ export async function syncUiAfterDiskWrites(
   if (openPath) {
     const match = writes.find((w) => pathsEqual(w.path, openPath));
     const content =
-      match?.content ?? (await invoke<string>("get_file_content", { path: openPath }));
+      match?.content ?? (await loadVaultFile(openPath));
     setActiveFile(openPath, content);
     return;
   }
@@ -29,6 +29,6 @@ export async function syncUiAfterDiskWrites(
 
   const content =
     activeWrite.content ??
-    (await invoke<string>("get_file_content", { path: activeFilePath }));
+    (await loadVaultFile(activeFilePath));
   setActiveFile(activeFilePath, content);
 }

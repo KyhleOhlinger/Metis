@@ -9,7 +9,7 @@
 //! does not, sync stops without pulling or pushing.
 
 use crate::plugins::{core_plugin_enabled, require_core_plugin};
-use crate::security::{canon_vault, reject_untrusted_webview, write_private_json_file};
+use crate::security::{registered_vault, write_private_json_file};
 use crate::settings::app_data_dir_for_build;
 use crate::state::CurrentVault;
 use serde::{Deserialize, Serialize};
@@ -158,14 +158,13 @@ fn vault_for_window(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
 ) -> Result<PathBuf, String> {
-    reject_untrusted_webview(window)?;
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("Open a vault before configuring backup sync.")?
-        .clone();
-    drop(lock);
-    let vault = canon_vault(Path::new(&vault_str))?;
+    let vault = registered_vault(window, vault_state).map_err(|err| {
+        if err == "No vault registered for this window." {
+            "Open a vault before configuring backup sync.".into()
+        } else {
+            err
+        }
+    })?;
     require_core_plugin(&vault, "backup")?;
     Ok(vault)
 }

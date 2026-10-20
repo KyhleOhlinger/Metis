@@ -6,6 +6,7 @@ import {
   type JekyllConvertResult,
 } from "@/utils/jekyllConverter";
 import { normalizePosixPath } from "@/utils/paths";
+import { loadVaultFile } from "@/utils/vaultRead";
 
 export interface JekyllExportInput {
   notePath: string;
@@ -76,7 +77,7 @@ export async function loadNoteContentForJekyll(notePath: string): Promise<string
   if (notePath === activeFilePath && activeFileContent != null) {
     return activeFileContent;
   }
-  return invoke<string>("get_file_content", { path: notePath });
+  return loadVaultFile(notePath);
 }
 
 export async function exportNoteToJekyll(input: JekyllExportInput): Promise<string> {

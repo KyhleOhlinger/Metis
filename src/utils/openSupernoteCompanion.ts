@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { openVaultNotePath } from "@/utils/openVaultNote";
+import { loadVaultFile } from "@/utils/vaultRead";
 import type { FileNode } from "@/store/useStore";
 import { toastError } from "@/store/useToastStore";
 import { isSupernoteNoteFile } from "@/constants/supernote";
@@ -10,24 +11,54 @@ export function companionMarkdownPathForNote(notePath: string): string {
   return notePath.replace(/\.note$/i, ".md");
 }
 
+function vaultRelativeNote(noteAbsPath: string, vaultPath: string): string {
+  const name = noteAbsPath.split("/").pop() ?? "notebook.note";
+  return noteAbsPath.startsWith(`${vaultPath}/`)
+    ? noteAbsPath.slice(vaultPath.length + 1)
+    : name;
+}
+
+/** Embed the vault-relative `.note` path so two folders can share a file name. */
+export function supernoteEmbedTarget(noteAbsPath: string, vaultPath: string): string {
+  const rel = vaultRelativeNote(noteAbsPath, vaultPath);
+  if (/[\r\n\]]/.test(rel)) {
+    throw new Error("Invalid notebook path");
+  }
+  return rel;
+}
+
 export function buildSupernoteCompanionMarkdown(
   noteAbsPath: string,
   vaultPath: string,
 ): string {
-  const name = noteAbsPath.split("/").pop() ?? "notebook.note";
-  if (/[\r\n]/.test(name)) {
-    throw new Error("Invalid notebook filename");
-  }
-  const rel = noteAbsPath.startsWith(`${vaultPath}/`)
-    ? noteAbsPath.slice(vaultPath.length + 1)
-    : name;
-  if (/[\r\n]/.test(rel)) {
-    throw new Error("Invalid notebook path");
-  }
+  const rel = supernoteEmbedTarget(noteAbsPath, vaultPath);
   return (
     `---\nsource_note: ${JSON.stringify(rel)}\ntype: supernote\n---\n\n` +
-    `![[${name}]]\n\n## Notes\n\n`
+    `![[${rel}]]\n\n## Notes\n\n`
   );
+}
+
+/**
+ * Replace a basename-only `![[notebook.note]]` with the vault-relative path.
+ * Leaves embeds that already include a folder, and leaves the rest of the note.
+ */
+export function repairSupernoteCompanionEmbed(
+  content: string,
+  noteAbsPath: string,
+  vaultPath: string,
+): string | null {
+  let rel: string;
+  try {
+    rel = supernoteEmbedTarget(noteAbsPath, vaultPath);
+  } catch {
+    return null;
+  }
+  const match = content.match(/!\[\[([^\]]+\.note)\]\]/i);
+  if (!match || match[1].includes("/")) return null;
+  const current = match[1].split("/").pop()?.toLowerCase();
+  const expected = rel.split("/").pop()?.toLowerCase();
+  if (current !== expected) return null;
+  return content.replace(match[0], `![[${rel}]]`);
 }
 
 function collectNotePaths(nodes: FileNode[]): string[] {
@@ -52,7 +83,11 @@ export async function ensureSupernoteCompanionNotes(): Promise<void> {
   for (const notePath of collectNotePaths(files)) {
     const mdPath = companionMarkdownPathForNote(notePath);
     try {
-      await invoke<string>("get_file_content", { path: mdPath });
+      const existing = await loadVaultFile(mdPath);
+      const repaired = repairSupernoteCompanionEmbed(existing, notePath, vaultPath);
+      if (!repaired || repaired === existing) continue;
+      await invoke("save_note", { path: mdPath, content: repaired });
+      created += 1;
     } catch {
       try {
         const template = buildSupernoteCompanionMarkdown(notePath, vaultPath);

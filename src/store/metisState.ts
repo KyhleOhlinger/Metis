@@ -65,31 +65,38 @@ export interface MetisState {
   clearCommandCenterRequest: () => void;
 }
 
+/** Note session and panel chrome cleared when a vault opens or closes. */
+export function clearedVaultSession() {
+  return {
+    activeFilePath: null as string | null,
+    activeFileContent: "",
+    isDirty: false,
+    cursorOffset: 0,
+    selectedText: "",
+    selectionCoords: null as { top: number; left: number } | null,
+    selectionEndOffset: 0,
+    activeFolderPath: null as string | null,
+    backlinkIndex: {} as Record<string, string[]>,
+    saveStatus: "idle" as const,
+    saveError: null as string | null,
+    plannerSyncStatus: "idle" as const,
+    plannerSyncError: null as string | null,
+    pendingMenuAction: null as string | null,
+    sidebarView: "files" as const,
+    editorNavigateTo: null as EditorNavigateTarget | null,
+    plannerNavigateTo: null as PlannerNavigateTarget | null,
+    commandCenterRequest: null as "info" | "ai" | "settings" | null,
+  };
+}
+
 export const metisInitialState = {
   vaultPath: null,
   isMetisVault: false,
   files: [] as FileNode[],
-  activeFilePath: null,
-  activeFileContent: "",
-  isDirty: false,
-  cursorOffset: 0,
-  selectedText: "",
-  selectionCoords: null,
-  selectionEndOffset: 0,
-  activeFolderPath: null,
+  ...clearedVaultSession(),
   noteIndex: [] as NoteMetadata[],
   assetIndex: [] as AssetMetadata[],
   defaultImageFolder: "assets",
   plannerReloadKey: 0,
-  backlinkIndex: {} as Record<string, string[]>,
-  saveStatus: "idle" as const,
-  saveError: null,
-  plannerSyncStatus: "idle" as const,
-  plannerSyncError: null,
   editorTab: "source" as const,
-  pendingMenuAction: null,
-  sidebarView: "files" as const,
-  editorNavigateTo: null,
-  plannerNavigateTo: null,
-  commandCenterRequest: null,
 };
