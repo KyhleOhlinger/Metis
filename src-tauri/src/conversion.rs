@@ -1,6 +1,6 @@
 use crate::security::reject_untrusted_webview;
 use crate::types::{ConvertProgress};
-use crate::security::{canon_vault, safe_resolve};
+use crate::security::{registered_vault, safe_resolve};
 use crate::state::CurrentVault;
 use crate::types::VaultData;
 use crate::vault_fs::{
@@ -47,14 +47,7 @@ pub fn convert_vault_to_metis(
     // Conversion mutates the vault folder, so it must be bound to the currently
     // registered vault for this window (same trust model as other mutating
     // commands). We compare canonical paths to block alias/symlink tricks.
-    let lock = vault_state.0.lock().unwrap();
-    let active_vault = lock
-        .get(window.label())
-        .ok_or("convert_vault_to_metis: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-
-    let active_canon = canon_vault(&PathBuf::from(&active_vault))
+    let active_canon = registered_vault(&window, &vault_state)
         .map_err(|e| format!("convert_vault_to_metis: {e}"))?;
     let requested_canon =
         safe_resolve(&requested_root).map_err(|e| format!("convert_vault_to_metis: {e}"))?;
@@ -108,12 +101,14 @@ pub fn convert_vault_to_metis(
             .unwrap_or("note.md");
         emit(&format!("Updating metadata: {display_name}"), current);
 
-        if let Ok(content) = fs::read_to_string(file_path) {
-            let updated = enrich_frontmatter(&content, file_path, &root);
-            // Only write back if the content actually changed
-            if updated != content {
-                let _ = fs::write(file_path, updated.as_bytes());
-            }
+        let content = fs::read_to_string(file_path).map_err(|e| {
+            format!("Failed to read {display_name}: {e}")
+        })?;
+        let updated = enrich_frontmatter(&content, file_path, &root);
+        if updated != content {
+            fs::write(file_path, updated.as_bytes()).map_err(|e| {
+                format!("Failed to update metadata for {display_name}: {e}")
+            })?;
         }
         current += 1;
     }

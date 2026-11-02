@@ -30,6 +30,9 @@ export const PACKAGED_HTTPS_HOSTS = [
 
 const PACKAGED_HTTPS_HOST_SET = new Set<string>(PACKAGED_HTTPS_HOSTS);
 
+/** Hosts used by holiday import and source update. Not valid AI chat endpoints. */
+const NON_AI_HTTPS_HOSTS = new Set(["date.nager.at", "raw.githubusercontent.com"]);
+
 /** Azure OpenAI-style subdomains (wildcard in capabilities). */
 const PACKAGED_HTTPS_SUFFIXES = [".openai.azure.com", ".cognitiveservices.azure.com"] as const;
 
@@ -50,6 +53,12 @@ export function isPackagedHttpsHost(hostname: string): boolean {
   return PACKAGED_HTTPS_SUFFIXES.some((suffix) => h.endsWith(suffix));
 }
 
+export function isAiProviderHost(hostname: string): boolean {
+  const h = hostname.trim().toLowerCase();
+  if (NON_AI_HTTPS_HOSTS.has(h)) return false;
+  return isPackagedHttpsHost(h);
+}
+
 function isBlockedMetadataHost(hostname: string): boolean {
   const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "");
   if (METADATA_HOSTS.has(h)) return true;
@@ -62,6 +71,15 @@ function isBlockedMetadataHost(hostname: string): boolean {
  * Allows HTTPS packaged hosts, loopback HTTP(S), and nothing else.
  */
 export function assertSafeProviderUrl(raw: string): URL {
+  return assertSafeUrl(raw, false);
+}
+
+/** AI profile base URLs. Holiday and GitHub raw hosts are rejected. */
+export function assertSafeAiProviderUrl(raw: string): URL {
+  return assertSafeUrl(raw, true);
+}
+
+function assertSafeUrl(raw: string, aiOnly: boolean): URL {
   const trimmed = raw.trim();
   if (!trimmed) {
     throw new Error("Base URL is required.");
@@ -98,7 +116,8 @@ export function assertSafeProviderUrl(raw: string): URL {
     throw new Error("HTTP is only allowed for localhost / 127.0.0.1.");
   }
 
-  if (!isPackagedHttpsHost(host)) {
+  const hostAllowed = aiOnly ? isAiProviderHost(host) : isPackagedHttpsHost(host);
+  if (!hostAllowed) {
     throw new Error(
       `Host "${host}" is not in the packaged network allowlist. Use a shipped ` +
         "provider, Azure OpenAI, or a local gateway on localhost / 127.0.0.1.",

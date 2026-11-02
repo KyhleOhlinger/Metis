@@ -1,16 +1,11 @@
 /** CodeMirror editor plugin helpers shared across extension modules. */
 import type { EditorState } from "@codemirror/state";
-import { escapeHtml } from "@/utils/markdownHtml";
 import {
   followVaultHref,
   revealPlatformLabel,
   revealInFinder,
 } from "@/utils/vaultNavigation";
 import { resolveMarkdownImageAbsPath } from "@/utils/vaultImages";
-
-export function escapeHtmlCell(s: string): string {
-  return escapeHtml(s);
-}
 
 /** True when the caret or selection should show raw markdown (not collapsed preview). */
 export function selectionIntersectsRange(

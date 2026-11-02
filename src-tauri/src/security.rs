@@ -1,6 +1,22 @@
 use crate::state::CurrentVault;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+
+/// Vault path string registered for this window, before canonicalization.
+///
+/// SECURITY: Help webview is rejected. Callers that compare a client-supplied
+/// path to the stored string use this. Path checks use [`registered_vault`].
+pub(crate) fn registered_vault_raw(
+    window: &tauri::WebviewWindow,
+    vault_state: &tauri::State<'_, CurrentVault>,
+) -> Result<String, String> {
+    reject_untrusted_webview(window)?;
+    let lock = vault_state.0.lock().unwrap();
+    lock.get(window.label())
+        .cloned()
+        .ok_or_else(|| "No vault registered for this window.".into())
+}
 
 /// Vault registered for this window, canonicalized.
 ///
@@ -10,13 +26,7 @@ pub(crate) fn registered_vault(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
 ) -> Result<PathBuf, String> {
-    reject_untrusted_webview(window)?;
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("No vault registered for this window.")?
-        .clone();
-    drop(lock);
+    let vault_str = registered_vault_raw(window, vault_state)?;
     canon_vault(Path::new(&vault_str))
 }
 
@@ -45,16 +55,75 @@ pub fn write_private_json_file_capped(
     if json.len() > max_bytes {
         return Err("Payload too large.".into());
     }
-    fs::write(path, json.as_bytes()).map_err(|e| format!("Failed to write file: {e}"))?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {e}"))?;
+        }
+    }
+    // SECURITY: create owner-only. chmod afterwards covers a file that already existed.
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|e| format!("Failed to write file: {e}"))?;
+    file.write_all(json.as_bytes())
+        .map_err(|e| format!("Failed to write file: {e}"))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(path)
+        let mut perms = file
+            .metadata()
             .map_err(|e| format!("Failed to set file permissions: {e}"))?
             .permissions();
         perms.set_mode(0o600);
         fs::set_permissions(path, perms)
             .map_err(|e| format!("Failed to set file permissions: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Create `dir` only when every existing ancestor canonicalizes inside `vault`.
+///
+/// SECURITY: `create_dir_all` on a logical path follows a symlink that already
+/// exists (`vault/link` → `/tmp`) and would mkdir outside the vault before a
+/// later `safe_resolve` could reject the file write.
+pub(crate) fn create_dir_all_inside_vault(dir: &Path, vault: &Path) -> Result<(), String> {
+    if dir.as_os_str().is_empty() {
+        return Err("Cannot create directories outside the vault.".into());
+    }
+    let mut missing_names = Vec::new();
+    let mut cursor = dir.to_path_buf();
+    let existing = loop {
+        if cursor.exists() {
+            break cursor;
+        }
+        let name = cursor
+            .file_name()
+            .ok_or_else(|| "Cannot create directories outside the vault.".to_string())?;
+        missing_names.push(name.to_os_string());
+        match cursor.parent() {
+            Some(parent) if parent != cursor.as_path() => cursor = parent.to_path_buf(),
+            _ => return Err("Cannot create directories outside the vault.".into()),
+        }
+    };
+    let mut current = safe_resolve(&existing)?;
+    if !current.starts_with(vault) {
+        return Err("Directory escapes the active vault.".into());
+    }
+    for name in missing_names.into_iter().rev() {
+        let next = current.join(&name);
+        if !next.exists() {
+            fs::create_dir(&next).map_err(|e| format!("Failed to create directories: {e}"))?;
+        }
+        current = safe_resolve(&next)?;
+        if !current.starts_with(vault) {
+            return Err("Directory escapes the active vault.".into());
+        }
     }
     Ok(())
 }

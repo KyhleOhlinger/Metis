@@ -1,4 +1,7 @@
-use crate::security::{canon_vault, normalize_path, safe_resolve, write_private_json_file};
+use crate::security::{
+    canon_vault, normalize_path, registered_vault, registered_vault_raw, reject_untrusted_webview,
+    safe_resolve, write_private_json_file,
+};
 use crate::settings::app_data_dir_for_build;
 use crate::state::{CurrentVault, ExportGrants};
 use crate::vault_fs::{
@@ -84,17 +87,13 @@ pub fn reveal_in_finder(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let target = PathBuf::from(&path);
     if !target.exists() {
         return Err(format!("Path does not exist: {path}"));
     }
     // SECURITY: enforce active-vault containment even for reveal operations.
-    let lock = vault_state.0.lock().unwrap();
-    let active_vault = lock.get(window.label())
-        .ok_or("reveal_in_finder: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let canon_v = canon_vault(&PathBuf::from(active_vault))
+    let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("reveal_in_finder: {e}"))?;
     let resolved = safe_resolve(&target).map_err(|e| format!("reveal_in_finder: {e}"))?;
     if !resolved.starts_with(&canon_v) {
@@ -245,7 +244,8 @@ pub fn open_vault_window(
 /// SECURITY: Only `http://` and `https://` URLs are accepted to prevent abuse
 /// (e.g. `file://`, `javascript:`, or custom-protocol injection).
 #[tauri::command]
-pub fn open_url(url: String) -> Result<(), String> {
+pub fn open_url(url: String, window: tauri::WebviewWindow) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let trimmed = url.trim();
     let lower = trimmed.to_ascii_lowercase();
     let host_start = if lower.starts_with("https://") {
@@ -269,21 +269,19 @@ pub fn set_vault_default_image_dir(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let rel = validate_relative_vault_dir(&relative_dir)?;
 
-    let lock = vault_state.0.lock().unwrap();
-    let trusted = lock
-        .get(window.label())
-        .ok_or("set_vault_default_image_dir: no vault registered for this window.")?
-        .clone();
-    drop(lock);
+    let trusted = registered_vault_raw(&window, &vault_state)
+        .map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
 
     if PathBuf::from(&vault_path) != PathBuf::from(&trusted) {
         return Err("set_vault_default_image_dir: vault path mismatch.".into());
     }
 
     let vault = PathBuf::from(&trusted);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
+    let canon_v = canon_vault(&vault)
+        .map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
     let dir_path = safe_resolve(&canon_v.join(&rel))
         .map_err(|e| format!("set_vault_default_image_dir: {e}"))?;
     if !dir_path.starts_with(&canon_v) {
@@ -312,15 +310,9 @@ pub fn copy_files_to_folder(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<usize, String> {
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("copy_files_to_folder: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("copy_files_to_folder: {e}"))?;
+    reject_untrusted_webview(&window)?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("copy_files_to_folder: {e}"))?;
 
     let dest = PathBuf::from(&dest_dir);
     let dest_resolved = if dest.exists() {

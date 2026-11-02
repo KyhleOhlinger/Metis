@@ -22,6 +22,7 @@ import {
 } from "../utils/providerProfiles";
 import type { LegacyAIProvider } from "../types/persona";
 import { formatError } from "../utils/formatError";
+import { scrubSecretsFromMessage } from "../utils/scrubSecrets";
 import { syncMenuAccelerators } from "../services/menuAcceleratorSync";
 import { toastError } from "./useToastStore";
 
@@ -48,6 +49,41 @@ function settingsWithHosts(settings: Settings): Settings {
     ...settings,
     allowedAiHosts: collectAllowedAiHosts(settings.providerProfiles),
   };
+}
+
+let settingsWrite: Promise<void> = Promise.resolve();
+let personaWrite: Promise<void> = Promise.resolve();
+
+function enqueueSettingsWrite(): Promise<void> {
+  const run = settingsWrite.then(async () => {
+    const settings = settingsWithHosts(usePersonaStore.getState().settings);
+    usePersonaStore.setState({ settings });
+    await invoke("save_settings", { json: JSON.stringify(settings) });
+    await syncMenuAccelerators(settings);
+  });
+  settingsWrite = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run.catch((e) => {
+    console.error("[Metis] Failed to save settings:", scrubSecretsFromMessage(formatError(e)));
+    toastError(`Could not save settings: ${formatError(e)}`);
+  });
+}
+
+function enqueuePersonaWrite(): Promise<void> {
+  const run = personaWrite.then(async () => {
+    const personas = usePersonaStore.getState().personas;
+    await invoke("save_personas", { json: JSON.stringify(personas) });
+  });
+  personaWrite = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run.catch((e) => {
+    console.error("[Metis] Failed to save personas:", scrubSecretsFromMessage(formatError(e)));
+    toastError(`Could not save personas: ${formatError(e)}`);
+  });
 }
 
 interface PersonaState {
@@ -201,7 +237,10 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       void syncMenuAccelerators(settings);
       void get().loadAgentRunLog();
     } catch (e) {
-      console.warn("[Metis] Could not load personas/settings from disk:", e);
+      console.warn(
+        "[Metis] Could not load personas/settings from disk:",
+        scrubSecretsFromMessage(formatError(e)),
+      );
       const settings = settingsWithHosts(migrateSettings({}));
       set({ settings });
       void syncMenuAccelerators(settings);
@@ -210,26 +249,9 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
     }
   },
 
-  savePersonas: async () => {
-    try {
-      await invoke("save_personas", { json: JSON.stringify(get().personas) });
-    } catch (e) {
-      console.error("[Metis] Failed to save personas:", e);
-      toastError(`Could not save personas: ${formatError(e)}`);
-    }
-  },
+  savePersonas: () => enqueuePersonaWrite(),
 
-  saveSettings: async () => {
-    const settings = settingsWithHosts(get().settings);
-    set({ settings });
-    try {
-      await invoke("save_settings", { json: JSON.stringify(settings) });
-      await syncMenuAccelerators(settings);
-    } catch (e) {
-      console.error("[Metis] Failed to save settings:", e);
-      toastError(`Could not save settings: ${formatError(e)}`);
-    }
-  },
+  saveSettings: () => enqueueSettingsWrite(),
 
   setPendingScope: (scope) => set({ pendingScope: scope }),
   setSelectionQuery: (q) => set({ selectionQuery: q }),

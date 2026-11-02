@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CORE_PLUGINS, type CommunityCatalogEntry, type CorePluginId } from "@/plugins/corePlugins";
-import { isCoreEnabled } from "@/plugins/corePlugins";
+import { isCoreEnabledWhenLoaded } from "@/plugins/corePlugins";
 import { usePluginStore } from "@/plugins/usePluginStore";
 import { fetchCommunityCatalog, fetchOfficialPluginFiles } from "@/plugins/communityCatalog";
 import { useStore } from "@/store/useStore";
@@ -47,6 +47,7 @@ function Toggle({
 export function PluginsSettingsSection() {
   const vaultPath = useStore((s) => s.vaultPath);
   const core = usePluginStore((s) => s.core);
+  const pluginsLoaded = usePluginStore((s) => s.loaded);
   const restrictedMode = usePluginStore((s) => s.restrictedMode);
   const enabled = usePluginStore((s) => s.enabled);
   const installed = usePluginStore((s) => s.installed);
@@ -137,7 +138,7 @@ export function PluginsSettingsSection() {
         <p>Built-in Metis features. Turning one off hides its UI in this vault only.</p>
         <ul className="divide-y divide-border overflow-hidden rounded-md border border-border">
           {CORE_PLUGINS.map((plugin) => {
-            const on = isCoreEnabled(core, plugin.id);
+            const on = isCoreEnabledWhenLoaded(pluginsLoaded, core, plugin.id);
             return (
               <li
                 key={plugin.id}
@@ -149,9 +150,11 @@ export function PluginsSettingsSection() {
                 </div>
                 <Toggle
                   on={on}
-                  disabled={plugin.required}
+                  disabled={plugin.required || !pluginsLoaded}
                   title={
-                    plugin.required
+                    !pluginsLoaded
+                      ? "Loading plugins for this vault"
+                      : plugin.required
                       ? "Required for Metis to run"
                       : on
                         ? `Disable ${plugin.name}`
@@ -163,7 +166,7 @@ export function PluginsSettingsSection() {
             );
           })}
         </ul>
-        {isCoreEnabled(core, "supernote") && (
+        {isCoreEnabledWhenLoaded(pluginsLoaded, core, "supernote") && (
           <div className="space-y-2 rounded-md border border-border bg-surface-overlay px-2.5 py-2">
             <p className="text-xs font-medium text-text-primary">Supernote pull</p>
             <p className="text-[10px] leading-snug">

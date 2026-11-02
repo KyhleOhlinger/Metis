@@ -6,6 +6,7 @@ import { loadVaultFiles } from "@/utils/vaultRead";
 // the Task Manager LLM uses to generate a formatted todo.md.
 
 import { buildPlannerUpcomingSection } from "./plannerContext";
+import { todayIsoDate } from "@/utils/localDate";
 
 export async function buildTaskContext(
   noteIndex: import("../store/useStore").NoteMetadata[],
@@ -49,7 +50,7 @@ export async function buildTaskContext(
     0,
   );
   const lines = [
-    `# Open Tasks — ${new Date().toISOString().slice(0, 10)}`,
+    `# Open Tasks — ${todayIsoDate()}`,
     ``,
     `Total: ${totalTasks} open task${totalTasks !== 1 ? "s" : ""} in ${tasksByNote.length} note${tasksByNote.length !== 1 ? "s" : ""}.`,
     `Due dates: ${dueDatedTasks} task${dueDatedTasks !== 1 ? "s" : ""} with optional due metadata (format: (due: YYYY-MM-DD)).`,
@@ -179,7 +180,7 @@ export function buildTodoSyncContent(
     0,
   );
   const open = total - completed;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIsoDate();
   const lines: string[] = [
     "---",
     `date: ${today}`,

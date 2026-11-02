@@ -1,28 +1,13 @@
-use crate::security::{write_private_json_file, write_private_json_file_capped};
+use crate::security::{reject_untrusted_webview, write_private_json_file, write_private_json_file_capped};
+use crate::settings::app_data_dir_for_build;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::Manager;
 
 const MAX_ENTRIES: usize = 1000;
 const MAX_RUN_ID_LEN: usize = 80;
 /// Transcripts include retrieved context + full replies; larger than settings JSON.
 const MAX_TRANSCRIPT_BYTES: usize = 8 * 1024 * 1024;
-
-fn app_data_dir_for_build(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let base = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Cannot resolve app data dir: {e}"))?;
-
-    #[cfg(debug_assertions)]
-    let dir = base.join("dev");
-    #[cfg(not(debug_assertions))]
-    let dir = base;
-
-    fs::create_dir_all(&dir).map_err(|e| format!("Cannot create app data dir: {e}"))?;
-    Ok(dir)
-}
 
 fn log_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir_for_build(app_handle)?.join("agent-run-log.json"))
@@ -66,7 +51,11 @@ fn remove_transcript(dir: &Path, run_id: &str) {
 }
 
 #[tauri::command]
-pub fn load_agent_run_log(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub fn load_agent_run_log(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let path = log_path(&app_handle)?;
     if !path.exists() {
         return Ok("[]".into());
@@ -76,10 +65,12 @@ pub fn load_agent_run_log(app_handle: tauri::AppHandle) -> Result<String, String
 
 #[tauri::command]
 pub fn append_agent_run_log(
+    window: tauri::WebviewWindow,
     app_handle: tauri::AppHandle,
     entry_json: String,
     transcript_json: Option<String>,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let mut entry: Value = serde_json::from_str(&entry_json)
         .map_err(|e| format!("Invalid agent run log entry: {e}"))?;
 
@@ -139,9 +130,11 @@ pub fn append_agent_run_log(
 
 #[tauri::command]
 pub fn load_agent_run_transcript(
+    window: tauri::WebviewWindow,
     app_handle: tauri::AppHandle,
     run_id: String,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     validate_run_id(&run_id)?;
     let dir = transcripts_dir(&app_handle)?;
     let path = transcript_path(&dir, &run_id)?;
@@ -152,7 +145,11 @@ pub fn load_agent_run_transcript(
 }
 
 #[tauri::command]
-pub fn clear_agent_run_log(app_handle: tauri::AppHandle) -> Result<(), String> {
+pub fn clear_agent_run_log(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let path = log_path(&app_handle)?;
     write_private_json_file(&path, "[]")?;
     let dir = app_data_dir_for_build(&app_handle)?.join("agent-run-transcripts");

@@ -19,7 +19,7 @@ import {
   type PlannerPersonaJob,
 } from "@/systemPersonas/plannerContext";
 import { estimateContextEgress } from "@/services/contextBuilder";
-import { confirmEgressBeforeRun } from "@/components/egressConfirm";
+import { confirmEstimatedEgress } from "@/components/egressConfirm";
 import { transcribeHandwritingImage } from "@/services/ocrService";
 import {
   recordAgentRun,
@@ -410,8 +410,8 @@ const handleTaskSync = useCallback(async () => {
       const trigger = plannerJobTrigger(job);
       const runScope = { type: "planner" as const };
 
-      try {
-        const egress = await estimateContextEgress(
+      const gate = await confirmEstimatedEgress(() =>
+        estimateContextEgress(
           runScope,
           trigger,
           activePersona,
@@ -420,10 +420,11 @@ const handleTaskSync = useCallback(async () => {
           null,
           vaultPath,
           false,
-        );
-        if (!(await confirmEgressBeforeRun(egress))) return;
-      } catch {
-        // Proceed; buildPlannerContext will surface load errors.
+        ),
+      );
+      if (!gate.proceed) {
+        if (gate.reason === "error") setError(gate.message);
+        return;
       }
 
       setError("");

@@ -103,6 +103,7 @@ pub fn create_vault(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultData, String> {
+    reject_untrusted_webview(&window)?;
     let name = sanitize_name(&name)?;
     let parent = PathBuf::from(&parent_path);
 

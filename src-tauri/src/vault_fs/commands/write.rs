@@ -1,6 +1,9 @@
 use super::super::meta::{read_vault_meta, validate_relative_vault_dir};
 use super::sanitize::sanitize_name;
-use crate::security::{canon_vault, normalize_path, reject_untrusted_webview, safe_resolve};
+use crate::security::{
+    canon_vault, create_dir_all_inside_vault, normalize_path, registered_vault,
+    reject_untrusted_webview, safe_resolve,
+};
 use crate::state::CurrentVault;
 use crate::types::default_image_dir_str;
 use std::fs;
@@ -26,13 +29,8 @@ pub fn save_note(
     }
 
     // SECURITY: fail-closed — require a registered vault for all FS writes.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock.get(window.label())
-        .ok_or("save_note: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("save_note: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("save_note: {e}"))?;
     let resolved = safe_resolve(&target).map_err(|e| format!("save_note: {e}"))?;
     if !resolved.starts_with(&canon_v) {
         return Err("save_note: path is outside the active vault.".into());
@@ -76,14 +74,8 @@ pub fn agent_write_note(
     if rel_path.contains("..") {
         return Err("agent_write_note: path must not contain '..'.".into());
     }
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("agent_write_note: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("agent_write_note: {e}"))?;
 
     let raw = PathBuf::from(&rel_path);
     let joined = if raw.is_absolute() { raw } else { canon_v.join(&raw) };
@@ -98,10 +90,8 @@ pub fn agent_write_note(
         return Err("Path is outside the active vault.".into());
     }
 
-    // Create parent directories within the vault (idempotent, safe)
     if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("Failed to create directories: {e}"))?;
+        create_dir_all_inside_vault(parent, &canon_v)?;
     }
 
     // SECURITY: resolve after directory creation so symlinked parents cannot
@@ -137,26 +127,18 @@ pub fn save_asset(
 
     reject_untrusted_webview(&window)?;
     // SECURITY: fail-closed — require a registered vault and verify it matches.
-    let trusted_vault_path = {
-        let lock = vault_state.0.lock().unwrap();
-        lock.get(window.label()).cloned()
-    }.ok_or("save_asset: no vault registered for this window.")?;
-
-    let requested_vault = PathBuf::from(&vault_path);
-    let trusted_vault = PathBuf::from(&trusted_vault_path);
-    let canon_requested = canon_vault(&requested_vault)
+    let canon_trusted = registered_vault(&window, &vault_state)
         .map_err(|e| format!("save_asset: {e}"))?;
-    let canon_trusted = canon_vault(&trusted_vault)
+    let canon_requested = canon_vault(&PathBuf::from(&vault_path))
         .map_err(|e| format!("save_asset: {e}"))?;
     if canon_requested != canon_trusted {
         return Err("save_asset: vault path does not match the active vault.".into());
     }
 
-    let vault = PathBuf::from(&trusted_vault_path);
-    if !vault.is_dir() {
+    if !canon_trusted.is_dir() {
         return Err(format!("Invalid vault path: {vault_path}"));
     }
-    let canon_v = canon_vault(&vault).map_err(|e| format!("save_asset: {e}"))?;
+    let canon_v = canon_trusted;
 
     // Sanitise the filename and validate image extension
     let name = sanitize_name(&filename)?;
@@ -188,14 +170,14 @@ pub fn save_asset(
 
     let subdir = match image_subdir {
         Some(s) => validate_relative_vault_dir(&s)?,
-        None => read_vault_meta(&vault)
+        None => read_vault_meta(&canon_v)
             .map(|m| m.default_image_dir)
             .unwrap_or_else(|_| default_image_dir_str()),
     };
 
     let target_dir = canon_v.join(&subdir);
     if !target_dir.exists() {
-        fs::create_dir_all(&target_dir)
+        create_dir_all_inside_vault(&target_dir, &canon_v)
             .map_err(|e| format!("Failed to create image folder '{subdir}': {e}"))?;
     }
     let resolved_dir = safe_resolve(&target_dir).map_err(|e| format!("save_asset: {e}"))?;

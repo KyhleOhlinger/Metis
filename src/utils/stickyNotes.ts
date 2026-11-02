@@ -4,6 +4,7 @@ import { usePersonaStore } from "@/store/usePersonaStore";
 import { DEFAULT_SETTINGS } from "@/types/persona";
 import { sanitizeMarkdownHtml, escapeHtml } from "./markdownHtml";
 import { parseMarkedWithHighlight } from "./markedHighlight";
+import { linkifyWikilinksWithOffsets } from "./previewSourceOffsets";
 
 /** Drag-and-drop MIME for toolbar → editor sticky insertion. */
 export const METIS_STICKY_MIME = "application/x-metis-sticky";
@@ -370,18 +371,24 @@ export function buildStickyWithWrapMarkdown(
 }
 
 /** Render markdown beside a floated sticky (Visual / collapsed Source preview). */
-export function parseStickyAdjacentMarkdown(md: string): string {
+export function parseStickyAdjacentMarkdown(md: string, sourceBase?: number): string {
   if (!md) return "";
-  const raw = parseMarkedWithHighlight(md, { gfm: true, breaks: true });
-  return sanitizeMarkdownHtml(raw, { taskLists: true });
+  const linked =
+    sourceBase === undefined ? md : linkifyWikilinksWithOffsets(md, sourceBase);
+  const raw = parseMarkedWithHighlight(linked, { gfm: true, breaks: true });
+  return sanitizeMarkdownHtml(raw, { taskLists: true, previewAttrs: true });
 }
 
 /** Render sticky body markdown to sanitized HTML. */
-export function stickyBodyToHtml(body: string): string {
+export function stickyBodyToHtml(body: string, sourceBase?: number): string {
   const normalized = normalizeFenceBody(body);
   if (!normalized.trim()) return "";
-  const raw = parseMarkedWithHighlight(normalized, { gfm: true, breaks: true });
-  const html = sanitizeMarkdownHtml(raw, { taskLists: true });
+  const linked =
+    sourceBase === undefined
+      ? normalized
+      : linkifyWikilinksWithOffsets(normalized, sourceBase);
+  const raw = parseMarkedWithHighlight(linked, { gfm: true, breaks: true });
+  const html = sanitizeMarkdownHtml(raw, { taskLists: true, previewAttrs: true });
   return html.replace(/(?:\s*<p>(?:\s|&nbsp;|<br\s*\/?>)*<\/p>)+\s*$/gi, "");
 }
 
@@ -390,8 +397,9 @@ export function buildStickyPreviewHtml(
   attrs: StickyAttrs,
   body: string,
   stickyIdx?: number,
+  sourceBase?: number,
 ): string {
-  const inner = stickyBodyToHtml(body);
+  const inner = stickyBodyToHtml(body, sourceBase);
   const floatMod =
     attrs.float === "none" ? " metis-sticky--nofloat" : ` metis-sticky--${attrs.float}`;
   const width = escapeHtml(attrs.width);
@@ -410,11 +418,13 @@ export function buildStickyBlockPreviewHtml(
   body: string,
   wrapMarkdown?: string,
   stickyIdx?: number,
+  bodySourceBase?: number,
+  wrapSourceBase?: number,
 ): string {
-  const parts = [buildStickyPreviewHtml(attrs, body, stickyIdx)];
+  const parts = [buildStickyPreviewHtml(attrs, body, stickyIdx, bodySourceBase)];
   const wrap = wrapMarkdown ? normalizeFenceBody(wrapMarkdown) : undefined;
   if (wrap?.trim()) {
-    const inner = parseStickyAdjacentMarkdown(wrap);
+    const inner = parseStickyAdjacentMarkdown(wrap, wrapSourceBase);
     const idxAttr =
       stickyIdx !== undefined ? ` data-metis-sticky-idx="${stickyIdx}"` : "";
     if (stickyCanFloatBeside(attrs)) {
@@ -462,8 +472,19 @@ export function preprocessStickyBlocksForPreview(markdown: string): string {
       afterIdx = wrapParsed.closeIdx + 1;
     }
 
+    const bodyBase = lineCharRange(lines, lineNo + 1).from;
+    const wrapBase = wrapParsed
+      ? lineCharRange(lines, wrapParsed.startIdx + 1).from
+      : undefined;
     chunks.push(
-      buildStickyBlockPreviewHtml(attrs, stickyParsed.body, wrapMarkdown, stickyIdx),
+      buildStickyBlockPreviewHtml(
+        attrs,
+        stickyParsed.body,
+        wrapMarkdown,
+        stickyIdx,
+        bodyBase,
+        wrapBase,
+      ),
     );
     stickyIdx += 1;
     lineNo = afterIdx;

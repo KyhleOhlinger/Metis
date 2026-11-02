@@ -1,4 +1,4 @@
-use crate::security::{canon_vault, safe_resolve};
+use crate::security::{registered_vault, reject_untrusted_webview, safe_resolve};
 use crate::state::{CurrentVault, WatcherState};
 use std::path::PathBuf;
 use notify::{RecursiveMode, Watcher};
@@ -18,19 +18,14 @@ pub fn set_vault_watch(
     state: tauri::State<'_, WatcherState>,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     let root = PathBuf::from(&path);
     if !root.is_dir() {
         return Err(format!("Not a directory: {path}"));
     }
     // SECURITY: only allow watching the vault currently registered for this
     // window so arbitrary directories cannot be watched via IPC.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("set_vault_watch: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let canon_v = canon_vault(&PathBuf::from(vault_str))
+    let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("set_vault_watch: {e}"))?;
     let root_resolved = safe_resolve(&root).map_err(|e| format!("set_vault_watch: {e}"))?;
     if root_resolved != canon_v {

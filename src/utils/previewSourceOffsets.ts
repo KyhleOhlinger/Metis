@@ -1,5 +1,8 @@
 /** Source offsets for Visual preview → Source navigation and in-place edits. */
 
+import { escapeHtml } from "./markdownHtml";
+import { normalizeWikilinkTarget } from "./vaultNavigation";
+
 const TASK_LINE_RE = /^([ \t]*(?:[-*+]|\d+\.)\s+)\[([ xX])\]/;
 const MD_LINK_RE = /\[([^\]\n]+)\]\(([^)\n]+)\)/g;
 const WIKILINK_RE = /\[\[([^\]]+)\]\]/g;
@@ -36,6 +39,29 @@ export function findMarkdownLinkSpans(content: string): SourceSpan[] {
     spans.push({ from: m.index, to: m.index + m[0].length });
   }
   return spans;
+}
+
+/**
+ * Replace `[[wikilinks]]` with anchors whose offsets are absolute in the note.
+ * `baseOffset` is the source index of `body[0]`. Image embeds `![[...]]` stay put.
+ */
+export function linkifyWikilinksWithOffsets(body: string, baseOffset: number): string {
+  return body.replace(/\[\[([^\]]+)\]\]/g, (full, name: string, index: number) => {
+    if (index > 0 && body[index - 1] === "!") return full;
+    const trimmed = name.trim();
+    const target = normalizeWikilinkTarget(trimmed);
+    const display = trimmed.includes("|")
+      ? trimmed.slice(trimmed.indexOf("|") + 1).trim()
+      : target;
+    const from = baseOffset + index;
+    const to = from + full.length;
+    const encoded = encodeURIComponent(target);
+    return (
+      `<a href="#" data-metis-wikilink="${encoded}" ` +
+      `data-metis-source-offset="${from}" data-metis-source-end="${to}">` +
+      `${escapeHtml(display)}</a>`
+    );
+  });
 }
 
 /** Wikilink spans (excludes image wikilinks `![[...]]`). */

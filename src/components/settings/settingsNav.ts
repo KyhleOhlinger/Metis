@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { SettingsSectionId } from "@/types/persona";
-import { isCoreEnabled, type CorePluginId } from "@/plugins/corePlugins";
+import { isCoreEnabledWhenLoaded, type CorePluginId } from "@/plugins/corePlugins";
 import { usePluginStore } from "@/plugins/usePluginStore";
 
 export const SETTINGS_NAV: {
@@ -24,8 +24,12 @@ export const SETTINGS_NAV: {
 /** Settings rows whose core plugin is off are omitted. */
 export function useVisibleSettingsNav() {
   const core = usePluginStore((s) => s.core);
+  const loaded = usePluginStore((s) => s.loaded);
   return useMemo(
-    () => SETTINGS_NAV.filter((item) => !item.plugin || isCoreEnabled(core, item.plugin)),
-    [core],
+    () =>
+      SETTINGS_NAV.filter(
+        (item) => !item.plugin || isCoreEnabledWhenLoaded(loaded, core, item.plugin),
+      ),
+    [core, loaded],
   );
 }

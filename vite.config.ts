@@ -31,6 +31,17 @@ export default defineConfig({
     // strict for a desktop shell that loads from disk, not over HTTP.
     chunkSizeWarningLimit: 1100,
     rollupOptions: {
+      // Zod 4.6 explains its tree-shaking with the words `@__PURE__` inside
+      // ordinary comments. Rollup treats that text as a misplaced annotation
+      // and prints a warning while still dropping the comment. The real
+      // `/*@__PURE__*/` markers in those files stay in place.
+      onwarn(warning, warn) {
+        const id = typeof warning.id === "string" ? warning.id : "";
+        if (warning.code === "INVALID_ANNOTATION" && id.includes("node_modules/zod/")) {
+          return;
+        }
+        warn(warning);
+      },
       output: {
         /**
          * Split heavy vendors so no single chunk trips Rollup's 500 kB warning.

@@ -1,4 +1,4 @@
-use crate::security::canon_vault;
+use crate::security::{registered_vault, reject_untrusted_webview};
 use crate::state::CurrentVault;
 use crate::types::{ReplaceSummary, SearchMatch};
 use std::fs;
@@ -22,24 +22,20 @@ pub fn search_vault(
 ) -> Result<Vec<SearchMatch>, String> {
     use regex::RegexBuilder;
 
+    reject_untrusted_webview(&window)?;
     if query.is_empty() {
         return Ok(Vec::new());
     }
 
-    // SECURITY: limit regex pattern length to mitigate ReDoS from complex patterns.
-    const MAX_PATTERN_LEN: usize = 1000;
-    if regex_mode && query.len() > MAX_PATTERN_LEN {
-        return Err(format!("Regex pattern is too long (max {MAX_PATTERN_LEN} characters)."));
+    // SECURITY: cap every query. Literal mode still compiles a regex, so a huge
+    // pasted string is the same cost as a long pattern.
+    const MAX_QUERY_LEN: usize = 1000;
+    if query.len() > MAX_QUERY_LEN {
+        return Err(format!("Search query is too long (max {MAX_QUERY_LEN} characters)."));
     }
 
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("search_in_vault: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("search_in_vault: {e}"))?;
 
     let re = if regex_mode {
         RegexBuilder::new(&query)
@@ -51,6 +47,7 @@ pub fn search_vault(
         let escaped = regex::escape(&query);
         RegexBuilder::new(&escaped)
             .case_insensitive(!case_sensitive)
+            .size_limit(1 << 20)
             .build()
             .map_err(|e| format!("Search error: {e}"))?
     };
@@ -125,24 +122,21 @@ pub fn replace_in_vault(
 ) -> Result<Vec<ReplaceSummary>, String> {
     use regex::RegexBuilder;
 
+    reject_untrusted_webview(&window)?;
     if query.is_empty() {
         return Ok(Vec::new());
     }
 
-    // SECURITY: limit regex pattern length to mitigate ReDoS.
-    const MAX_PATTERN_LEN: usize = 1000;
-    if regex_mode && query.len() > MAX_PATTERN_LEN {
-        return Err(format!("Regex pattern is too long (max {MAX_PATTERN_LEN} characters)."));
+    const MAX_QUERY_LEN: usize = 1000;
+    if query.len() > MAX_QUERY_LEN {
+        return Err(format!("Replace query is too long (max {MAX_QUERY_LEN} characters)."));
+    }
+    if replacement.len() > MAX_QUERY_LEN * 4 {
+        return Err("Replacement text is too long.".into());
     }
 
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("replace_in_vault: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("replace_in_vault: {e}"))?;
 
     let re = if regex_mode {
         RegexBuilder::new(&query)
@@ -154,6 +148,7 @@ pub fn replace_in_vault(
         let escaped = regex::escape(&query);
         RegexBuilder::new(&escaped)
             .case_insensitive(!case_sensitive)
+            .size_limit(1 << 20)
             .build()
             .map_err(|e| format!("Replace error: {e}"))?
     };

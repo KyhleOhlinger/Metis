@@ -1,9 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
+import { saveNoteNow } from "@/hooks/noteAutosave";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { toastError } from "@/store/useToastStore";
-import { formatError } from "@/utils/formatError";
 import { eventMatchesChord } from "@/utils/keyChord";
 import { openAgentRunLog } from "@/utils/openAgentRunLog";
 import { getChordsForCommand } from "@/services/keybindingRuntime";
@@ -55,11 +53,9 @@ function runAppCommand(id: KeybindingCommandId, opts: Options, event: KeyboardEv
     case "save": {
       const active = document.activeElement;
       if (active?.closest(".cm-editor")) return;
-      const { activeFilePath, activeFileContent, markSaved } = store;
+      const { activeFilePath, activeFileContent } = store;
       if (!activeFilePath) break;
-      invoke("save_note", { path: activeFilePath, content: activeFileContent })
-        .then(() => markSaved())
-        .catch((err) => toastError(`Save failed: ${formatError(err)}`));
+      void saveNoteNow(activeFilePath, activeFileContent);
       break;
     }
     case "daily-note":

@@ -11,6 +11,7 @@
  */
 
 import { usePersonaStore } from "@/store/usePersonaStore";
+import { todayIsoDate } from "@/utils/localDate";
 import { flushPlannerSaves, loadPlannerFileMap } from "@/planner/plannerPersistence";
 import {
   exportPlannerMonthMarkdown,
@@ -340,7 +341,7 @@ export async function buildPlannerContext(
     `# Active planner`,
     ``,
     `- Storage: ${modeLabel()}`,
-    `- Generated: ${new Date().toISOString().slice(0, 10)}`,
+    `- Generated: ${todayIsoDate()}`,
     `- Sections: all planner tabs` +
       (excludedLabels ? ` except ${excludedLabels} (Settings → Planner)` : " (no Settings exclusions)"),
     ``,

@@ -133,9 +133,22 @@ async function flushDirtyFiles(): Promise<void> {
   try {
     await invoke("planner_save_files", { vaultPath, files });
     for (const fileKey of filesToSave) {
-      if (files[fileKey] != null) dirtyFiles.delete(fileKey);
+      if (files[fileKey] != null && cache.get(fileKey) === files[fileKey]) {
+        dirtyFiles.delete(fileKey);
+      }
     }
-    setPlannerSyncStatus("saved");
+    if (dirtyFiles.size > 0 && activeVaultPath === vaultPath && !flushTimer) {
+      setPlannerSyncStatus("pending");
+      flushTimer = setTimeout(() => {
+        void enqueueFlush(() =>
+          flushDirtyFiles().catch((err) => {
+            console.error("[planner] batch save failed", err);
+          }),
+        );
+      }, 0);
+    } else if (dirtyFiles.size === 0) {
+      setPlannerSyncStatus("saved");
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setPlannerSyncStatus("error", message);

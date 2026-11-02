@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import {
   REQUIRED_CORE_PLUGIN_IDS,
-  isCoreEnabled,
+  isCoreEnabledWhenLoaded,
   type CorePluginId,
   type VaultPluginStateDto,
 } from "./corePlugins";
@@ -44,59 +44,89 @@ function applyDto(set: (p: Partial<PluginStore>) => void, state: VaultPluginStat
   });
 }
 
+/** Drops a plugin IPC result that finishes after a newer load or vault switch. */
+let pluginEpoch = 0;
+
+function nextPluginEpoch(): number {
+  pluginEpoch += 1;
+  return pluginEpoch;
+}
+
+function pluginEpochCurrent(epoch: number): boolean {
+  return epoch === pluginEpoch;
+}
+
 export const usePluginStore = create<PluginStore>((set) => ({
   ...empty,
   loaded: false,
   apply: (state) => applyDto(set, state),
-  reset: () => set({ ...empty, loaded: false }),
+  reset: () => {
+    nextPluginEpoch();
+    set({ ...empty, loaded: false });
+  },
   loadForVault: async () => {
+    const epoch = nextPluginEpoch();
     try {
       const state = await invoke<VaultPluginStateDto>("load_vault_plugins");
+      if (!pluginEpochCurrent(epoch)) return;
       applyDto(set, state);
     } catch (err) {
+      if (!pluginEpochCurrent(epoch)) return;
       toastError(`Could not load plugins: ${formatError(err)}`);
       set({ ...empty, loaded: true });
     }
   },
   setCoreEnabled: async (id, enabled) => {
     if (REQUIRED_CORE_PLUGIN_IDS.has(id) && !enabled) return;
+    const epoch = nextPluginEpoch();
     try {
       const state = await invoke<VaultPluginStateDto>("set_core_plugin_enabled", { id, enabled });
+      if (!pluginEpochCurrent(epoch)) return;
       applyDto(set, state);
     } catch (err) {
       toastError(`Could not update plugin: ${formatError(err)}`);
     }
   },
   setRestrictedMode: async (restricted) => {
+    const epoch = nextPluginEpoch();
     try {
       const state = await invoke<VaultPluginStateDto>("set_plugin_restricted_mode", { restricted });
+      if (!pluginEpochCurrent(epoch)) return;
       applyDto(set, state);
     } catch (err) {
       toastError(`Could not update Restricted Mode: ${formatError(err)}`);
     }
   },
   setCommunityEnabled: async (id, enabled) => {
+    const epoch = nextPluginEpoch();
     try {
       const state = await invoke<VaultPluginStateDto>("set_community_plugin_enabled", { id, enabled });
+      if (!pluginEpochCurrent(epoch)) return;
       applyDto(set, state);
     } catch (err) {
       toastError(`Could not update community plugin: ${formatError(err)}`);
     }
   },
   installFromFolder: async (sourcePath) => {
+    const epoch = nextPluginEpoch();
     const state = await invoke<VaultPluginStateDto>("install_plugin_from_folder", { sourcePath });
+    if (!pluginEpochCurrent(epoch)) return;
     applyDto(set, state);
   },
   installFiles: async (manifestJson, stylesCss) => {
+    const epoch = nextPluginEpoch();
     const state = await invoke<VaultPluginStateDto>("install_community_plugin_files", {
       manifestJson,
       stylesCss: stylesCss ?? null,
     });
+    if (!pluginEpochCurrent(epoch)) return;
     applyDto(set, state);
   },
   uninstall: async (id) => {
+    const epoch = nextPluginEpoch();
     try {
       const state = await invoke<VaultPluginStateDto>("uninstall_community_plugin", { id });
+      if (!pluginEpochCurrent(epoch)) return;
       applyDto(set, state);
     } catch (err) {
       toastError(`Could not uninstall plugin: ${formatError(err)}`);
@@ -104,14 +134,14 @@ export const usePluginStore = create<PluginStore>((set) => ({
   },
 }));
 
-/** Snapshot: missing core keys default to enabled (existing vaults keep all features). */
+/** Snapshot: missing core keys default to enabled once the vault file has loaded. */
 export function isCorePluginEnabled(id: CorePluginId): boolean {
-  const { core } = usePluginStore.getState();
-  return isCoreEnabled(core, id);
+  const { core, loaded } = usePluginStore.getState();
+  return isCoreEnabledWhenLoaded(loaded, core, id);
 }
 
 export function useCorePluginEnabled(id: CorePluginId): boolean {
-  return usePluginStore((s) => isCoreEnabled(s.core, id));
+  return usePluginStore((s) => isCoreEnabledWhenLoaded(s.loaded, s.core, id));
 }
 
 export function isSystemPersonaAllowed(personaId: string): boolean {

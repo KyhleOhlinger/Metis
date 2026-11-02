@@ -1,4 +1,5 @@
 import type { FileNode } from "../store/useStore";
+import { todayIsoDate } from "./localDate";
 import { HANDWRITTEN_SPACE } from "../constants/vaultSpaces";
 import { isVaultImageFile } from "./vaultImages";
 
@@ -95,7 +96,7 @@ export function buildHandwritingNoteMarkdown(
   imageFileName: string,
   transcription: string,
 ): string {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIsoDate();
   const embedName = imageFileName.includes("/")
     ? imageFileName.split("/").pop()!
     : imageFileName;

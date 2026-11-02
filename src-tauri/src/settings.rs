@@ -1,4 +1,4 @@
-use crate::security::write_private_json_file;
+use crate::security::{reject_untrusted_webview, write_private_json_file};
 use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
@@ -48,8 +48,11 @@ pub fn get_app_version() -> String {
 }
 
 #[tauri::command]
-pub fn load_personas(app_handle: tauri::AppHandle) -> Result<String, String> {
-    // Personas are loaded from the main app webview only (not help).
+pub fn load_personas(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let path = app_data_file(&app_handle, "personas.json")?;
     if !path.exists() {
         return Ok("[]".into());
@@ -58,7 +61,12 @@ pub fn load_personas(app_handle: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn save_personas(app_handle: tauri::AppHandle, json: String) -> Result<(), String> {
+pub fn save_personas(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    json: String,
+) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     serde_json::from_str::<serde_json::Value>(&json)
         .map_err(|e| format!("Invalid personas JSON: {e}"))?;
     let path = app_data_file(&app_handle, "personas.json")?;
@@ -66,7 +74,11 @@ pub fn save_personas(app_handle: tauri::AppHandle, json: String) -> Result<(), S
 }
 
 #[tauri::command]
-pub fn load_settings(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub fn load_settings(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let path = app_data_file(&app_handle, "settings.json")?;
     if !path.exists() {
         return Ok("{}".into());
@@ -75,7 +87,12 @@ pub fn load_settings(app_handle: tauri::AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn save_settings(app_handle: tauri::AppHandle, json: String) -> Result<(), String> {
+pub fn save_settings(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    json: String,
+) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     serde_json::from_str::<serde_json::Value>(&json)
         .map_err(|e| format!("Invalid settings JSON: {e}"))?;
     let path = app_data_file(&app_handle, "settings.json")?;

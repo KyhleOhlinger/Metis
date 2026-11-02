@@ -23,7 +23,8 @@ import {
 import { z } from "zod";
 import type { AiProviderProfile, Persona } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
-import { assertSafeProviderUrl } from "../utils/providerUrlSafety";
+import { assertSafeAiProviderUrl } from "../utils/providerUrlSafety";
+import { scrubSecretsFromMessage } from "../utils/scrubSecrets";
 import { resolveLanguageModel } from "./providerRegistry";
 import { isTauriWebview, metisFetchForProfile, resolveProviderBaseUrl } from "./metisFetch";
 
@@ -157,7 +158,7 @@ export function streamResponse(
   userMessage: string,
   profile: AiProviderProfile,
   callbacks: StreamCallbacks,
-  tools: ToolSet | undefined = agentFileTools,
+  tools?: ToolSet,
   images: AgentVisionImagePart[] = [],
 ): AbortController {
   const controller = new AbortController();
@@ -190,7 +191,7 @@ export function streamResponse(
             }
           : { prompt: userPayload }),
         tools: tools && Object.keys(tools).length > 0 ? tools : undefined,
-        toolChoice: tools ? "auto" : undefined,
+        toolChoice: tools && Object.keys(tools).length > 0 ? "auto" : undefined,
         abortSignal: controller.signal,
         onError: onStreamError,
       });
@@ -281,29 +282,18 @@ export async function generateVisionCompletion(
 
 // ── Errors ────────────────────────────────────────────────────────────────────
 
-export function scrubSecretsFromMessage(raw: string): string {
-  return scrubKey(raw);
-}
-
-function scrubKey(raw: string): string {
-  return raw
-    .replace(/sk-[A-Za-z0-9_-]{8,}/g, "sk-***")
-    .replace(/gsk_[A-Za-z0-9]{16,}/g, "gsk_***")
-    .replace(/AIzaSy[A-Za-z0-9_-]{20,}/g, "AIzaSy***")
-    .replace(/pplx-[A-Za-z0-9]{16,}/g, "pplx-***")
-    .replace(/sk-ant-[A-Za-z0-9_-]{8,}/g, "sk-ant-***");
-}
+export { scrubSecretsFromMessage };
 
 export function describeLlmError(err: unknown, streamError?: unknown): string {
   if (NoOutputGeneratedError.isInstance(err) && streamError) {
     const underlying = describeLlmError(streamError);
-    if (underlying !== scrubKey(String(streamError))) {
+    if (underlying !== scrubSecretsFromMessage(String(streamError))) {
       return underlying;
     }
   }
   if (NoOutputGeneratedError.isInstance(err) && err.cause instanceof Error) {
     const fromCause = describeLlmError(err.cause);
-    if (fromCause !== scrubKey(err.cause.message)) {
+    if (fromCause !== scrubSecretsFromMessage(err.cause.message)) {
       return fromCause;
     }
   }
@@ -314,7 +304,7 @@ export function describeLlmError(err: unknown, streamError?: unknown): string {
       return "Invalid API key — double-check the key is correct and hasn't been revoked.";
     }
     if (status === 400) {
-      const hint = scrubKey(err.message).trim();
+      const hint = scrubSecretsFromMessage(err.message).trim();
       return hint.length > 0
         ? `Bad request (400): ${hint}`
         : "Bad request (400) — check the model name and Base URL path (usually /v1 for OpenAI-compatible APIs).";
@@ -324,14 +314,14 @@ export function describeLlmError(err: unknown, streamError?: unknown): string {
       return "Endpoint not found (404) — the Base URL may be wrong (e.g. missing /v1).";
     }
     if (status === 429) {
-      const rawDetail = scrubKey(err.message).trim();
+      const rawDetail = scrubSecretsFromMessage(err.message).trim();
       return rawDetail
         ? `Rate limit or quota (429): ${rawDetail}`
         : "Rate limit (429) — the provider is throttling requests.";
     }
     if (status === 500) return "Provider internal server error (500).";
     if (status === 503) return "Service unavailable (503).";
-    if (status) return `HTTP ${status}: ${scrubKey(err.message)}`;
+    if (status) return `HTTP ${status}: ${scrubSecretsFromMessage(err.message)}`;
     return classifyNetworkError(err.message);
   }
 
@@ -357,7 +347,7 @@ function classifyNetworkError(raw: string): string {
     return "CORS error — run via `tauri dev` / the desktop app, not browser-only Vite, for custom URLs.";
   }
   if (lower.includes("does not match provider")) return raw;
-  return scrubKey(raw);
+  return scrubSecretsFromMessage(raw);
 }
 
 // ── Model listing ─────────────────────────────────────────────────────────────
@@ -509,7 +499,7 @@ export async function testProviderConnection(
     return { ok: false, error: "Base URL is required." };
   }
   try {
-    assertSafeProviderUrl(profile.baseUrl);
+    assertSafeAiProviderUrl(profile.baseUrl);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

@@ -179,13 +179,62 @@ fn secs_to_date_string(secs: u64) -> String {
     format!("{y:04}-{m:02}-{d:02}")
 }
 
+/// Calendar date for a Unix instant in the system local timezone.
+///
+/// `secs_to_date_string` is UTC. Conversion frontmatter should use the local
+/// day, including around midnight.
+fn local_date_string(secs: u64) -> String {
+    #[cfg(unix)]
+    {
+        if let Some(local) = unix_local_date(secs) {
+            return local;
+        }
+    }
+    secs_to_date_string(secs)
+}
+
+#[cfg(unix)]
+fn unix_local_date(secs: u64) -> Option<String> {
+    #[repr(C)]
+    struct Tm {
+        tm_sec: i32,
+        tm_min: i32,
+        tm_hour: i32,
+        tm_mday: i32,
+        tm_mon: i32,
+        tm_year: i32,
+        tm_wday: i32,
+        tm_yday: i32,
+        tm_isdst: i32,
+        tm_gmtoff: i64,
+        tm_zone: *const i8,
+    }
+    extern "C" {
+        fn localtime_r(clock: *const i64, result: *mut Tm) -> *mut Tm;
+    }
+    let clock = i64::try_from(secs).ok()?;
+    unsafe {
+        let mut tm = std::mem::zeroed::<Tm>();
+        if localtime_r(&clock, &mut tm).is_null() {
+            return None;
+        }
+        let year = tm.tm_year.checked_add(1900)?;
+        let month = tm.tm_mon.checked_add(1)?;
+        let day = tm.tm_mday;
+        if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+            return None;
+        }
+        Some(format!("{year:04}-{month:02}-{day:02}"))
+    }
+}
+
 /// Returns today's date as "YYYY-MM-DD" using the system local clock.
 fn today_date_string() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    secs_to_date_string(secs)
+    local_date_string(secs)
 }
 
 /// Extract the value of a YAML frontmatter key from `content`, if present.
@@ -232,7 +281,7 @@ pub(crate) fn enrich_frontmatter(content: &str, file_path: &Path, vault_root: &P
         .ok()
         .and_then(|m| m.created().ok())
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| secs_to_date_string(d.as_secs()))
+        .map(|d| local_date_string(d.as_secs()))
         .unwrap_or_else(today_date_string);
 
     let has_fm = content.trim_start().starts_with("---");

@@ -3,6 +3,7 @@ import { usePersonaStore } from "../../store/usePersonaStore";
 import { clearAgentRunLogOnDisk } from "../../services/agentRunLogService";
 import { contextEgressLabel } from "../../services/contextBuilder";
 import { saveTextViaDialog } from "../../utils/saveDialogExport";
+import { todayIsoDate } from "../../utils/localDate";
 import {
   AGENT_TYPE_LABELS,
   type AgentRunLogEntry,
@@ -282,7 +283,7 @@ export default function AgentRunHistoryPage() {
       toastError("No runs to export for the current filters.");
       return;
     }
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = todayIsoDate();
     const defaultName = `metis-agent-runs-${stamp}`;
     try {
       const content =
