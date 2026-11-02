@@ -1,7 +1,11 @@
 import { useState, useEffect } from "react";
 import type { AiProviderProfile } from "@/types/persona";
 import { testProviderConnection } from "@/services/llmService";
-import { assertSafeAiProviderUrl } from "@/utils/providerUrlSafety";
+import {
+  assertSafeAiProviderUrl,
+  assertSafeCustomGatewayUrl,
+} from "@/utils/providerUrlSafety";
+import { providerKindForProfile } from "@/utils/providerProfiles";
 
 export type TestStatus =
   | { phase: "idle" }
@@ -70,7 +74,12 @@ export function ProviderProfilesSection({
 
   function commit(): AiProviderProfile | null {
     try {
-      assertSafeAiProviderUrl(baseUrl.trim());
+      const kind = providerKindForProfile({
+        ...profile,
+        providerKind: profile.providerKind ?? "openai-compatible",
+      });
+      if (kind === "openai-compatible") assertSafeCustomGatewayUrl(baseUrl.trim());
+      else assertSafeAiProviderUrl(baseUrl.trim());
     } catch (e) {
       setTestStatus({
         phase: "error",

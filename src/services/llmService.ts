@@ -23,7 +23,10 @@ import {
 import { z } from "zod";
 import type { AiProviderProfile, Persona } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
-import { assertSafeAiProviderUrl } from "../utils/providerUrlSafety";
+import {
+  assertSafeAiProviderUrl,
+  assertSafeCustomGatewayUrl,
+} from "../utils/providerUrlSafety";
 import { scrubSecretsFromMessage } from "../utils/scrubSecrets";
 import { resolveLanguageModel } from "./providerRegistry";
 import { isTauriWebview, metisFetchForProfile, resolveProviderBaseUrl } from "./metisFetch";
@@ -301,7 +304,15 @@ export function describeLlmError(err: unknown, streamError?: unknown): string {
   if (APICallError.isInstance(err)) {
     const status = err.statusCode;
     if (status === 401) {
-      return "Invalid API key — double-check the key is correct and hasn't been revoked.";
+      const hint = scrubSecretsFromMessage(
+        (typeof err.responseBody === "string" && err.responseBody.trim()) || err.message,
+      )
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 300);
+      return hint.length > 0
+        ? `Unauthorized (401): ${hint}`
+        : "Unauthorized (401). The gateway rejected this API key.";
     }
     if (status === 400) {
       const hint = scrubSecretsFromMessage(err.message).trim();
@@ -432,11 +443,16 @@ async function listGoogleModels(profile: AiProviderProfile): Promise<string[]> {
 async function listOpenAiCompatModels(profile: AiProviderProfile): Promise<string[]> {
   const base = resolveProviderBaseUrl(profile).replace(/\/+$/, "");
   const fetch = metisFetchForProfile(profile);
-  const res = await fetch(`${base}/models`, {
-    headers: { Authorization: `Bearer ${profile.apiKey}` },
-  });
+  const headers: Record<string, string> = {};
+  const key = profile.apiKey.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+  const res = await fetch(`${base}/models`, { headers });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    const detail = scrubSecretsFromMessage(await res.text())
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300);
+    throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`);
   }
   const body = (await res.json()) as { data?: { id?: string }[] };
   return filterChatModels((body.data ?? []).map((m) => m.id ?? "").filter(Boolean)).sort();
@@ -499,7 +515,11 @@ export async function testProviderConnection(
     return { ok: false, error: "Base URL is required." };
   }
   try {
-    assertSafeAiProviderUrl(profile.baseUrl);
+    if (providerKindForProfile(profile) === "openai-compatible") {
+      assertSafeCustomGatewayUrl(profile.baseUrl);
+    } else {
+      assertSafeAiProviderUrl(profile.baseUrl);
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

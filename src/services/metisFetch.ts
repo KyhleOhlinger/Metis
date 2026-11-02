@@ -8,7 +8,10 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { AiProviderProfile, ProviderKind } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
-import { assertSafeAiProviderUrl } from "../utils/providerUrlSafety";
+import {
+  assertSafeAiProviderUrl,
+  assertSafeCustomGatewayUrl,
+} from "../utils/providerUrlSafety";
 
 export function isTauriWebview(): boolean {
   return (
@@ -38,7 +41,21 @@ function normalizeCompatBaseUrl(baseUrl: string): string {
     return normalizeOpenAiBaseUrl(s);
   }
 
-  return s;
+  return ensureOpenAiCompatRoot(s);
+}
+
+/** A host-only custom gateway URL is the OpenAI-compatible root, which lives at /v1. */
+function ensureOpenAiCompatRoot(baseUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return baseUrl;
+  }
+  const path = parsed.pathname.replace(/\/+$/, "");
+  if (path !== "") return baseUrl;
+  parsed.pathname = "/v1";
+  return parsed.toString().replace(/\/+$/, "");
 }
 
 function normalizeOpenAiBaseUrl(baseUrl: string): string {
@@ -85,9 +102,17 @@ function normalizeBaseUrlForKind(kind: ProviderKind, baseUrl: string): string {
   }
 }
 
+function assertProfileBaseUrl(profile: AiProviderProfile, raw: string): void {
+  if (providerKindForProfile(profile) === "openai-compatible") {
+    assertSafeCustomGatewayUrl(raw);
+    return;
+  }
+  assertSafeAiProviderUrl(raw);
+}
+
 /** Effective API root used for HTTP (includes dev-browser proxy paths). */
 export function resolveProviderBaseUrl(profile: AiProviderProfile): string {
-  assertSafeAiProviderUrl(profile.baseUrl);
+  assertProfileBaseUrl(profile, profile.baseUrl);
   const kind = providerKindForProfile(profile);
   const normalized = normalizeBaseUrlForKind(kind, profile.baseUrl);
 
@@ -114,7 +139,7 @@ export function resolveProviderBaseUrl(profile: AiProviderProfile): string {
 }
 
 export function assertProfileHost(profile: AiProviderProfile, requestUrl: string): void {
-  assertSafeAiProviderUrl(requestUrl);
+  assertProfileBaseUrl(profile, requestUrl);
   const expected = hostFromBaseUrl(resolveProviderBaseUrl(profile));
   if (!expected) throw new Error("Invalid provider Base URL — could not parse hostname.");
   try {
@@ -130,6 +155,42 @@ export function assertProfileHost(profile: AiProviderProfile, requestUrl: string
   }
 }
 
+/** Bearer value with a repeated "Bearer " prefix removed. */
+function authorizationToken(headers: Headers): string {
+  const raw = headers.get("Authorization") ?? "";
+  return raw.trim().replace(/^(?:Bearer\s+)+/i, "").trim();
+}
+
+function isJwt(token: string): boolean {
+  const parts = token.split(".");
+  return parts.length === 3 && parts.every((part) => part.length > 0 && /^[A-Za-z0-9_-]+$/.test(part));
+}
+
+function normalizeAuthorization(headers: Headers): void {
+  if (!headers.has("Authorization")) return;
+  const token = authorizationToken(headers);
+  if (!token) {
+    headers.delete("Authorization");
+    return;
+  }
+  headers.set("Authorization", `Bearer ${token}`);
+}
+
+/**
+ * Google IAP reads Authorization and rejects anything that is not a JWT
+ * ("Invalid IAP credentials: Unable to parse JWT"). An unauthenticated IAP
+ * host still does that when a LiteLLM virtual key is in Authorization.
+ * LiteLLM accepts the same key in x-litellm-api-key, which IAP ignores.
+ */
+function moveKeyOutOfAuthorization(headers: Headers): boolean {
+  const token = authorizationToken(headers);
+  if (!token || isJwt(token)) return false;
+  headers.delete("Authorization");
+  headers.set("x-litellm-api-key", `Bearer ${token}`);
+  headers.set("x-api-key", token);
+  return true;
+}
+
 export function metisFetchForProfile(profile: AiProviderProfile): typeof globalThis.fetch {
   const baseFetch = isTauriWebview()
     ? (tauriFetch as unknown as typeof globalThis.fetch)
@@ -143,6 +204,29 @@ export function metisFetchForProfile(profile: AiProviderProfile): typeof globalT
           ? input.href
           : input.url;
     assertProfileHost(profile, url);
-    return baseFetch(input, init);
+    // Empty Origin is removed by tauri-plugin-http when unsafe-headers is on.
+    const headers = new Headers(init?.headers ?? undefined);
+    headers.set("Origin", "");
+    normalizeAuthorization(headers);
+    const res = await baseFetch(input, { ...init, headers });
+    if (res.status !== 401) return res;
+    const detail = await res.text();
+    if (!/Invalid IAP credentials|Unable to parse JWT/i.test(detail)) {
+      return new Response(detail, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      });
+    }
+    const retryHeaders = new Headers(headers);
+    if (!moveKeyOutOfAuthorization(retryHeaders)) {
+      return new Response(detail, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      });
+    }
+    assertProfileHost(profile, url);
+    return baseFetch(input, { ...init, headers: retryHeaders });
   };
 }
