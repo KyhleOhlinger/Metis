@@ -4,6 +4,7 @@ import { resolveMarkdownImageAbsPath } from "@/utils/vaultImages";
 import { resolveWikilinkAssetPath } from "@/utils/resolveWikilinkAsset";
 import { findNoteByWikilinkName, normalizeWikilinkTarget } from "@/utils/vaultNavigation";
 import { normalizePosixPath } from "@/utils/paths";
+import { toIsoDate } from "@/utils/localDate";
 
 const WIKI_IMAGE_RE = /!\[\[([^\]]+)\]\]/g;
 const MD_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
@@ -145,11 +146,7 @@ function extractDate(fields: Record<string, string | string[]>, override?: strin
     const m = raw.match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
   }
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return toIsoDate(new Date());
 }
 
 function extractCategories(

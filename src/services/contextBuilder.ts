@@ -25,7 +25,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { loadVaultFile } from "@/utils/vaultRead";
 import type { AiProviderProfile, Persona, ExecutionScope, PlannerPeriod } from "../types/persona";
-import { curatedSmallModelId, generateCompletion } from "./llmService";
+import { curatedSmallModelId, describeLlmError, generateCompletion } from "./llmService";
 import { isGoogleProvider } from "./providerRegistry";
 import { countImageMarkdownRefs, MAX_AGENT_VISION_IMAGES } from "./agentVisionContext";
 import { buildPlannerContext } from "../systemPersonas/plannerContext";
@@ -453,7 +453,7 @@ async function runScout(
     );
     return parseFilenameList(raw);
   } catch (e) {
-    console.warn("[Metis] Scout call failed:", e);
+    console.warn("[Metis] Scout call failed:", describeLlmError(e));
     return [];
   }
 }
@@ -704,15 +704,10 @@ export async function estimateContextEgress(
     };
   }
 
-  let summaries: FileSummary[];
-  try {
-    summaries = await invoke<FileSummary[]>("get_file_summaries", {
-      folderPath,
-      recursive: scope.type === "full-vault",
-    });
-  } catch {
-    summaries = [];
-  }
+  const summaries = await invoke<FileSummary[]>("get_file_summaries", {
+    folderPath,
+    recursive: scope.type === "full-vault",
+  });
 
   const noteCount = summaries.length;
   const totalCharsInScope = summaries.reduce((s, f) => s + f.char_count, 0);

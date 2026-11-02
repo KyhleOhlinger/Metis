@@ -1,4 +1,4 @@
-use crate::security::{canon_vault, reject_untrusted_webview, safe_resolve};
+use crate::security::{registered_vault, reject_untrusted_webview, safe_resolve};
 use crate::state::CurrentVault;
 use std::fs;
 use std::path::PathBuf;
@@ -19,13 +19,8 @@ pub fn get_file_content(
     }
 
     // SECURITY: fail-closed — require a registered vault for all FS reads.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock.get(window.label())
-        .ok_or("get_file_content: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("get_file_content: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("get_file_content: {e}"))?;
     let resolved = safe_resolve(&target).map_err(|e| format!("get_file_content: {e}"))?;
     if !resolved.starts_with(&canon_v) {
         return Err("get_file_content: path is outside the active vault.".into());
@@ -78,16 +73,8 @@ pub fn read_vault_image_base64(
     }
     .to_string();
 
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("read_vault_image_base64: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-
-    let vault = PathBuf::from(&vault_str);
-    let canon_v =
-        canon_vault(&vault).map_err(|e| format!("read_vault_image_base64: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("read_vault_image_base64: {e}"))?;
     let resolved =
         safe_resolve(&target).map_err(|e| format!("read_vault_image_base64: {e}"))?;
     if !resolved.starts_with(&canon_v) {
@@ -128,18 +115,13 @@ pub fn get_file_contents_batch(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<Vec<String>, String> {
+    reject_untrusted_webview(&window)?;
     if paths.len() > 100 {
         return Err("get_file_contents_batch: at most 100 paths per call.".into());
     }
 
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock
-        .get(window.label())
-        .ok_or("get_file_contents_batch: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("get_file_contents_batch: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("get_file_contents_batch: {e}"))?;
 
     let mut out = Vec::with_capacity(paths.len());
     for path in paths {

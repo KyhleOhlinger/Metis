@@ -45,6 +45,8 @@ export const createVaultSlice: StateCreator<MetisState, [], [], VaultSlice> = (s
       ...clearedVaultSession(),
     });
     setTimeout(() => get().enrichNoteIndex(), 0);
+    // Drop the previous vault's plugin flags before the new file loads.
+    usePluginStore.getState().reset();
     void usePluginStore.getState().loadForVault();
   },
 

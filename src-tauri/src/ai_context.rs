@@ -1,4 +1,4 @@
-use crate::security::canon_vault;
+use crate::security::{registered_vault, reject_untrusted_webview};
 use crate::state::CurrentVault;
 use crate::types::FileSummary;
 use std::fs;
@@ -22,14 +22,9 @@ pub fn get_file_summaries(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<Vec<FileSummary>, String> {
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("get_file_summaries: {e}"))?;
+    reject_untrusted_webview(&window)?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("get_file_summaries: {e}"))?;
 
     let target = PathBuf::from(&folder_path)
         .canonicalize()
@@ -56,6 +51,13 @@ fn collect_md_summaries(
     let entries = fs::read_dir(dir).map_err(|e| format!("Cannot read dir: {e}"))?;
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or(false, |n| n.starts_with('.'))
+        {
+            continue;
+        }
         // SECURITY: skip any path that escapes the vault (e.g. symlink traversal)
         let canon = path.canonicalize().unwrap_or_default();
         if !canon.starts_with(vault) {
@@ -87,19 +89,14 @@ pub fn get_files_content(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     if paths.len() > 100 {
         return Err("Too many paths requested in a single call (max 100).".into());
     }
     const MAX_TOTAL_BYTES: usize = 5 * 1024 * 1024; // 5 MiB response cap
 
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("get_files_content: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("get_files_content: {e}"))?;
 
     let mut combined = String::new();
     for raw_path in &paths {
@@ -137,14 +134,9 @@ pub fn get_folder_md_contents(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
-    let vault_lock = vault_state.0.lock().unwrap();
-    let vault_str = vault_lock
-        .get(window.label())
-        .ok_or("No vault is currently open.")?
-        .clone();
-    drop(vault_lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("get_folder_md_contents: {e}"))?;
+    reject_untrusted_webview(&window)?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("get_folder_md_contents: {e}"))?;
 
     let target = PathBuf::from(&folder_path)
         .canonicalize()

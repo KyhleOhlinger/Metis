@@ -4,8 +4,7 @@ import { useStore } from "@/store/useStore";
 import { streamResponse, agentFileTools, type ParsedToolCall } from "@/services/llmService";
 import { buildSmartContext, estimateContextEgress } from "@/services/contextBuilder";
 import { loadAgentVisionImages } from "@/services/agentVisionContext";
-import { confirmEgressBeforeRun } from "@/components/egressConfirm";
-import { isSystemPersona } from "@/systemPersonas/registry";
+import { confirmEstimatedEgress } from "@/components/egressConfirm";
 import { profileForPersona, findProviderProfile } from "@/utils/providerProfiles";
 import { sanitizeAgentNoteRelativePath } from "@/utils/paths";
 import {
@@ -114,22 +113,21 @@ export function useAgentRun(ui: AgentRunUi) {
     scope.type !== "none" &&
     !(scope.type === "planner" && !scope.includeCurrentFile);
 
-  if (!isSystemPersona(runPersona.id)) {
-    try {
-      const egress = await estimateContextEgress(
-        scope,
-        runMessage,
-        runPersona,
-        runProfile,
-        activeFileContent,
-        activeFilePath,
-        vaultPath,
-        attachImages,
-      );
-      if (!(await confirmEgressBeforeRun(egress))) return;
-    } catch {
-      // If estimation fails, proceed — buildSmartContext will surface errors.
-    }
+  const gate = await confirmEstimatedEgress(() =>
+    estimateContextEgress(
+      scope,
+      runMessage,
+      runPersona,
+      runProfile,
+      activeFileContent,
+      activeFilePath,
+      vaultPath,
+      attachImages,
+    ),
+  );
+  if (!gate.proceed) {
+    if (gate.reason === "error") setError(gate.message);
+    return;
   }
 
   // Freeze mutable run inputs so async steps and callbacks can't drift.
@@ -211,7 +209,7 @@ export function useAgentRun(ui: AgentRunUi) {
   if (runIncludeImages && vaultPath) {
     try {
       const loaded = await loadAgentVisionImages({
-        markdown: context,
+        markdown: runScope.type === "planner" ? runActiveFileContent : context,
         vaultPath,
         notePath: runActiveFilePath,
         assetIndex: useStore.getState().assetIndex,

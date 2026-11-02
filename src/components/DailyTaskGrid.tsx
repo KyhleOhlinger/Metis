@@ -29,6 +29,7 @@ import {
   saveDailyWeekSpan,
   startOfDay,
   startOfWeekMonday,
+  toIsoDate,
   upcomingKindLabel,
 } from "@/planner/plannerStorage";
 import { saveTextViaDialog } from "@/utils/saveDialogExport";
@@ -121,10 +122,7 @@ export default function DailyTaskGrid() {
     try {
       const monday = startOfWeekMonday(anchorWeek);
       const md = exportPlannerWeekMarkdown(bootstrap.manifest, monday, bootstrap.layoutTemplates);
-      const y = monday.getFullYear();
-      const m = String(monday.getMonth() + 1).padStart(2, "0");
-      const d = String(monday.getDate()).padStart(2, "0");
-      const path = await saveTextViaDialog(`planner-week-${y}-${m}-${d}`, "md", md);
+      const path = await saveTextViaDialog(`planner-week-${toIsoDate(monday)}`, "md", md);
       if (path) toastSuccess("Planner week exported.");
     } catch (err) {
       toastError(`Could not export week: ${String(err)}`);

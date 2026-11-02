@@ -18,6 +18,7 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { saveNoteNow } from "@/hooks/noteAutosave";
 import { useStore, VaultData } from "../store/useStore";
 import { usePersonaStore } from "../store/usePersonaStore";
 import { LAST_VAULT_KEY } from "../constants";
@@ -133,11 +134,9 @@ export function useMenuEvents({
 
         // ── Save current note ────────────────────────────────────────────────
         case "save": {
-          const { activeFilePath, activeFileContent, markSaved } = store;
+          const { activeFilePath, activeFileContent } = store;
           if (!activeFilePath) break;
-          invoke("save_note", { path: activeFilePath, content: activeFileContent })
-            .then(() => markSaved())
-            .catch((e) => toastError(`Save failed: ${formatError(e)}`));
+          void saveNoteNow(activeFilePath, activeFileContent);
           break;
         }
 

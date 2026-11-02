@@ -28,8 +28,8 @@ import {
   insertStickyNoteAt,
   parseStickyDragPayload,
 } from "@/utils/stickyNotes";
+import { escapeHtml } from "@/utils/markdownHtml";
 import {
-  escapeHtmlCell,
   selectionIntersectsRange,
   sourceImageRevealMenuItems,
   sourceLinkMenuItems,
@@ -354,13 +354,13 @@ function buildTablePreviewHtml(rows: string[]): string {
   const bodyRows = rows.slice(2);
   let html = '<table class="cm-md-table-preview-table"><thead><tr>';
   for (const h of headerCells) {
-    html += `<th>${escapeHtmlCell(h)}</th>`;
+    html += `<th>${escapeHtml(h)}</th>`;
   }
   html += "</tr></thead><tbody>";
   for (const row of bodyRows) {
     html += "<tr>";
     for (const c of splitPipeTableCells(row)) {
-      html += `<td>${escapeHtmlCell(c)}</td>`;
+      html += `<td>${escapeHtml(c)}</td>`;
     }
     html += "</tr>";
   }
@@ -500,6 +500,22 @@ class CollapsedStickyPreviewWidget extends WidgetType {
       e.stopPropagation();
       view.focus();
       const target = e.target as HTMLElement;
+      const wiki = target.closest("a[data-metis-wikilink]") as HTMLAnchorElement | null;
+      if (wiki && wrap.contains(wiki)) {
+        if (e.metaKey || e.ctrlKey) {
+          const raw = wiki.dataset.metisWikilink;
+          if (raw) openNoteByWikilinkNameFromStore(decodeURIComponent(raw));
+          return;
+        }
+        const from = Number(wiki.dataset.metisSourceOffset);
+        if (Number.isFinite(from)) {
+          view.dispatch({
+            selection: EditorSelection.cursor(from),
+            scrollIntoView: true,
+          });
+        }
+        return;
+      }
       const inWrap = target.closest(".metis-sticky-wrap") !== null;
       const offset =
         inWrap && this.wrapFrom !== null ? this.wrapFrom : this.stickyFrom;
@@ -531,10 +547,15 @@ function buildStickyCollapseDecorations(state: EditorState): DecorationSet {
       continue;
     }
 
+    const bodyBase = doc.lineAt(pair.sticky.from).to + 1;
+    const wrapBase = pair.wrap ? doc.lineAt(pair.wrap.from).to + 1 : undefined;
     const html = buildStickyBlockPreviewHtml(
       pair.sticky.attrs,
       pair.sticky.body,
       pair.wrap?.body,
+      undefined,
+      bodyBase,
+      wrapBase,
     );
 
     builder.add(

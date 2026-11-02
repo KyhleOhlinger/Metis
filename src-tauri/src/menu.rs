@@ -1,3 +1,4 @@
+use crate::security::reject_untrusted_webview;
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, MenuItemBuilder, MenuItemKind, PredefinedMenuItem, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 use std::collections::HashMap;
@@ -278,6 +279,12 @@ pub fn apply_menu_accelerators(
     accelerators: HashMap<String, Option<String>>,
 ) -> Result<(), String> {
     for (menu_id, accel) in accelerators {
+        if menu_id.len() > 64 || !menu_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err("Invalid menu id.".into());
+        }
+        if accel.as_ref().is_some_and(|value| value.len() > 64) {
+            return Err("Menu accelerator is too long.".into());
+        }
         if let Some(item) = find_menu_item(app, &menu_id) {
             item
                 .set_accelerator(accel.as_deref())
@@ -293,7 +300,9 @@ pub fn set_menu_item_enabled(
     app_handle: tauri::AppHandle,
     menu_id: String,
     enabled: bool,
+    window: tauri::WebviewWindow,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
     if menu_id.len() > 64 || !menu_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return Err("Invalid menu id.".into());
     }
@@ -310,6 +319,11 @@ pub fn set_menu_item_enabled(
 pub fn sync_menu_accelerators(
     app_handle: tauri::AppHandle,
     accelerators: HashMap<String, Option<String>>,
+    window: tauri::WebviewWindow,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
+    if accelerators.len() > 64 {
+        return Err("Too many menu accelerators.".into());
+    }
     apply_menu_accelerators(&app_handle, accelerators)
 }

@@ -1,6 +1,9 @@
 /** Date and calendar helpers for the planner. */
 
+import { toIsoDate } from "../utils/localDate";
 import { DAY_INDEX, DAY_NAMES, type DayName } from "./plannerTypes";
+
+export { toIsoDate };
 
 export function isDayName(value: unknown): value is DayName {
   return value === "Monday" || value === "Tuesday" || value === "Wednesday" || value === "Thursday" || value === "Friday";
@@ -102,13 +105,6 @@ export function mondaysInCalendarMonth(year: number, monthIndex: number): Date[]
     monday = addDays(monday, 7);
   }
   return result;
-}
-
-export function toIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 export function parseIsoDateLocal(value: string): Date | null {

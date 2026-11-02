@@ -27,6 +27,7 @@ import { preserveBlankLinesBeforeRenderedBlocks } from "../utils/previewMarkdown
 import {
   findMarkdownLinkSpans,
   findTaskMarkerOffsets,
+  findWikilinkSpans,
   tagPreviewInteractiveHtml,
 } from "../utils/previewSourceOffsets";
 import { openDomContextMenu } from "../utils/domContextMenu";
@@ -111,24 +112,42 @@ export default function MarkdownPreview({
     const stickyOffsets = listStickyPairOffsets(deferredContent);
     let imageLineIdx = 0;
 
+    // Offsets come from the note source. Spacer lines and sticky HTML change
+    // the string `marked` sees, so measuring tasks and links on that string
+    // points toggles and clicks at the wrong bytes.
+    const taskMarkerOffsets = findTaskMarkerOffsets(deferredContent);
+    const linkSpans = findMarkdownLinkSpans(deferredContent);
+    const outerWikilinks = findWikilinkSpans(deferredContent).filter((span) =>
+      stickyOffsets.every((pair) => {
+        const inSticky = span.from >= pair.stickyFrom && span.from <= pair.stickyTo;
+        const inWrap =
+          pair.wrapFrom !== null &&
+          pair.wrapTo !== null &&
+          span.from >= pair.wrapFrom &&
+          span.from <= pair.wrapTo;
+        return !inSticky && !inWrap;
+      }),
+    );
+    let wikilinkIdx = 0;
+
     let md = preserveBlankLinesBeforeRenderedBlocks(deferredContent);
     md = preprocessStickyBlocksForPreview(md);
-
-    const taskMarkerOffsets = findTaskMarkerOffsets(md);
-    const linkSpans = findMarkdownLinkSpans(md);
 
     md = md.replace(
       /!\[\[([^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp|avif|note))\]\]/gi,
       (_, filename) => `![${filename}](${filename})`,
     );
 
-    md = md.replace(/\[\[([^\]]+)\]\]/g, (full, name, offset) => {
+    md = md.replace(/\[\[([^\]]+)\]\]/g, (full, name) => {
       const trimmed = name.trim();
       const target = normalizeWikilinkTarget(trimmed);
       const display =
         trimmed.includes("|") ? trimmed.slice(trimmed.indexOf("|") + 1).trim() : target;
       const encoded = encodeURIComponent(target);
-      return `<a href="#" data-metis-wikilink="${encoded}" data-metis-source-offset="${offset}" data-metis-source-end="${offset + full.length}">${escapeHtml(display)}</a>`;
+      const span = outerWikilinks[wikilinkIdx++];
+      const from = span?.from ?? 0;
+      const to = span?.to ?? from + full.length;
+      return `<a href="#" data-metis-wikilink="${encoded}" data-metis-source-offset="${from}" data-metis-source-end="${to}">${escapeHtml(display)}</a>`;
     });
 
     let raw = parseMarkedWithHighlight(md, { gfm: true });
@@ -206,8 +225,9 @@ export default function MarkdownPreview({
         return;
       }
 
+      const stickyWiki = target.closest("a[data-metis-wikilink]") as HTMLAnchorElement | null;
       const stickyEl = target.closest("[data-metis-sticky-idx]") as HTMLElement | null;
-      if (stickyEl && root.contains(stickyEl)) {
+      if (stickyEl && root.contains(stickyEl) && !(stickyWiki && root.contains(stickyWiki))) {
         e.preventDefault();
         e.stopPropagation();
         const idx = Number(stickyEl.dataset.metisStickyIdx);

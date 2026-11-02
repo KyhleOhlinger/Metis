@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import type { AiProviderProfile } from "@/types/persona";
 import { testProviderConnection } from "@/services/llmService";
-import { assertSafeProviderUrl } from "@/utils/providerUrlSafety";
+import { assertSafeAiProviderUrl } from "@/utils/providerUrlSafety";
 
 export type TestStatus =
   | { phase: "idle" }
@@ -70,7 +70,7 @@ export function ProviderProfilesSection({
 
   function commit(): AiProviderProfile | null {
     try {
-      assertSafeProviderUrl(baseUrl.trim());
+      assertSafeAiProviderUrl(baseUrl.trim());
     } catch (e) {
       setTestStatus({
         phase: "error",

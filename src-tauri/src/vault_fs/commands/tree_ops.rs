@@ -1,6 +1,6 @@
 use super::super::meta::is_allowed_ext;
 use super::sanitize::sanitize_name;
-use crate::security::{canon_vault, reject_untrusted_webview, safe_resolve};
+use crate::security::{canon_vault, registered_vault, registered_vault_raw, reject_untrusted_webview, safe_resolve};
 use crate::state::CurrentVault;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,6 +17,7 @@ pub fn create_note(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let mut name = sanitize_name(&name)?;
     // Strip any extension the user typed and force .md
     if let Some(stem) = PathBuf::from(&name).file_stem() {
@@ -30,13 +31,8 @@ pub fn create_note(
     }
 
     // SECURITY: fail-closed — require a registered vault.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock.get(window.label())
-        .ok_or("create_note: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("create_note: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("create_note: {e}"))?;
     let resolved_parent = safe_resolve(&parent).map_err(|e| format!("create_note: {e}"))?;
     if !resolved_parent.starts_with(&canon_v) {
         return Err("create_note: directory is outside the active vault.".into());
@@ -64,6 +60,7 @@ pub fn create_folder(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let name = sanitize_name(&name)?;
     let parent = PathBuf::from(&parent_path);
 
@@ -72,13 +69,8 @@ pub fn create_folder(
     }
 
     // SECURITY: fail-closed — require a registered vault.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock.get(window.label())
-        .ok_or("create_folder: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("create_folder: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("create_folder: {e}"))?;
     let resolved_parent = safe_resolve(&parent).map_err(|e| format!("create_folder: {e}"))?;
     if !resolved_parent.starts_with(&canon_v) {
         return Err("create_folder: directory is outside the active vault.".into());
@@ -112,10 +104,8 @@ pub fn delete_path(
     let target = PathBuf::from(&path);
 
     // SECURITY: fail-closed — never trust the frontend-supplied vault_path.
-    let trusted_vault_path = {
-        let lock = vault_state.0.lock().unwrap();
-        lock.get(window.label()).cloned()
-    }.ok_or("delete_path: no vault registered for this window.")?;
+    let trusted_vault_path = registered_vault_raw(&window, &vault_state)
+        .map_err(|e| format!("delete_path: {e}"))?;
 
     let vault = PathBuf::from(&trusted_vault_path);
 
@@ -158,14 +148,13 @@ pub fn move_path(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let src_path = PathBuf::from(&src);
     let dest_dir_path = PathBuf::from(&dest_dir);
 
     // SECURITY: fail-closed — never trust the frontend-supplied vault_path.
-    let trusted_vault_path = {
-        let lock = vault_state.0.lock().unwrap();
-        lock.get(window.label()).cloned()
-    }.ok_or("move_path: no vault registered for this window.")?;
+    let trusted_vault_path = registered_vault_raw(&window, &vault_state)
+        .map_err(|e| format!("move_path: {e}"))?;
 
     let vault = PathBuf::from(&trusted_vault_path);
 
@@ -236,7 +225,15 @@ pub(crate) fn rename_in_parent(from: &Path, to: &Path) -> Result<(), String> {
                 .as_nanos();
             let temp = parent.join(format!(".metis-rename-{nanos}"));
             fs::rename(from, &temp).map_err(|e| format!("Failed to rename: {e}"))?;
-            fs::rename(&temp, to).map_err(|e| format!("Failed to rename: {e}"))?;
+            if let Err(err) = fs::rename(&temp, to) {
+                if fs::rename(&temp, from).is_err() {
+                    return Err(format!(
+                        "Failed to rename: {err}. The file was left at {}.",
+                        temp.display()
+                    ));
+                }
+                return Err(format!("Failed to rename: {err}"));
+            }
             return Ok(());
         }
         let name = to
@@ -260,6 +257,7 @@ pub fn rename_path(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
+    reject_untrusted_webview(&window)?;
     let mut new_name = sanitize_name(&new_name)?;
     let target = PathBuf::from(&path);
 
@@ -268,23 +266,34 @@ pub fn rename_path(
     }
 
     // SECURITY: fail-closed — require a registered vault.
-    let lock = vault_state.0.lock().unwrap();
-    let vault_str = lock.get(window.label())
-        .ok_or("rename_path: no vault registered for this window.")?
-        .clone();
-    drop(lock);
-    let vault = PathBuf::from(&vault_str);
-    let canon_v = canon_vault(&vault).map_err(|e| format!("rename_path: {e}"))?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("rename_path: {e}"))?;
     let resolved = safe_resolve(&target).map_err(|e| format!("rename_path: {e}"))?;
     if !resolved.starts_with(&canon_v) {
         return Err("rename_path: path is outside the active vault.".into());
     }
 
     if resolved.is_file() {
-        if let Some(stem) = PathBuf::from(&new_name).file_stem() {
-            new_name = stem.to_string_lossy().to_string();
+        let existing_ext = resolved
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        if existing_ext.eq_ignore_ascii_case("md") || existing_ext.is_empty() {
+            if let Some(stem) = PathBuf::from(&new_name).file_stem() {
+                new_name = stem.to_string_lossy().to_string();
+            }
+            new_name.push_str(".md");
+        } else {
+            let typed = PathBuf::from(&new_name);
+            let typed_ext = typed.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+            if !typed_ext.eq_ignore_ascii_case(existing_ext) {
+                if let Some(stem) = PathBuf::from(&new_name).file_stem() {
+                    new_name = stem.to_string_lossy().to_string();
+                }
+                new_name.push('.');
+                new_name.push_str(existing_ext);
+            }
         }
-        new_name.push_str(".md");
     }
 
     let parent = resolved.parent().ok_or("Cannot determine parent directory.")?;

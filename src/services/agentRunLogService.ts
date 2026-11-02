@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ContextStrategy } from "../services/contextBuilder";
-import type { LlmCompletionMeta } from "../services/llmService";
+import { type LlmCompletionMeta } from "../services/llmService";
+import { scrubSecretsFromMessage } from "../utils/scrubSecrets";
 import type {
   AgentRunLogEntry,
   AgentRunStatus,
@@ -185,7 +186,7 @@ export async function recordAgentRun(input: RecordAgentRunInput): Promise<AgentR
     usePersonaStore.getState().prependAgentRunLog(entry);
     return entry;
   } catch (e) {
-    console.error("[Metis] Failed to persist agent run log:", e);
+    console.error("[Metis] Failed to persist agent run log:", scrubSecretsFromMessage(formatError(e)));
     toastError(`Could not save run log to disk: ${formatError(e)}`);
     usePersonaStore.getState().prependAgentRunLog({ ...entry, hasTranscript: false });
     return entry;
@@ -198,7 +199,7 @@ export async function loadAgentRunLogFromDisk(): Promise<AgentRunLogEntry[]> {
     const parsed = JSON.parse(raw) as AgentRunLogEntry[];
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    console.warn("[Metis] Could not load agent run log:", e);
+    console.warn("[Metis] Could not load agent run log:", scrubSecretsFromMessage(formatError(e)));
     return [];
   }
 }

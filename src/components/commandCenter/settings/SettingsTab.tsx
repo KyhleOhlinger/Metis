@@ -3,7 +3,7 @@ import type { AiProviderProfile } from "@/types/persona";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import QuickActionsSettings from "../../QuickActionsSettings";
 import { makeProviderProfileId } from "@/utils/providerProfiles";
-import { assertSafeProviderUrl, packagedHttpsHostHint } from "@/utils/providerUrlSafety";
+import { assertSafeAiProviderUrl, packagedHttpsHostHint } from "@/utils/providerUrlSafety";
 import { testProviderConnection } from "@/services/llmService";
 import { ccInputCls, FieldLabel, Hint, SectionAction } from "../shared/ui";
 import { changeDefaultProviderWithPrompt } from "@/utils/defaultProviderChange";
@@ -75,7 +75,7 @@ export function SettingsTab({
   function handleAddProvider() {
     if (!draftKey.trim() || !draftUrl.trim()) return;
     try {
-      assertSafeProviderUrl(draftUrl.trim());
+      assertSafeAiProviderUrl(draftUrl.trim());
     } catch (e) {
       setDraftTestStatus({
         phase: "error",

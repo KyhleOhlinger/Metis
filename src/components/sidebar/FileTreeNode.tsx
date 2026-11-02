@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Image, Copy, FileDown, FileOutput, Pin } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { openVaultNotePath } from "@/utils/openVaultNote";
+import { confirmLeaveDirtyNote, openVaultNotePath } from "@/utils/openVaultNote";
 import { loadVaultFile } from "@/utils/vaultRead";
 import { useStore, FileNode } from "../../store/useStore";
 import { usePersonaStore, selectActivePersona } from "../../store/usePersonaStore";
@@ -51,15 +51,13 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
   const [jekyllModalOpen, setJekyllModalOpen] = useState(false);
 
   const {
-    activeFilePath, setActiveFile, isDirty, markSaved,
+    activeFilePath, setActiveFile,
     refreshVault, activeFolderPath, setActiveFolderPath, noteIndex,
     assetIndex, defaultImageFolder, setDefaultImageFolder,
   } = useStore(
     useShallow((s) => ({
       activeFilePath: s.activeFilePath,
       setActiveFile: s.setActiveFile,
-      isDirty: s.isDirty,
-      markSaved: s.markSaved,
       refreshVault: s.refreshVault,
       activeFolderPath: s.activeFolderPath,
       setActiveFolderPath: s.setActiveFolderPath,
@@ -99,14 +97,8 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     const parent = node.path.substring(0, node.path.lastIndexOf("/"));
     setActiveFolderPath(parent || vaultPath);
 
-    if (isDirty && activeFilePath) {
-      const discard = await appConfirm("You have unsaved changes. Discard and switch?", {
-        title: "Unsaved changes",
-        confirmLabel: "Discard",
-        danger: true,
-      });
-      if (!discard) return;
-      markSaved();
+    if (isNoteBinary || isImage) {
+      if (!(await confirmLeaveDirtyNote())) return;
     }
 
     if (isNoteBinary) {
@@ -120,7 +112,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     }
 
     await openVaultNotePath(node.path);
-  }, [node, isDirty, activeFilePath, markSaved, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage, isNoteBinary]);
+  }, [node, setActiveFile, setActiveFolderPath, vaultPath, isOpenable, isImage, isNoteBinary]);
 
   // ── Pointer-down: begin potential drag ─────────────────────────────────────
   const handlePointerDown = (e: React.PointerEvent) => {

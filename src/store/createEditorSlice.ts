@@ -3,6 +3,7 @@ import { applyNoteMeta, parseNoteMeta } from "./noteIndexUtils";
 import type { MetisState } from "./metisState";
 import { usePersonaStore } from "./usePersonaStore";
 import { patchBacklinkIndexForSource } from "../utils/linkGraph";
+import { rememberCommittedNote } from "@/hooks/noteAutosave";
 import {
   mergeVaultNavigation,
   recordRecentNote,
@@ -58,6 +59,7 @@ export type EditorSlice = Pick<
 
 export const createEditorSlice: StateCreator<MetisState, [], [], EditorSlice> = (set, get) => ({
   setActiveFile: (path, content) => {
+    rememberCommittedNote(path, content);
     const meta = parseNoteMeta(content);
     const vaultPath = get().vaultPath;
     set((s) => ({

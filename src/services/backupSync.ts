@@ -61,6 +61,12 @@ export async function runBackupSync(options?: {
   quiet?: boolean;
 }): Promise<void> {
   if (running) return;
+  if (!isCorePluginEnabled("backup")) {
+    if (!options?.quiet) {
+      toastError("Turn on the Backup plugin in Settings → Plugins.");
+    }
+    return;
+  }
   running = true;
   try {
     const state = await loadBackupSyncState();

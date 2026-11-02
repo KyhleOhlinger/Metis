@@ -174,18 +174,86 @@ fn assert_safe_css(css: &str) -> Result<(), String> {
     if css.len() > MAX_CSS_BYTES {
         return Err("Plugin stylesheet is too large.".into());
     }
-    let lower = css.to_ascii_lowercase();
-    if lower.contains("</")
-        || lower.contains("<script")
-        || lower.contains("javascript:")
-        || lower.contains("expression(")
-        || lower.contains("@import")
-        || lower.contains("behavior:")
-        || lower.contains("-moz-binding")
+    // Comments, whitespace, and CSS hex escapes are decoded before the check
+    // so `\40import` cannot hide `@import`.
+    let flat = flatten_css(css);
+    if flat.contains("</")
+        || flat.contains("<script")
+        || flat.contains("javascript:")
+        || flat.contains("expression(")
+        || flat.contains("@import")
+        || flat.contains("behavior:")
+        || flat.contains("-moz-binding")
     {
         return Err("Plugin stylesheet contains disallowed CSS.".into());
     }
     Ok(())
+}
+
+fn is_css_hex(ch: char) -> bool {
+    ch.is_ascii_hexdigit()
+}
+
+/// One CSS escaped code point, per CSS Syntax. Returns the decoded char and
+/// the index just after the escape, including a hex escape's trailing whitespace.
+fn consume_css_escape(chars: &[char], start: usize) -> (char, usize) {
+    let mut i = start;
+    if i >= chars.len() {
+        return ('\u{FFFD}', i);
+    }
+    if is_css_hex(chars[i]) {
+        let mut hex = String::new();
+        while i < chars.len() && hex.len() < 6 && is_css_hex(chars[i]) {
+            hex.push(chars[i]);
+            i += 1;
+        }
+        if i < chars.len() && chars[i] == '\r' {
+            i += 1;
+            if i < chars.len() && chars[i] == '\n' {
+                i += 1;
+            }
+        } else if i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+        let cp = u32::from_str_radix(&hex, 16).unwrap_or(0xFFFD);
+        let ch = char::from_u32(cp)
+            .filter(|c| *c != '\0')
+            .unwrap_or('\u{FFFD}');
+        return (ch, i);
+    }
+    let ch = chars[i];
+    (ch, i + 1)
+}
+
+fn flatten_css(css: &str) -> String {
+    let chars: Vec<char> = css.chars().collect();
+    let mut decoded = String::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '/' && i + 1 < chars.len() && chars[i + 1] == '*' {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i = i.saturating_add(2);
+            continue;
+        }
+        if chars[i] == '\\' {
+            let (ch, next) = consume_css_escape(&chars, i + 1);
+            decoded.push(ch);
+            i = next;
+            continue;
+        }
+        decoded.push(chars[i]);
+        i += 1;
+    }
+    let mut out = String::with_capacity(decoded.len());
+    for ch in decoded.chars() {
+        if !ch.is_whitespace() {
+            out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
 }
 
 fn parse_manifest(raw: &str) -> Result<InstalledPlugin, String> {
@@ -509,4 +577,16 @@ pub fn read_community_plugin_styles(
     let css = fs::read_to_string(&path).map_err(|e| format!("Failed to read styles.css: {e}"))?;
     assert_safe_css(&css)?;
     Ok(css)
+}
+
+#[cfg(test)]
+mod css_tests {
+    use super::assert_safe_css;
+
+    #[test]
+    fn rejects_hex_escaped_import() {
+        assert!(assert_safe_css(r"body{color:red} \40import 'x.css';").is_err());
+        assert!(assert_safe_css(r"@\69 mport url(https://evil)").is_err());
+        assert!(assert_safe_css("a{color:blue}").is_ok());
+    }
 }

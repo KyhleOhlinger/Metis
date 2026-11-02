@@ -18,6 +18,7 @@ import { useMenuEvents } from "./hooks/useMenuEvents";
 import { openOrCreateDailyNote } from "./components/sidebar/dailyNote";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { LAST_VAULT_KEY } from "./constants";
+import { flushNoteAutosaves } from "./hooks/noteAutosave";
 import {
   flushPlannerSaves,
 } from "./planner/plannerPersistence";
@@ -352,7 +353,7 @@ export default function App() {
 
     const flushWithTimeout = (ms: number) =>
       Promise.race([
-        flushPlannerSaves(),
+        Promise.all([flushPlannerSaves(), flushNoteAutosaves()]),
         new Promise<void>((resolve) => setTimeout(resolve, ms)),
       ]);
 

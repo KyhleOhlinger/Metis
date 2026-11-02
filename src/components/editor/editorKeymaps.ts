@@ -1,12 +1,10 @@
 import type { RefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { defaultKeymap, historyKeymap, selectLine } from "@codemirror/commands";
 import { Compartment } from "@codemirror/state";
 import { keymap, type KeyBinding } from "@codemirror/view";
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
-import { toastError } from "@/store/useToastStore";
-import { formatError } from "@/utils/formatError";
+import { saveNoteNow } from "@/hooks/noteAutosave";
 import { toggleInline } from "../toolbarActions";
 import type { EditorView } from "@codemirror/view";
 import type { KeybindingCommandId } from "@/config/keybindingRegistry";
@@ -201,7 +199,7 @@ function shiftTabBinding(): KeyBinding {
 }
 
 export function buildEditorKeymaps(opts: EditorKeymapOpts): KeyBinding[] {
-  const { activeFilePath, markSaved, setFindBarOpen, setFindBarReplace, findBarRef } = opts;
+  const { activeFilePath, setFindBarOpen, setFindBarReplace, findBarRef } = opts;
 
   const findRun = () => {
     if (useStore.getState().editorTab !== "source") return false;
@@ -235,12 +233,8 @@ export function buildEditorKeymaps(opts: EditorKeymapOpts): KeyBinding[] {
   };
 
   const saveRun = (view: EditorView) => {
-    invoke("save_note", {
-      path: activeFilePath,
-      content: view.state.doc.toString(),
-    })
-      .then(() => markSaved())
-      .catch((err) => toastError(`Save failed: ${formatError(err)}`));
+    if (!activeFilePath) return true;
+    void saveNoteNow(activeFilePath, view.state.doc.toString());
     return true;
   };
 

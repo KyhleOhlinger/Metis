@@ -1,3 +1,4 @@
+use crate::security::reject_untrusted_webview;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -118,7 +119,12 @@ fn get_or_load_dict(lang: &str) -> Result<(), String> {
 /// Returns only the words that are NOT in the dictionary.
 /// The `language` parameter selects which dictionary to use (e.g. "en_US", "en_GB").
 #[tauri::command]
-pub fn check_spelling(words: Vec<String>, language: String) -> Result<Vec<String>, String> {
+pub fn check_spelling(
+    words: Vec<String>,
+    language: String,
+    window: tauri::WebviewWindow,
+) -> Result<Vec<String>, String> {
+    reject_untrusted_webview(&window)?;
     const MAX_WORDS: usize = 10_000;
     const MAX_WORD_LEN: usize = 128;
     if words.len() > MAX_WORDS {
@@ -152,7 +158,9 @@ pub fn check_spelling(words: Vec<String>, language: String) -> Result<Vec<String
 pub fn suggest_spelling(
     words: Vec<String>,
     language: String,
+    window: tauri::WebviewWindow,
 ) -> Result<HashMap<String, Vec<String>>, String> {
+    reject_untrusted_webview(&window)?;
     const MAX_SUGGESTIONS: usize = 5;
     const MAX_WORDS: usize = 50;
 
@@ -178,6 +186,7 @@ pub fn suggest_spelling(
 /// Return the list of available dictionary language codes by scanning the
 /// bundled resources directory.
 #[tauri::command]
-pub fn list_dictionaries() -> Vec<String> {
-    discover_dictionary_languages()
+pub fn list_dictionaries(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+    reject_untrusted_webview(&window)?;
+    Ok(discover_dictionary_languages())
 }

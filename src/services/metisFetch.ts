@@ -8,7 +8,7 @@
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { AiProviderProfile, ProviderKind } from "../types/persona";
 import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
-import { assertSafeProviderUrl } from "../utils/providerUrlSafety";
+import { assertSafeAiProviderUrl } from "../utils/providerUrlSafety";
 
 export function isTauriWebview(): boolean {
   return (
@@ -87,7 +87,7 @@ function normalizeBaseUrlForKind(kind: ProviderKind, baseUrl: string): string {
 
 /** Effective API root used for HTTP (includes dev-browser proxy paths). */
 export function resolveProviderBaseUrl(profile: AiProviderProfile): string {
-  assertSafeProviderUrl(profile.baseUrl);
+  assertSafeAiProviderUrl(profile.baseUrl);
   const kind = providerKindForProfile(profile);
   const normalized = normalizeBaseUrlForKind(kind, profile.baseUrl);
 
@@ -114,7 +114,7 @@ export function resolveProviderBaseUrl(profile: AiProviderProfile): string {
 }
 
 export function assertProfileHost(profile: AiProviderProfile, requestUrl: string): void {
-  assertSafeProviderUrl(requestUrl);
+  assertSafeAiProviderUrl(requestUrl);
   const expected = hostFromBaseUrl(resolveProviderBaseUrl(profile));
   if (!expected) throw new Error("Invalid provider Base URL — could not parse hostname.");
   try {

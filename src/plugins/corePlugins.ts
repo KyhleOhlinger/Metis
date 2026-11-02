@@ -160,3 +160,13 @@ export function isCoreEnabled(core: Record<string, boolean>, id: CorePluginId): 
   const def = CORE_PLUGINS.find((p) => p.id === id);
   return def?.defaultEnabled !== false;
 }
+
+/** Before the vault plugin file has loaded, only required plugins are on. */
+export function isCoreEnabledWhenLoaded(
+  loaded: boolean,
+  core: Record<string, boolean>,
+  id: CorePluginId,
+): boolean {
+  if (!loaded && !REQUIRED_CORE_PLUGIN_IDS.has(id)) return false;
+  return isCoreEnabled(core, id);
+}
