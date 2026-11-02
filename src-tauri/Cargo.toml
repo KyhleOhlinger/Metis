@@ -1,6 +1,6 @@
 [package]
 name = "metis"
-version = "0.15.19"
+version = "0.15.24"
 edition = "2021"
 description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]
@@ -25,7 +25,9 @@ tauri-plugin-dialog = "2"
 # native-tls uses the OS certificate store (macOS Keychain / Windows SChannel /
 # Linux OpenSSL) so corporate/internal CAs are trusted automatically — unlike
 # the default rustls backend which only ships Mozilla's root CA bundle.
-tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls", "http2", "charset", "macos-system-configuration", "cookies"] }
+# unsafe-headers lets AI calls send an empty Origin, which the plugin then
+# drops. Corporate gateways often answer 401 when Origin is the webview URL.
+tauri-plugin-http = { version = "2", default-features = false, features = ["native-tls", "http2", "charset", "macos-system-configuration", "cookies", "unsafe-headers"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Cross-platform file-system event watching — well-established crate

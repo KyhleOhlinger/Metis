@@ -3,7 +3,7 @@ import type { AiProviderProfile } from "@/types/persona";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import QuickActionsSettings from "../../QuickActionsSettings";
 import { makeProviderProfileId } from "@/utils/providerProfiles";
-import { assertSafeAiProviderUrl, packagedHttpsHostHint } from "@/utils/providerUrlSafety";
+import { assertSafeCustomGatewayUrl, packagedHttpsHostHint } from "@/utils/providerUrlSafety";
 import { testProviderConnection } from "@/services/llmService";
 import { ccInputCls, FieldLabel, Hint, SectionAction } from "../shared/ui";
 import { changeDefaultProviderWithPrompt } from "@/utils/defaultProviderChange";
@@ -75,7 +75,7 @@ export function SettingsTab({
   function handleAddProvider() {
     if (!draftKey.trim() || !draftUrl.trim()) return;
     try {
-      assertSafeAiProviderUrl(draftUrl.trim());
+      assertSafeCustomGatewayUrl(draftUrl.trim());
     } catch (e) {
       setDraftTestStatus({
         phase: "error",
@@ -226,7 +226,7 @@ export function SettingsTab({
         <div className="space-y-3">
         <Hint>
           Add an OpenAI-compatible API (name, base URL, API key).{" "}
-          {packagedHttpsHostHint()} Other public HTTPS hosts need a capability/CSP rebuild.
+          {packagedHttpsHostHint()}
         </Hint>
 
         {profiles.map((p) => (

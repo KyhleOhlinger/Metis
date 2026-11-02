@@ -1,6 +1,6 @@
 import { useStore } from "@/store/useStore";
 
-export function plannerSyncStatusLabel(
+function plannerSyncStatusLabel(
   status: ReturnType<typeof useStore.getState>["plannerSyncStatus"],
 ): string {
   switch (status) {
