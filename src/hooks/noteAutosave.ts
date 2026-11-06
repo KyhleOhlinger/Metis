@@ -29,15 +29,24 @@ const committed = new Map<string, string>();
 const generation = new Map<string, number>();
 /** Disk mtime in milliseconds, captured when the note was opened or last saved. */
 const diskStamp = new Map<string, number>();
+const diskHash = new Map<string, string>();
 
 export function rememberCommittedNote(path: string, content: string) {
   if (!path) return;
   committed.set(path, content);
 }
 
-export function rememberNoteDiskStamp(path: string, mtimeMs: number) {
+/** Remember the bytes just read from disk so a confirmed overwrite can proceed. */
+export function pinOverwriteBaseline(path: string, content: string): string {
+  const hash = noteContentHash(content);
+  if (path) diskHash.set(path, hash);
+  return hash;
+}
+
+export function rememberNoteDiskStamp(path: string, mtimeMs: number, content?: string) {
   if (!path) return;
   diskStamp.set(path, mtimeMs);
+  if (content !== undefined) diskHash.set(path, noteContentHash(content));
 }
 
 function currentGeneration(path: string): number {
@@ -82,13 +91,22 @@ function enqueue(path: string): Promise<void> {
           path,
           content,
           baselineMtimeMs: stamp ?? null,
+          baselineContentHash: diskHash.get(path) ?? null,
           mustExist: stamp !== undefined,
         });
         diskStamp.set(path, written);
+        diskHash.set(path, noteContentHash(content));
         if (currentGeneration(path) !== gen) {
           const restore = committed.get(path);
           if (restore !== undefined && restore !== content) {
-            await invoke("save_note", { path, content: restore });
+            await invoke("save_note", {
+              path,
+              content: restore,
+              baselineMtimeMs: written,
+              baselineContentHash: noteContentHash(content),
+              mustExist: true,
+            });
+            diskHash.set(path, noteContentHash(restore));
           }
           return;
         }
@@ -168,11 +186,14 @@ export function retargetNoteAutosave(from: string, to: string) {
   const content = desired.get(from);
   const saved = committed.get(from);
   const stamp = diskStamp.get(from);
+  const hash = diskHash.get(from);
   cancelNoteAutosave(from);
   committed.delete(from);
   diskStamp.delete(from);
+  diskHash.delete(from);
   if (saved !== undefined) committed.set(to, saved);
   if (stamp !== undefined) diskStamp.set(to, stamp);
+  if (hash !== undefined) diskHash.set(to, hash);
   if (content !== undefined) scheduleNoteAutosave(to, content);
 }
 
@@ -206,11 +227,13 @@ export async function saveCleanNote(path: string, content: string): Promise<void
     path,
     content,
     baselineMtimeMs: diskStamp.get(path),
+    baselineContentHash: diskHash.get(path) ?? null,
     mustExist: diskStamp.has(path),
   });
   committed.set(path, content);
   desired.delete(path);
   diskStamp.set(path, mtime);
+  diskHash.set(path, noteContentHash(content));
 }
 
 export function noteContentHash(text: string): string {
@@ -235,14 +258,42 @@ export async function writeNoteReplacingAutosave(
   const inflight = chains.get(path);
   if (inflight) await inflight.catch(() => undefined);
   generation.set(path, currentGeneration(path) + 1);
-  const absPath = await invoke<string>("agent_write_note", {
-    relPath: path,
-    content,
-    mode,
-  });
-  committed.set(path, content);
-  desired.delete(path);
-  return absPath;
+  try {
+    const absPath = await invoke<string>("agent_write_note", {
+      relPath: path,
+      content,
+      mode,
+      baselineContentHash: mode === "overwrite" ? diskHash.get(path) : undefined,
+    });
+    committed.set(path, content);
+    committed.set(absPath, content);
+    desired.delete(path);
+    diskHash.set(absPath, noteContentHash(content));
+    try {
+      const stamp = await invoke<number>("note_file_stamp", { path: absPath });
+      diskStamp.set(absPath, stamp);
+    } catch {
+      diskStamp.delete(absPath);
+    }
+    return absPath;
+  } catch (err) {
+    const msg = formatError(err);
+    if (msg.includes("NOTE_CONFLICT")) {
+      const reload = await appConfirm(
+        "This note changed outside the editor. Reload the saved version? Your unsaved edits stay in the editor if you cancel.",
+        { title: "Note changed", confirmLabel: "Reload" },
+      );
+      if (reload) {
+        const { loadVaultFile } = await import("@/utils/vaultRead");
+        const fresh = await loadVaultFile(path);
+        const stamp = await invoke<number>("note_file_stamp", { path });
+        diskStamp.set(path, stamp);
+        diskHash.set(path, noteContentHash(fresh));
+        useStore.getState().setActiveFile(path, fresh);
+      }
+    }
+    throw err;
+  }
 }
 
 export function pendingNoteSnapshots(): Array<{ path: string; content: string }> {

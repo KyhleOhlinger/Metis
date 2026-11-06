@@ -189,6 +189,7 @@ fn valid_sync_meta_key(key: &str) -> bool {
 }
 
 fn save_sync_meta(vault: &Path, meta: &SyncMetaFile) -> Result<(), String> {
+    crate::security::ensure_real_metis(vault)?;
     let path = sync_meta_path(vault);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Cannot create .metis: {e}"))?;
@@ -740,14 +741,6 @@ fn record_sync_entry(
     }
 }
 
-fn pull_tmp_path(dest: &Path) -> PathBuf {
-    let name = dest
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "file".into());
-    dest.with_file_name(format!(".{name}.metis-pull"))
-}
-
 fn truthy_json(v: &serde_json::Value) -> bool {
     match v {
         serde_json::Value::Bool(b) => *b,
@@ -1073,13 +1066,10 @@ fn pull_browse_access(
                     }
                 }
             }
-            let tmp = pull_tmp_path(&dest);
-            fs::write(&tmp, &bytes)
+            // Exclusive temp file in the destination directory, then rename.
+            // A pre-planted symlink at a predictable temp name is not followed.
+            crate::io_atomic::write_atomic(&dest, &bytes)
                 .map_err(|e| format!("Failed to save {}: {e}", rel.display()))?;
-            fs::rename(&tmp, &dest).map_err(|e| {
-                let _ = fs::remove_file(&tmp);
-                format!("Failed to save {}: {e}", rel.display())
-            })?;
             record_sync_entry(
                 &mut sync_meta,
                 &vault,

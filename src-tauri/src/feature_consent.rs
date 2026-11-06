@@ -45,20 +45,18 @@ fn save(app: &tauri::AppHandle, file: &ConsentFile) -> Result<(), String> {
     write_private_json_file(&consent_path(app)?, &json)
 }
 
-pub(crate) fn vault_key(vault: &Path) -> String {
-    crate::security::canon_vault(vault)
-        .map(|path| path.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| vault.to_string_lossy().into_owned())
+pub(crate) fn vault_key(app: &tauri::AppHandle, vault: &Path) -> String {
+    crate::vault_identity::decision_key(app, vault)
 }
 
 pub(crate) fn supernote_approved(app: &tauri::AppHandle, vault: &Path) -> bool {
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     load(app).supernote_approved.iter().any(|path| path == &key)
 }
 
 pub(crate) fn supernote_decision(app: &tauri::AppHandle, vault: &Path) -> Option<bool> {
     let file = load(app);
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     if file.supernote_approved.iter().any(|path| path == &key) {
         return Some(true);
     }
@@ -70,7 +68,7 @@ pub(crate) fn supernote_decision(app: &tauri::AppHandle, vault: &Path) -> Option
 
 pub(crate) fn set_supernote_consent(app: &tauri::AppHandle, vault: &Path, approved: bool) -> Result<(), String> {
     let mut file = load(app);
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     file.supernote_approved.retain(|path| path != &key);
     file.supernote_declined.retain(|path| path != &key);
     if approved {
@@ -81,10 +79,34 @@ pub(crate) fn set_supernote_consent(app: &tauri::AppHandle, vault: &Path, approv
     save(app, &file)
 }
 
-/// `migrate_unlocked` is true only for a full settings object that already says
-/// Restricted Mode is off. A bare id list does not unlock.
-pub(crate) fn restricted_mode(app: &tauri::AppHandle, vault: &Path, migrate_unlocked: bool) -> bool {
-    let key = vault_key(vault);
+/// A vault known before this upgrade is one already listed in navigation.
+/// A brand-new vault is not migrated out of Restricted Mode.
+fn vault_known_before_upgrade(app: &tauri::AppHandle, vault: &Path) -> bool {
+    let Ok(path) = app_data_dir_for_build(app) else {
+        return false;
+    };
+    let raw = fs::read_to_string(path.join("vault-navigation.json")).unwrap_or_default();
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    let Some(map) = value.as_object() else {
+        return false;
+    };
+    let Ok(canon) = crate::security::canon_vault(vault) else {
+        return false;
+    };
+    map.keys().any(|key| {
+        crate::security::canon_vault(Path::new(key))
+            .map(|stored| stored == canon)
+            .unwrap_or(false)
+    })
+}
+
+/// `file_says_unlocked` is true only for a full settings object that already
+/// says Restricted Mode is off. That unlocks a vault only when the vault was
+/// already known (listed in vault navigation). A new vault stays restricted.
+pub(crate) fn restricted_mode(app: &tauri::AppHandle, vault: &Path, file_says_unlocked: bool) -> bool {
+    let key = vault_key(app, vault);
     let mut file = load(app);
     if file.restricted_unlocked.iter().any(|path| path == &key) {
         return false;
@@ -92,7 +114,7 @@ pub(crate) fn restricted_mode(app: &tauri::AppHandle, vault: &Path, migrate_unlo
     if file.restricted_kept.iter().any(|path| path == &key) {
         return true;
     }
-    if migrate_unlocked {
+    if file_says_unlocked && vault_known_before_upgrade(app, vault) {
         file.restricted_unlocked.push(key);
         let _ = save(app, &file);
         return false;
@@ -108,7 +130,7 @@ pub(crate) fn set_restricted_mode(
     restricted: bool,
 ) -> Result<(), String> {
     let mut file = load(app);
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     file.restricted_unlocked.retain(|path| path != &key);
     file.restricted_kept.retain(|path| path != &key);
     if restricted {
@@ -120,7 +142,7 @@ pub(crate) fn set_restricted_mode(
 }
 
 pub(crate) fn jekyll_exported(app: &tauri::AppHandle, vault: &Path) -> Vec<String> {
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     load(app).jekyll_exported.get(&key).cloned().unwrap_or_default()
 }
 
@@ -130,7 +152,7 @@ pub(crate) fn remember_jekyll_note(app: &tauri::AppHandle, vault: &Path, rel: &s
         return Err("Invalid exported note path.".into());
     }
     let mut file = load(app);
-    let key = vault_key(vault);
+    let key = vault_key(app, vault);
     let list = file.jekyll_exported.entry(key).or_default();
     if !list.iter().any(|path| path == &rel) {
         if list.len() >= 5000 {

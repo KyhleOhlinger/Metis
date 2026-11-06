@@ -126,6 +126,7 @@ export async function loadAgentVisionImages(opts: {
     try {
       const payload = await invoke<VaultImageBase64>("read_vault_image_base64", {
         path,
+        forAi: true,
       });
       if (!payload.data_base64) {
         skipped += 1;

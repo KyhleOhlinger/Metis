@@ -109,6 +109,10 @@ async function migrateLegacyLocalStorage(vaultPath: string): Promise<void> {
 
   const manifest = await loadFileFromDisk(vaultPath, "manifest.json");
   if (manifest) return;
+  const allowed = await invoke<boolean>("planner_local_import_allowed", { vaultPath }).catch(
+    () => false,
+  );
+  if (!allowed) return;
 
   await invoke("planner_import_bundle", {
     vaultPath,

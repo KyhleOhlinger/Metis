@@ -56,7 +56,10 @@ pub(crate) fn core_plugin_enabled(vault: &Path, id: &str) -> bool {
         return true;
     }
     let default_on = !CORE_PLUGINS_DEFAULT_OFF.contains(&id);
-    let Ok(raw) = fs::read_to_string(core_path(vault)) else {
+    let Ok(path) = core_path(vault) else {
+        return default_on;
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
         return default_on;
     };
     let Ok(file) = serde_json::from_str::<CorePluginsFile>(&raw) else {
@@ -74,7 +77,7 @@ pub(crate) fn require_core_plugin(vault: &Path, id: &str) -> Result<(), String> 
 }
 
 fn assert_dest_under_plugins(vault: &Path, dest: &Path) -> Result<(), String> {
-    let root = plugins_dir(vault);
+    let root = plugins_dir(vault)?;
     if !dest.starts_with(&root) {
         return Err("Plugin path is outside the vault plugins directory.".into());
     }
@@ -126,16 +129,17 @@ fn default_restricted() -> bool {
     true
 }
 
-fn plugins_dir(vault: &Path) -> PathBuf {
-    vault.join(".metis").join("plugins")
+fn plugins_dir(vault: &Path) -> Result<PathBuf, String> {
+    let dir = crate::security::ensure_real_metis_child(vault, "plugins")?;
+    Ok(dir)
 }
 
-fn core_path(vault: &Path) -> PathBuf {
-    vault.join(".metis").join("core-plugins.json")
+fn core_path(vault: &Path) -> Result<PathBuf, String> {
+    Ok(crate::security::ensure_real_metis(vault)?.join("core-plugins.json"))
 }
 
-fn community_path(vault: &Path) -> PathBuf {
-    vault.join(".metis").join("community-plugins.json")
+fn community_path(vault: &Path) -> Result<PathBuf, String> {
+    Ok(crate::security::ensure_real_metis(vault)?.join("community-plugins.json"))
 }
 
 fn vault_for_window(
@@ -187,10 +191,29 @@ fn assert_safe_css(css: &str) -> Result<(), String> {
         || flat.contains("@import")
         || flat.contains("behavior:")
         || flat.contains("-moz-binding")
+        || css_has_remote_url(&flat)
     {
         return Err("Plugin stylesheet contains disallowed CSS.".into());
     }
     Ok(())
+}
+
+/// `url()` can fetch a remote image. Only an inline image is allowed.
+fn css_has_remote_url(css: &str) -> bool {
+    let lower = css.to_ascii_lowercase();
+    let mut rest = lower.as_str();
+    while let Some(idx) = rest.find("url(") {
+        let after = &rest[idx + 4..];
+        let end = after.find(')').unwrap_or(after.len());
+        let body = after[..end]
+            .trim()
+            .trim_matches(|ch| ch == '"' || ch == '\'' || ch == ' ');
+        if !body.starts_with("data:image/") {
+            return true;
+        }
+        rest = &after[end..];
+    }
+    false
 }
 
 fn is_css_hex(ch: char) -> bool {
@@ -313,8 +336,26 @@ fn parse_manifest(raw: &str) -> Result<InstalledPlugin, String> {
     })
 }
 
+fn real_plugin_file(root: &Path, path: &Path) -> bool {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return false;
+    };
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return false;
+    }
+    let Ok(canon) = path.canonicalize() else {
+        return false;
+    };
+    let Ok(root_canon) = root.canonicalize() else {
+        return false;
+    };
+    canon.starts_with(&root_canon)
+}
+
 fn scan_installed(vault: &Path) -> Vec<InstalledPlugin> {
-    let root = plugins_dir(vault);
+    let Ok(root) = plugins_dir(vault) else {
+        return Vec::new();
+    };
     let entries = match fs::read_dir(&root) {
         Ok(e) => e,
         Err(_) => return Vec::new(),
@@ -322,7 +363,10 @@ fn scan_installed(vault: &Path) -> Vec<InstalledPlugin> {
     let mut out = Vec::new();
     for entry in entries.filter_map(|e| e.ok()) {
         let path = entry.path();
-        if !path.is_dir() {
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() || !meta.is_dir() {
             continue;
         }
         let folder = entry.file_name().to_string_lossy().to_string();
@@ -330,6 +374,9 @@ fn scan_installed(vault: &Path) -> Vec<InstalledPlugin> {
             continue;
         }
         let manifest_path = path.join("manifest.json");
+        if !real_plugin_file(&root, &manifest_path) {
+            continue;
+        }
         let Ok(raw) = fs::read_to_string(&manifest_path) else {
             continue;
         };
@@ -339,7 +386,7 @@ fn scan_installed(vault: &Path) -> Vec<InstalledPlugin> {
         if plugin.id != folder {
             continue;
         }
-        plugin.has_styles = path.join("styles.css").is_file();
+        plugin.has_styles = real_plugin_file(&root, &path.join("styles.css"));
         plugin.has_unsupported_js = path.join("main.js").is_file();
         out.push(plugin);
     }
@@ -348,7 +395,9 @@ fn scan_installed(vault: &Path) -> Vec<InstalledPlugin> {
 }
 
 fn read_core(vault: &Path) -> HashMap<String, bool> {
-    let path = core_path(vault);
+    let Ok(path) = core_path(vault) else {
+        return HashMap::new();
+    };
     let Ok(raw) = fs::read_to_string(&path) else {
         return HashMap::new();
     };
@@ -360,7 +409,9 @@ fn read_core(vault: &Path) -> HashMap<String, bool> {
 }
 
 fn community_on_disk(vault: &Path) -> (bool, Vec<String>) {
-    let path = community_path(vault);
+    let Ok(path) = community_path(vault) else {
+        return (false, Vec::new());
+    };
     let Ok(raw) = fs::read_to_string(&path) else {
         return (false, Vec::new());
     };
@@ -415,7 +466,7 @@ fn persist_community(vault: &Path, restricted: bool, enabled: &[String]) -> Resu
         "enabled": enabled,
     });
     write_json(
-        &community_path(vault),
+        &community_path(vault)?,
         &serde_json::to_string_pretty(&body).unwrap_or_else(|_| "{}".into()),
     )
 }
@@ -450,7 +501,7 @@ pub fn set_core_plugin_enabled(
     core.insert(id.clone(), enabled);
     let body = serde_json::json!({ "plugins": core });
     write_json(
-        &core_path(&vault),
+        &core_path(&vault)?,
         &serde_json::to_string_pretty(&body).unwrap_or_else(|_| "{}".into()),
     )?;
     Ok(load_state(&window.app_handle(), &vault))
@@ -469,7 +520,7 @@ pub fn decide_supernote_consent(
         core.insert("supernote".into(), false);
         let body = serde_json::json!({ "plugins": core });
         write_json(
-            &core_path(&vault),
+            &core_path(&vault)?,
             &serde_json::to_string_pretty(&body).unwrap_or_else(|_| "{}".into()),
         )?;
     }
@@ -520,7 +571,7 @@ pub fn set_community_plugin_enabled(
     let (restricted, mut list) = read_community(&window.app_handle(), &vault);
     list.retain(|x| x != &id);
     if enabled {
-        let manifest = plugins_dir(&vault).join(&id).join("manifest.json");
+        let manifest = plugins_dir(&vault)?.join(&id).join("manifest.json");
         if !manifest.is_file() {
             return Err("Install the plugin before enabling it.".into());
         }
@@ -540,7 +591,7 @@ fn commit_plugin_dir(
     if let Some(css) = css {
         assert_safe_css(css)?;
     }
-    let plugins = plugins_dir(vault);
+    let plugins = plugins_dir(vault)?;
     fs::create_dir_all(&plugins).map_err(|e| format!("Cannot create plugins directory: {e}"))?;
     let dest = plugins.join(id);
     assert_dest_under_plugins(vault, &dest)?;
@@ -657,7 +708,7 @@ pub fn uninstall_community_plugin(
 ) -> Result<VaultPluginState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     validate_plugin_id(&id)?;
-    let dest = plugins_dir(&vault).join(&id);
+    let dest = plugins_dir(&vault)?.join(&id);
     assert_dest_under_plugins(&vault, &dest)?;
     if dest.exists() {
         fs::remove_dir_all(&dest).map_err(|e| format!("Failed to uninstall plugin: {e}"))?;
@@ -683,10 +734,20 @@ pub fn read_community_plugin_styles(
     if !enabled.iter().any(|x| x == &id) {
         return Err("Plugin is not enabled.".into());
     }
-    let path = plugins_dir(&vault).join(&id).join("styles.css");
-    assert_dest_under_plugins(&vault, &plugins_dir(&vault).join(&id))?;
-    if !path.is_file() {
+    let plugins = plugins_dir(&vault)?;
+    let plugin_dir = plugins.join(&id);
+    let dir_meta = fs::symlink_metadata(&plugin_dir)
+        .map_err(|_| "Plugin folder is missing.".to_string())?;
+    if dir_meta.file_type().is_symlink() || !dir_meta.is_dir() {
+        return Err("Plugin folder cannot be a link.".into());
+    }
+    let path = plugin_dir.join("styles.css");
+    assert_dest_under_plugins(&vault, &plugin_dir)?;
+    if !path.exists() {
         return Ok(String::new());
+    }
+    if !real_plugin_file(&plugins, &path) {
+        return Err("Plugin styles cannot be a link.".into());
     }
     let css = fs::read_to_string(&path).map_err(|e| format!("Failed to read styles.css: {e}"))?;
     assert_safe_css(&css)?;
@@ -707,6 +768,8 @@ mod css_tests {
     fn rejects_hex_escaped_import() {
         assert!(assert_safe_css(r"body{color:red} \40import 'x.css';").is_err());
         assert!(assert_safe_css(r"@\69 mport url(https://evil)").is_err());
+        assert!(assert_safe_css("body{background:url(https://evil/x.png)}").is_err());
+        assert!(assert_safe_css("body{background:url(data:image/png;base64,aaaa)}").is_ok());
         assert!(assert_safe_css("a{color:blue}").is_ok());
     }
 }

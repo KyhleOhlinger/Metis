@@ -59,7 +59,9 @@ pub fn note_file_stamp(
 #[tauri::command]
 pub fn read_vault_image_base64(
     path: String,
+    for_ai: Option<bool>,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<crate::types::VaultImageBase64, String> {
     use base64::{Engine, engine::general_purpose::STANDARD};
@@ -97,6 +99,16 @@ pub fn read_vault_image_base64(
     if !resolved.starts_with(&canon_v) {
         return Err("read_vault_image_base64: path is outside the active vault.".into());
     }
+    if for_ai != Some(false) {
+        let blocked = crate::ai_context::never_send_folders(&app, &canon_v);
+        if resolved
+            .strip_prefix(&canon_v)
+            .ok()
+            .is_some_and(|rel| crate::ai_context::is_never_send(&rel.to_string_lossy(), &blocked))
+        {
+            return Err("This image is in a folder that is never sent.".into());
+        }
+    }
     if !resolved.is_file() {
         return Err(format!("Image not found: {}", resolved.display()));
     }
@@ -129,6 +141,7 @@ pub fn read_vault_image_base64(
 #[tauri::command]
 pub fn get_file_contents_batch(
     paths: Vec<String>,
+    for_ai: Option<bool>,
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
@@ -140,7 +153,11 @@ pub fn get_file_contents_batch(
 
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("get_file_contents_batch: {e}"))?;
-    let blocked = crate::ai_context::never_send_folders(&app, &canon_v);
+    let blocked = if for_ai == Some(true) {
+        crate::ai_context::never_send_folders(&app, &canon_v)
+    } else {
+        Vec::new()
+    };
 
     let mut out = Vec::with_capacity(paths.len());
     for path in paths {

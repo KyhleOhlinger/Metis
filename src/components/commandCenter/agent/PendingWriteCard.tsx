@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { PendingWrite, PendingWriteTool } from "./pendingWrite.types";
 import { appendToEnd, insertAfterFrontmatter, insertAtOffset } from "./contentMerge";
-import { noteContentHash, writeNoteReplacingAutosave } from "@/hooks/noteAutosave";
+import { noteContentHash, pinOverwriteBaseline, writeNoteReplacingAutosave } from "@/hooks/noteAutosave";
+import { loadVaultFile } from "@/utils/vaultRead";
 import { agentNoteCopyPath } from "@/utils/paths";
 
 // ── Pending write confirmation card ───────────────────────────────────────────
@@ -68,6 +69,8 @@ export function PendingWriteCard({
     return lines.join("\n") || "(no line changes)";
   }
 
+  const conflictHash = useRef<string | null>(null);
+
   async function handleApply(
     mode: "create" | "overwrite" = "create",
     pathOverride?: string,
@@ -82,9 +85,9 @@ export function PendingWriteCard({
       return;
     }
     onApply(write.id);
+    let relPath = pathOverride ?? write.path;
     try {
       let finalContent = write.content;
-      let relPath = pathOverride ?? write.path;
       let writeMode: "create" | "overwrite" = "overwrite";
 
       if (write.tool === "append_to_current_file") {
@@ -98,6 +101,20 @@ export function PendingWriteCard({
         writeMode = mode;
       }
 
+      if (write.tool === "create_new_note" && writeMode === "overwrite") {
+        try {
+          const fresh = await loadVaultFile(relPath);
+          const hash = noteContentHash(fresh);
+          if (conflictHash.current && hash !== conflictHash.current) {
+            conflictHash.current = hash;
+            onConflict(write.id);
+            return;
+          }
+          pinOverwriteBaseline(relPath, fresh);
+        } catch {
+          // The note is gone. Overwrite creates it.
+        }
+      }
       const absPath = await writeNoteReplacingAutosave(relPath, finalContent, writeMode);
       // Pass finalContent back so the caller can sync the editor immediately
       // without a separate disk read.
@@ -105,6 +122,11 @@ export function PendingWriteCard({
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (write.tool === "create_new_note" && msg.includes("NOTE_EXISTS")) {
+        try {
+          conflictHash.current = noteContentHash(await loadVaultFile(relPath));
+        } catch {
+          conflictHash.current = null;
+        }
         onConflict(write.id);
         return;
       }

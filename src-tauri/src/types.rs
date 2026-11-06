@@ -91,6 +91,16 @@ pub struct ReplaceSummary {
     pub file_path: String,
     pub file_name: String,
     pub replacements: usize,
+    /// Hash of the file contents the user was shown. Replace skips a file
+    /// whose bytes no longer match this.
+    pub content_hash: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmedReplace {
+    pub file_path: String,
+    pub content_hash: String,
 }
 
 /// Result of a vault replace, including a partial list when a later file fails.
@@ -99,5 +109,6 @@ pub struct ReplaceOutcome {
     pub summaries: Vec<ReplaceSummary>,
     pub error: Option<String>,
     pub trash_dir: Option<String>,
+    pub skipped: usize,
 }
 

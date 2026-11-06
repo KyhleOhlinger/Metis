@@ -1,6 +1,7 @@
 import { useCallback, useMemo, type MutableRefObject } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { loadVaultFile, loadVaultFiles } from "@/utils/vaultRead";
+import { noteContentHash } from "@/hooks/noteAutosave";
 import { useStore, type DiskWrite } from "@/store/useStore";
 import { syncUiAfterDiskWrites } from "@/store/vaultSync";
 import { usePersonaStore, selectProfileForPersona } from "@/store/usePersonaStore";
@@ -57,6 +58,19 @@ export type SystemPersonaRunUi = {
   abortRef: MutableRefObject<AbortController | null>;
 };
 
+async function vaultScanChars(vaultPath: string | null, fallback: number): Promise<number> {
+  if (!vaultPath) return fallback;
+  try {
+    const summaries = await invoke<{ char_count: number }[]>("get_file_summaries", {
+      folderPath: vaultPath,
+      recursive: true,
+    });
+    return summaries.reduce((sum, file) => sum + (file.char_count || 0), 0);
+  } catch {
+    return fallback;
+  }
+}
+
 export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
   const {
     activePersona,
@@ -96,10 +110,11 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
   }
 
   const { noteIndex } = useStore.getState();
+  const scanChars = await vaultScanChars(vaultPath, noteIndex.length);
   const gate = await confirmEstimatedEgress(async () => ({
     noteCount: noteIndex.length,
-    totalCharsInScope: noteIndex.length,
-    estimatedContextChars: noteIndex.length,
+    totalCharsInScope: scanChars,
+    estimatedContextChars: scanChars,
     plannedTier: "direct",
     budgetChars: 0,
     extraScoutApiCall: false,
@@ -217,10 +232,11 @@ const handleTaskScan = useCallback(async () => {
   }
 
   const { noteIndex } = useStore.getState();
+  const scanChars = await vaultScanChars(vaultPath, noteIndex.length);
   const gate = await confirmEstimatedEgress(async () => ({
     noteCount: noteIndex.length,
-    totalCharsInScope: noteIndex.length,
-    estimatedContextChars: noteIndex.length,
+    totalCharsInScope: scanChars,
+    estimatedContextChars: scanChars,
     plannedTier: "direct",
     budgetChars: 0,
     extraScoutApiCall: false,
@@ -384,10 +400,12 @@ const handleTaskSync = useCallback(async () => {
     let updatedNotes = 0;
     const diskWrites: DiskWrite[] = [];
     const skippedDirty: string[] = [];
+    const skippedSources = new Set<string>();
     for (const [source, updates] of planned.updates) {
       const path = `${vaultPath}/${source}.md`;
       if (noteHasUnsavedEdits(path)) {
         skippedDirty.push(vaultRelativeNote(path, vaultPath));
+        skippedSources.add(source);
         continue;
       }
       const content = bodies[sources.indexOf(source)] ?? "";
@@ -400,22 +418,43 @@ const handleTaskSync = useCallback(async () => {
     }
 
     const tasksByNote = await collectVaultTasksForTodo(noteIndex, setStatusMsg);
+    for (const source of skippedSources) {
+      const kept = todoEntries
+        .filter((entry) => entry.sourcePath === source)
+        .map((entry) => ({ text: entry.text, checked: entry.checked, dueDate: null }));
+      const row = tasksByNote.find((note) => vaultRelativeNote(note.path, vaultPath) === source);
+      if (row) row.tasks = kept;
+    }
     const syncedTodo = buildTodoSyncContent(tasksByNote, vaultPath);
     if (noteHasUnsavedEdits(todoPath)) {
       skippedDirty.push("summaries/todo.md");
     } else {
-      await saveCleanNote(todoPath, syncedTodo).catch(async () => {
+      try {
+        await saveCleanNote(todoPath, syncedTodo);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("NOT_FOUND")) throw err;
         await invoke("agent_write_note", {
           relPath: "summaries/todo.md",
           content: syncedTodo,
           mode: "overwrite",
         });
-      });
+      }
       diskWrites.push({ path: todoPath, content: syncedTodo });
     }
-    await invoke("save_task_sync_snapshot", {
-      json: JSON.stringify(snapshotFromNotes(tasksByNote, vaultPath)),
-    });
+    if (!noteHasUnsavedEdits(todoPath)) {
+      const nextSnapshot = snapshotFromNotes(tasksByNote, vaultPath);
+      if (skippedSources.size > 0) {
+        const kept = (snapshot.tasks ?? []).filter((task) => skippedSources.has(task.source));
+        nextSnapshot.tasks = [
+          ...nextSnapshot.tasks.filter((task) => !skippedSources.has(task.source)),
+          ...kept,
+        ];
+      }
+      await invoke("save_task_sync_snapshot", {
+        json: JSON.stringify(nextSnapshot),
+      });
+    }
     await syncUiAfterDiskWrites(diskWrites);
     const dirtyNote = skippedDirty.length ? `\n- Skipped unsaved notes: ${skippedDirty.join(", ")}` : "";
     const conflictNote = planned.conflicts.length ? `\n- Conflicts left unchanged: ${planned.conflicts.length}` : "";
@@ -651,7 +690,7 @@ const handleTaskSync = useCallback(async () => {
 
         const payload = await invoke<{ data_base64: string; mime_type: string }>(
           "read_vault_image_base64",
-          { path: img.path },
+          { path: img.path, forAi: true },
         );
 
         setStatusMsg(`Transcribing ${img.fileName} (${i + 1}/${images.length})…`);
@@ -683,10 +722,17 @@ const handleTaskSync = useCallback(async () => {
           img.fileName,
           result.text,
         );
+        let baselineContentHash: string | undefined;
+        try {
+          baselineContentHash = noteContentHash(await loadVaultFile(img.mdPath));
+        } catch {
+          baselineContentHash = undefined;
+        }
         const absPath = await invoke<string>("agent_write_note", {
           relPath: img.mdPath,
           content,
           mode: "overwrite",
+          baselineContentHash,
         });
         diskWrites.push({ path: absPath, content });
         lines.push(`✓ ${img.fileName} → ${img.fileName.replace(/\.[^.]+$/i, ".md")}`);

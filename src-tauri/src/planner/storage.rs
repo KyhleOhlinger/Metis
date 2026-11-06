@@ -28,7 +28,7 @@ pub(crate) fn vault_planner_dir(vault: &Path) -> PathBuf {
 }
 
 pub(crate) fn ensure_vault_planner_dir(vault: &Path) -> Result<PathBuf, String> {
-    let dir = vault_planner_dir(vault);
+    let dir = crate::security::ensure_real_metis_child(vault, "planner")?;
     fs::create_dir_all(&dir).map_err(|e| format!("Cannot create vault planner dir: {e}"))?;
     Ok(dir)
 }
@@ -67,7 +67,7 @@ pub(crate) fn prepare_vault_planner(app: &AppHandle, vault: &Path) -> Result<Pat
     // A vault's own planner_mode is not trusted. Copy only into a vault this
     // user created, or one they explicitly approved in app data.
     let consent = load_consent(app);
-    let key = path_key(vault);
+    let key = path_key(app, vault);
     let allowed = consent.created.iter().any(|path| path == &key)
         || consent.approved.iter().any(|path| path == &key);
     if allowed && !planner_dir_has_content(&dir) {
@@ -131,22 +131,28 @@ fn save_consent(app: &AppHandle, file: &PlannerConsentFile) -> Result<(), String
     write_private_json_file(&consent_path(app)?, &json)
 }
 
-fn path_key(vault: &Path) -> String {
-    vault.to_string_lossy().into_owned()
+fn path_key(app: &AppHandle, vault: &Path) -> String {
+    crate::vault_identity::decision_key(app, vault)
 }
 
 pub(crate) fn remember_created_vault(app: &AppHandle, vault: &Path) -> Result<(), String> {
     let mut file = load_consent(app);
-    let key = path_key(vault);
+    let key = path_key(app, vault);
     if !file.created.iter().any(|path| path == &key) {
         file.created.push(key);
     }
     save_consent(app, &file)
 }
 
+pub(crate) fn local_import_allowed(app: &AppHandle, vault: &Path) -> bool {
+    let file = load_consent(app);
+    let key = path_key(app, vault);
+    file.created.iter().any(|path| path == &key) || file.approved.iter().any(|path| path == &key)
+}
+
 pub(crate) fn legacy_adoption_pending(app: &AppHandle, vault: &Path) -> bool {
     let file = load_consent(app);
-    let key = path_key(vault);
+    let key = path_key(app, vault);
     if file.created.iter().any(|path| path == &key)
         || file.approved.iter().any(|path| path == &key)
         || file.declined.iter().any(|path| path == &key)
@@ -163,7 +169,7 @@ pub(crate) fn legacy_adoption_pending(app: &AppHandle, vault: &Path) -> bool {
 
 pub(crate) fn decide_legacy_adoption(app: &AppHandle, vault: &Path, approve: bool) -> Result<(), String> {
     let mut file = load_consent(app);
-    let key = path_key(vault);
+    let key = path_key(app, vault);
     file.approved.retain(|path| path != &key);
     file.declined.retain(|path| path != &key);
     if approve {

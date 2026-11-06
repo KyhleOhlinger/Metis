@@ -64,3 +64,6 @@ coverage/
 
 # Debug and local tooling
 *.local
+
+# Local scratch. Must not be committed.
+_to_delete/

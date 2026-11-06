@@ -196,16 +196,25 @@ fn save_config(app: &tauri::AppHandle, file: &BackupConfigFile) -> Result<(), St
     write_private_json_file(&config_path(app)?, &json)
 }
 
-fn options_for<'a>(file: &'a BackupConfigFile, vault: &Path) -> Option<&'a VaultBackupOptions> {
-    let key = vault.to_string_lossy();
+fn options_for<'a>(
+    file: &'a BackupConfigFile,
+    app: &tauri::AppHandle,
+    vault: &Path,
+) -> Option<&'a VaultBackupOptions> {
+    let key = crate::vault_identity::decision_key(app, vault);
     file.vaults
         .iter()
         .find(|row| row.vault_path == key)
         .map(|row| &row.options)
 }
 
-fn upsert_options(file: &mut BackupConfigFile, vault: &Path, options: VaultBackupOptions) {
-    let key = vault.to_string_lossy().into_owned();
+fn upsert_options(
+    file: &mut BackupConfigFile,
+    app: &tauri::AppHandle,
+    vault: &Path,
+    options: VaultBackupOptions,
+) {
+    let key = crate::vault_identity::decision_key(app, vault);
     if let Some(row) = file.vaults.iter_mut().find(|row| row.vault_path == key) {
         row.options = options;
     } else {
@@ -262,11 +271,11 @@ pub fn backup_sync_get(
 ) -> Result<BackupSyncState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     let mut file = load_config(&app)?;
-    let mut options = options_for(&file, &vault).cloned().unwrap_or_default();
+    let mut options = options_for(&file, &app, &vault).cloned().unwrap_or_default();
     let before = options.clone();
     prepare_options(&mut options);
     if options != before {
-        upsert_options(&mut file, &vault, options.clone());
+        upsert_options(&mut file, &app, &vault, options.clone());
         save_config(&app, &file)?;
     }
     Ok(state_from(&vault, &options))
@@ -284,7 +293,7 @@ pub fn backup_sync_set_options(
     }
     let vault = vault_for_window(&window, &vault_state)?;
     let mut file = load_config(&app)?;
-    let mut stored = options_for(&file, &vault).cloned().unwrap_or_default();
+    let mut stored = options_for(&file, &app, &vault).cloned().unwrap_or_default();
     prepare_options(&mut stored);
     stored.enabled = options.enabled;
     stored.github = options.enabled && options.github;
@@ -301,7 +310,7 @@ pub fn backup_sync_set_options(
     if stored.github {
         ensure_git_repo(&vault)?;
     }
-    upsert_options(&mut file, &vault, stored.clone());
+    upsert_options(&mut file, &app, &vault, stored.clone());
     save_config(&app, &file)?;
     Ok(state_from(&vault, &stored))
 }
@@ -335,7 +344,7 @@ fn backup_sync_run_inner(
 ) -> Result<BackupSyncReport, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     let file = load_config(&app)?;
-    let mut options = options_for(&file, &vault).cloned().unwrap_or_default();
+    let mut options = options_for(&file, &app, &vault).cloned().unwrap_or_default();
     prepare_options(&mut options);
     if !options.enabled {
         return Err("Turn on backup before syncing.".into());
@@ -391,6 +400,14 @@ fn backup_sync_run_inner(
         return Err("Could not read the backup commit state.".into());
     }
 
+    if let Some(push_to) = push_origin(&vault)? {
+        if push_to != url {
+            return Err(
+                "Backup refused: origin's push URL is not the GitHub remote configured in Settings."
+                    .into(),
+            );
+        }
+    }
     git(&vault, &["push", "-u", "origin", &branch])?;
     message.push_str(&format!("Pushed {branch} to origin."));
     remember_backup_result(&app, &vault, None);
@@ -421,7 +438,7 @@ fn remember_backup_result(app: &tauri::AppHandle, vault: &Path, error: Option<&s
     let Ok(mut file) = load_config(app) else {
         return;
     };
-    let mut options = options_for(&file, vault).cloned().unwrap_or_default();
+    let mut options = options_for(&file, app, vault).cloned().unwrap_or_default();
     match error {
         Some(message) => {
             options.last_error = message.chars().take(500).collect();
@@ -434,7 +451,7 @@ fn remember_backup_result(app: &tauri::AppHandle, vault: &Path, error: Option<&s
                 .unwrap_or(0);
         }
     }
-    upsert_options(&mut file, vault, options);
+    upsert_options(&mut file, app, vault, options);
     let _ = save_config(app, &file);
 }
 
@@ -486,7 +503,21 @@ fn is_files_section_name(name: &str) -> bool {
     {
         return false;
     }
+    if is_secret_file_name(name) {
+        return false;
+    }
     true
+}
+
+fn is_secret_file_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".pem")
+        || lower.ends_with(".key")
+        || lower.ends_with(".p12")
+        || lower.starts_with("id_")
+        || lower.starts_with("credentials")
+        || lower == ".env"
+        || lower.starts_with(".env.")
 }
 
 const DEFAULT_GITIGNORE: &str = "\
@@ -500,14 +531,40 @@ Desktop.ini
 *.log
 .env
 .env.*
+.*.tmp
 ";
 
 /// Create `.git` and a default `.gitignore` only for the GitHub backup option.
 fn ensure_git_repo(repo: &Path) -> Result<(), String> {
+    require_real_git_dir(repo)?;
     if !repo.join(".git").exists() {
         git(repo, &["init", "-b", "main"])?;
     }
     ensure_default_gitignore(repo)
+}
+
+/// `.git` has to be a real directory. A file (`gitdir:`) or a link is refused
+/// before any git command runs.
+fn require_real_git_dir(repo: &Path) -> Result<(), String> {
+    let git_dir = repo.join(".git");
+    if !git_dir.exists() {
+        return Ok(());
+    }
+    let meta = fs::symlink_metadata(&git_dir)
+        .map_err(|e| format!("Backup refused: cannot read .git ({e})."))?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err("Backup refused: .git must be a real directory inside the vault.".into());
+    }
+    // A commondir file makes Git read config and attributes from another
+    // directory. That other config is not the file scanned above, and a clean
+    // filter in it runs on `git add`. Refuse the pointer before any Git command.
+    match fs::symlink_metadata(git_dir.join("commondir")) {
+        Ok(_) => Err(
+            "Backup refused: .git/commondir points Git at another config.".into(),
+        ),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("Backup refused: cannot read .git/commondir ({err}).")),
+    }
 }
 fn ensure_default_gitignore(repo: &Path) -> Result<(), String> {
     let path = repo.join(".gitignore");
@@ -575,6 +632,15 @@ fn is_github_name(name: &str) -> bool {
         && !name.ends_with('.')
 }
 
+fn push_origin(repo: &Path) -> Result<Option<String>, String> {
+    let out = git_raw(repo, &["remote", "get-url", "--push", "origin"])?;
+    if !out.status.success() {
+        return Ok(None);
+    }
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if url.is_empty() { Ok(None) } else { Ok(Some(url)) }
+}
+
 fn current_origin(repo: &Path) -> Result<Option<String>, String> {
     let out = git_raw(repo, &["remote", "get-url", "origin"])?;
     if !out.status.success() {
@@ -618,7 +684,20 @@ fn stage_backup(repo: &Path, selected: &BackupManifest) -> Result<(), String> {
     if paths.is_empty() {
         return Ok(());
     }
-    let mut args = vec!["add".to_string(), "-A".into(), "--".into()];
+    // Exclude pathspecs come before `--`. Names after `--` are the selection.
+    let mut args = vec![
+        "add".into(),
+        "-A".into(),
+        ":(exclude,glob)**/*.pem".into(),
+        ":(exclude,glob)**/*.key".into(),
+        ":(exclude,glob)**/*.p12".into(),
+        ":(exclude,glob)**/id_*".into(),
+        ":(exclude,glob)**/credentials*".into(),
+        ":(exclude,glob)**/.env".into(),
+        ":(exclude,glob)**/.env.*".into(),
+        ":(exclude,glob)**/.*.tmp".into(),
+        "--".into(),
+    ];
     args.extend(paths);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     git(repo, &refs)?;
@@ -681,57 +760,179 @@ fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
-fn hostile_git_setting(config: &str) -> Option<&'static str> {
+fn git_config_key_allowed(section: &str, key: &str) -> bool {
+    let section = section.to_ascii_lowercase();
+    let key = key.to_ascii_lowercase();
+    match section.as_str() {
+        "core" => matches!(
+            key.as_str(),
+            "repositoryformatversion"
+                | "filemode"
+                | "bare"
+                | "logallrefupdates"
+                | "ignorecase"
+                | "precomposeunicode"
+        ),
+        "remote.origin" | "remote \"origin\"" => matches!(key.as_str(), "url" | "fetch"),
+        "user" => true,
+        other if other.starts_with("branch.") => matches!(key.as_str(), "remote" | "merge"),
+        _ => false,
+    }
+}
+
+/// First config key outside the backup allowlist. `include.path`,
+/// `remote.origin.pushurl`, `url.*.insteadOf`, and clean-filter keys are refused.
+fn disallowed_git_key(config: &str) -> Option<String> {
     let mut section = String::new();
     for line in config.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
             continue;
         }
-        if let Some(header) = trimmed.strip_prefix('[') {
+        if let Some(rest) = trimmed.strip_prefix('[') {
+            let Some((header, after)) = rest.split_once(']') else {
+                continue;
+            };
+            let header = header.trim();
             section = header
-                .split([']', ' '])
+                .split_whitespace()
                 .next()
                 .unwrap_or("")
+                .trim_matches('"')
                 .to_ascii_lowercase();
+            if header.to_ascii_lowercase().starts_with("remote ") {
+                let name = header
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim_matches('"')
+                    .to_ascii_lowercase();
+                section = format!("remote.{name}");
+            }
+            if header.to_ascii_lowercase().starts_with("branch ") {
+                let name = header
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim_matches('"')
+                    .to_ascii_lowercase();
+                section = format!("branch.{name}");
+            }
+            if header.to_ascii_lowercase().starts_with("url ") {
+                section = "url".into();
+            }
+            let after = after.trim();
+            if after.is_empty() {
+                continue;
+            }
+            if let Some(setting) = disallowed_assignment(&section, after) {
+                return Some(setting);
+            }
             continue;
         }
-        let key = trimmed
-            .split('=')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .to_ascii_lowercase();
-        let found = match (section.as_str(), key.as_str()) {
-            ("core", "fsmonitor") => Some("core.fsmonitor"),
-            ("core", "sshcommand") => Some("core.sshCommand"),
-            ("core", "hookspath") => Some("core.hooksPath"),
-            ("core", "askpass") => Some("core.askpass"),
-            ("credential", "helper") => Some("credential.helper"),
-            _ => None,
-        };
-        if found.is_some() {
-            return found;
+        if let Some(setting) = disallowed_assignment(&section, trimmed) {
+            return Some(setting);
         }
     }
     None
 }
 
+fn disallowed_assignment(section: &str, line: &str) -> Option<String> {
+    let key = line
+        .split('=')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    if key.is_empty() {
+        return None;
+    }
+    if git_config_key_allowed(section, &key) {
+        None
+    } else {
+        Some(format!("{section}.{key}"))
+    }
+}
+
+fn attributes_define_filter(text: &str) -> bool {
+    text.lines().any(|line| {
+        let code = line.split('#').next().unwrap_or("");
+        code.to_ascii_lowercase().contains("filter=")
+    })
+}
+
 fn refuse_hostile_git_config(repo: &Path) -> Result<(), String> {
+    require_real_git_dir(repo)?;
     let path = repo.join(".git").join("config");
-    let Ok(text) = fs::read_to_string(&path) else {
+    if let Ok(meta) = fs::symlink_metadata(&path) {
+        if meta.file_type().is_symlink() {
+            return Err("Backup refused: .git/config is a link.".into());
+        }
+        if let Ok(text) = fs::read_to_string(&path) {
+            if let Some(setting) = disallowed_git_key(&text) {
+                return Err(format!(
+                    "Backup refused: this vault's git config sets {setting}."
+                ));
+            }
+        }
+    }
+    walk_attributes(repo, 0)?;
+    let info = repo.join(".git").join("info").join("attributes");
+    if let Ok(meta) = fs::symlink_metadata(&info) {
+        if meta.file_type().is_symlink() {
+            return Err("Backup refused: git attributes are a link.".into());
+        }
+        if let Ok(text) = fs::read_to_string(&info) {
+            if attributes_define_filter(&text) {
+                return Err(
+                    "Backup refused: a git attributes file defines a clean filter.".into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Nested `.gitattributes` are checked. Directory links are not followed.
+fn walk_attributes(dir: &Path, depth: u32) -> Result<(), String> {
+    if depth > 12 {
         return Ok(());
+    }
+    let entries = match fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return Ok(()),
     };
-    if let Some(setting) = hostile_git_setting(&text) {
-        return Err(format!(
-            "Backup refused: this vault's git config sets {setting}."
-        ));
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        if meta.is_dir() {
+            if entry.file_name() == ".git" {
+                continue;
+            }
+            walk_attributes(&path, depth + 1)?;
+            continue;
+        }
+        if entry.file_name() == ".gitattributes" {
+            if let Ok(text) = fs::read_to_string(&path) {
+                if attributes_define_filter(&text) {
+                    return Err(
+                        "Backup refused: a git attributes file defines a clean filter.".into(),
+                    );
+                }
+            }
+        }
     }
     Ok(())
 }
 
 fn git_raw(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
     refuse_hostile_git_config(repo)?;
+    let git_dir = repo.join(".git");
     Command::new("git")
         .arg("-c")
         .arg("core.fsmonitor=false")
@@ -741,6 +942,10 @@ fn git_raw(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
         .arg("protocol.ext.allow=never")
         .args(args)
         .current_dir(repo)
+        .env("GIT_DIR", &git_dir)
+        .env("GIT_COMMON_DIR", &git_dir)
+        .env("GIT_WORK_TREE", repo)
+        .env("GIT_CEILING_DIRECTORIES", repo)
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
@@ -750,7 +955,9 @@ fn git_raw(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_default_gitignore, hostile_git_setting, is_files_section_name, prepare_options,
+        attributes_define_filter, disallowed_git_key, ensure_default_gitignore, is_files_section_name,
+        require_real_git_dir,
+        prepare_options,
         validate_github_remote, SpaceFlags, VaultBackupOptions,
     };
     use std::fs;
@@ -758,8 +965,41 @@ mod tests {
     #[test]
     fn hostile_repo_config_is_named() {
         let config = "[core]\nfsmonitor = touch /tmp/pwned\n[credential]\nhelper = store\n";
-        assert_eq!(hostile_git_setting(config), Some("core.fsmonitor"));
-        assert_eq!(hostile_git_setting("[user]\nname = Metis\n"), None);
+        assert_eq!(disallowed_git_key(config).as_deref(), Some("core.fsmonitor"));
+        assert_eq!(disallowed_git_key("[user]\nname = Metis\n"), None);
+        assert_eq!(
+            disallowed_git_key("[include]\npath = ../evil\n").as_deref(),
+            Some("include.path")
+        );
+        assert_eq!(
+            disallowed_git_key("[remote \"origin\"]\npushurl = git@evil.example:x.git\n").as_deref(),
+            Some("remote.origin.pushurl")
+        );
+        assert!(disallowed_git_key("[url \"git@evil:x\"]\ninsteadOf = https://github.com/\n").is_some());
+        assert_eq!(
+            disallowed_git_key("[filter \"x\"] clean = touch /tmp/pwn").as_deref(),
+            Some("filter.clean")
+        );
+        assert_eq!(
+            disallowed_git_key("[include] path = ../x.cfg").as_deref(),
+            Some("include.path")
+        );
+        assert!(attributes_define_filter("*.md filter=secret\n"));
+        assert!(!is_files_section_name("id_rsa"));
+        assert!(!is_files_section_name("notes.pem"));
+    }
+
+    #[test]
+    fn git_commondir_is_refused_before_git_runs() {
+        let root = std::env::temp_dir().join(format!("metis-commondir-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join(".git")).unwrap();
+        assert!(require_real_git_dir(&root).is_ok());
+        fs::write(root.join(".git").join("commondir"), "other.git\n").unwrap();
+        fs::create_dir_all(root.join("other.git")).unwrap();
+        let err = require_real_git_dir(&root).unwrap_err();
+        assert!(err.contains("commondir"), "{err}");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

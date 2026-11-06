@@ -128,7 +128,7 @@ async function inlineExportImages(html: string): Promise<{ html: string; failedI
       }
       const { data_base64, mime_type } = await invoke<VaultImageBase64>(
         "read_vault_image_base64",
-        { path: absPath },
+        { path: absPath, forAi: false },
       );
       img.src = `data:${mime_type};base64,${data_base64}`;
       img.removeAttribute("data-export-abs-path");

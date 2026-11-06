@@ -260,7 +260,13 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
             .find(|window| window.is_focused().unwrap_or(false))
             .or_else(|| windows.values().find(|window| window.label() != "metis-help"));
         if let Some(window) = target {
-            let _ = window.emit("menu-event", action);
+            // SECURITY: emit to this window only. App-wide emit would deliver
+            // the menu action to every vault window, including one that is not focused.
+            let _ = app.emit_to(
+                tauri::EventTarget::webview_window(window.label()),
+                "menu-event",
+                action,
+            );
         }
     }
 }

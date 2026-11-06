@@ -16,20 +16,21 @@ use tauri::Manager;
 
 /// Allow only in-app asset URLs inside Metis webviews; open http(s) in the OS browser.
 pub fn allow_in_app_webview_navigation(url: &tauri::Url) -> bool {
-    match url.scheme() {
-        "tauri" | "asset" | "blob" | "data" => true,
-        "http" | "https" => {
-            #[cfg(debug_assertions)]
-            {
-                if matches!(url.host_str(), Some("localhost") | Some("127.0.0.1")) {
-                    return true;
-                }
-            }
-            let _ = open::that(url.as_str());
-            false
-        }
-        _ => false,
+    if url.scheme() == "tauri" {
+        return true;
     }
+    if matches!(url.scheme(), "http" | "https") {
+        if url.host_str() == Some("tauri.localhost") {
+            return true;
+        }
+        #[cfg(debug_assertions)]
+        if matches!(url.host_str(), Some("localhost") | Some("127.0.0.1")) {
+            return true;
+        }
+        let _ = open::that(url.as_str());
+        return false;
+    }
+    false
 }
 
 // ── Native folder picker ──────────────────────────────────────────────────────
@@ -48,7 +49,10 @@ pub fn allow_in_app_webview_navigation(url: &tauri::Url) -> bool {
 /// Returns the selected folder path as a string, or `null` if the user
 /// cancelled.
 #[tauri::command]
-pub async fn pick_folder(window: tauri::WebviewWindow) -> Option<String> {
+pub async fn pick_folder(
+    window: tauri::WebviewWindow,
+    grant_as_vault: Option<bool>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     use std::sync::mpsc;
 
@@ -66,9 +70,54 @@ pub async fn pick_folder(window: tauri::WebviewWindow) -> Option<String> {
 
     // Wait for the user's selection on a blocking worker thread so the async
     // executor is not stalled while the dialog is open.
-    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+    let selected = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
         .await
-        .unwrap_or(None)
+        .unwrap_or(None);
+    if grant_as_vault == Some(true) {
+        if let Some(path) = &selected {
+            crate::security::remember_vault_grant(window.app_handle(), Path::new(path))?;
+        }
+    }
+    Ok(selected)
+}
+
+/// Allow one https host (or a loopback http host) for the http plugin.
+/// Called when a provider profile is saved or loaded. Shipped hosts are
+/// already in the static capability; adding them again is harmless.
+pub fn allow_ai_host(app: &tauri::AppHandle, base: &str) -> Result<(), String> {
+    let url = tauri::Url::parse(base).map_err(|_| "Provider URL is invalid.".to_string())?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Provider URL cannot include a username or password.".into());
+    }
+    let host = url.host_str().ok_or("Provider URL has no host.")?;
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | ':' | '-' | '[' | ']'))
+    {
+        return Err("Provider host is not allowed.".into());
+    }
+    if host.eq_ignore_ascii_case("169.254.169.254")
+        || host.eq_ignore_ascii_case("metadata.google.internal")
+    {
+        return Err("That host is not allowed.".into());
+    }
+    let loopback = matches!(host, "localhost" | "127.0.0.1" | "::1");
+    let pattern = if url.scheme() == "https" {
+        format!("https://{host}/**")
+    } else if url.scheme() == "http" && loopback {
+        format!("http://{host}/**")
+    } else {
+        return Err("Provider URL must use https.".into());
+    };
+    let ident: String = host
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    let capability = format!(
+        r#"{{"identifier":"ai-host-{ident}","windows":["main","vault_*"],"permissions":[{{"identifier":"http:allow-fetch","allow":[{{"url":"{pattern}"}}]}}]}}"#
+    );
+    app.add_capability(capability)
+        .map_err(|e| format!("Could not allow that provider host: {e}"))
 }
 
 // ── System file-manager integration ──────────────────────────────────────────
@@ -190,8 +239,11 @@ fn url_encode_path(path: &str) -> String {
 #[tauri::command]
 pub fn open_vault_window(
     vault_path: String,
+    window: tauri::WebviewWindow,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    reject_untrusted_webview(&window)?;
+    crate::security::vault_open_permitted(&app_handle, Path::new(vault_path.trim()))?;
     if focus_open_vault(vault_path.clone(), app_handle.clone())? {
         return Ok(());
     }
@@ -433,6 +485,93 @@ pub fn copy_files_to_folder(
     Ok(copied)
 }
 
+const IMAGE_COPY_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp"];
+
+/// Copy vault images to a folder the user picks in this command.
+///
+/// The destination is not a Jekyll export root. Only image files are copied,
+/// and the webview cannot name the folder.
+#[tauri::command]
+pub async fn copy_images_via_dialog(
+    source_paths: Vec<String>,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Option<usize>, String> {
+    use std::sync::mpsc;
+    use tauri_plugin_dialog::DialogExt;
+
+    reject_untrusted_webview(&window)?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("copy_images_via_dialog: {e}"))?;
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    window
+        .app_handle()
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Copy images to folder")
+        .pick_folder(move |result| {
+            let _ = tx.send(result.map(|path| path.to_string()));
+        });
+    let selected = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| format!("Folder dialog failed: {e}"))?;
+    let Some(dest_raw) = selected else {
+        return Ok(None);
+    };
+    let dest = PathBuf::from(dest_raw.trim());
+    if !dest.is_dir() {
+        return Err("Choose a folder.".into());
+    }
+    let dest = dest
+        .canonicalize()
+        .map_err(|e| format!("Cannot use that folder: {e}"))?;
+    if !export_root_is_allowed(&dest) {
+        return Err(
+            "Choose a project folder. Home, its parent folders, and sensitive folders are not copy destinations."
+                .into(),
+        );
+    }
+    let mut copied = 0usize;
+    for src_str in source_paths {
+        let src = PathBuf::from(&src_str);
+        let resolved = safe_resolve(&src).map_err(|e| format!("copy_images_via_dialog: {e}"))?;
+        if !resolved.starts_with(&canon_v) || !resolved.is_file() {
+            continue;
+        }
+        let ext = resolved
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !IMAGE_COPY_EXTS.contains(&ext.as_str()) {
+            continue;
+        }
+        let Some(file_name) = resolved.file_name() else {
+            continue;
+        };
+        let mut target = dest.join(file_name);
+        if target.exists() {
+            let stem = resolved.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+            let mut n = 1u32;
+            loop {
+                target = dest.join(format!("{stem}-{n}.{ext}"));
+                if !target.exists() {
+                    break;
+                }
+                n += 1;
+                if n > 9999 {
+                    return Err(format!("Too many name collisions for {}", file_name.to_string_lossy()));
+                }
+            }
+        }
+        fs::copy(&resolved, &target)
+            .map_err(|e| format!("Failed to copy {}: {e}", resolved.display()))?;
+        copied += 1;
+    }
+    Ok(Some(copied))
+}
+
 // ── PDF / export file I/O (user-chosen paths via save dialog) ─────────────────
 
 /// Native save-file dialog. Returns absolute path or `None` if cancelled.
@@ -618,6 +757,18 @@ fn export_root_is_allowed(canon: &Path) -> bool {
             return false;
         }
     }
+    #[cfg(windows)]
+    {
+        for var in ["SystemRoot", "ProgramFiles", "ProgramFiles(x86)"] {
+            let Some(raw) = std::env::var_os(var) else {
+                continue;
+            };
+            let root = PathBuf::from(raw);
+            if canon == root || canon.starts_with(&root) {
+                return false;
+            }
+        }
+    }
     true
 }
 
@@ -644,6 +795,13 @@ fn folder_export_name_allowed(grants: &[PathBuf], resolved: &Path) -> Result<(),
         return Err(format!(
             "Folder exports cannot write .{ext} files. Allowed: md, markdown, images, yml, yaml, pdf, html."
         ));
+    }
+    // Folder grants are the Jekyll blog root. Layouts, includes, and config stay untouched.
+    let rel_text = rel.to_string_lossy().replace('\\', "/");
+    if !rel_text.starts_with("_posts/") && !rel_text.starts_with("assets/img/") {
+        return Err(
+            "Blog exports can only write under _posts/ and assets/img/.".into(),
+        );
     }
     Ok(())
 }

@@ -2,7 +2,8 @@ use crate::security::{registered_vault, reject_untrusted_webview};
 use crate::state::CurrentVault;
 use crate::types::{ReplaceOutcome, ReplaceSummary, SearchMatch};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 // ── Vault-wide search & replace ───────────────────────────────────────────────
 
@@ -107,6 +108,84 @@ pub fn search_vault(
     Ok(matches)
 }
 
+/// Drop replace snapshots older than 14 days, then drop the oldest until
+/// the trash directory is under 64 MiB.
+fn prune_trash(trash: &Path) {
+    let Ok(entries) = fs::read_dir(trash) else {
+        return;
+    };
+    let cutoff = SystemTime::now().checked_sub(Duration::from_secs(14 * 24 * 60 * 60));
+    let mut kept: Vec<(SystemTime, PathBuf, u64)> = Vec::new();
+    for entry in entries.filter_map(|entry| entry.ok()) {
+        let path = entry.path();
+        let Ok(meta) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.file_type().is_symlink() {
+            let _ = fs::remove_file(&path);
+            continue;
+        }
+        let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+        if cutoff.is_some_and(|limit| modified < limit) {
+            let _ = if path.is_dir() {
+                fs::remove_dir_all(&path)
+            } else {
+                fs::remove_file(&path)
+            };
+            continue;
+        }
+        kept.push((modified, path, dir_size(&entry.path())));
+    }
+    kept.sort_by_key(|(modified, _, _)| *modified);
+    let mut total: u64 = kept.iter().map(|(_, _, size)| *size).sum();
+    const MAX_TRASH_BYTES: u64 = 64 * 1024 * 1024;
+    for (_, path, size) in kept {
+        if total <= MAX_TRASH_BYTES {
+            break;
+        }
+        let _ = if path.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        total = total.saturating_sub(size);
+    }
+}
+
+fn dir_size(path: &Path) -> u64 {
+    let mut seen = std::collections::HashSet::new();
+    dir_size_inner(path, 0, &mut seen)
+}
+
+fn dir_size_inner(path: &Path, depth: u32, seen: &mut std::collections::HashSet<(u64, u64)>) -> u64 {
+    if depth > 32 {
+        return 0;
+    }
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if meta.file_type().is_symlink() {
+        return 0;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if !seen.insert((meta.dev(), meta.ino())) {
+            return 0;
+        }
+    }
+    if meta.is_file() {
+        return meta.len();
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| dir_size_inner(&entry.path(), depth + 1, seen))
+        .sum()
+}
+
 /// Find-and-replace across all `.md` files in the active vault.
 ///
 /// SECURITY: Only modifies files within the vault boundary. Every path is
@@ -117,6 +196,7 @@ pub fn replace_in_vault(
     replacement: String,
     case_sensitive: bool,
     regex_mode: bool,
+    confirmed: Vec<crate::types::ConfirmedReplace>,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<ReplaceOutcome, String> {
@@ -128,6 +208,7 @@ pub fn replace_in_vault(
             summaries: Vec::new(),
             error: None,
             trash_dir: None,
+            skipped: 0,
         });
     }
 
@@ -165,14 +246,29 @@ pub fn replace_in_vault(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0);
-    let trash_root = canon_v.join(".metis").join("trash").join(stamp.to_string());
+    let trash_parent = crate::security::ensure_real_metis_child(&canon_v, "trash")?;
+    prune_trash(&trash_parent);
+    let trash_root = trash_parent.join(stamp.to_string());
     let mut summaries: Vec<ReplaceSummary> = Vec::new();
+    let mut skipped = 0usize;
+    let allowed: std::collections::HashMap<String, String> = confirmed
+        .into_iter()
+        .map(|row| (row.file_path, row.content_hash))
+        .collect();
 
     for file_path in &md_files {
+        let path_key = file_path.to_string_lossy().into_owned();
+        let Some(expected) = allowed.get(&path_key) else {
+            continue;
+        };
         let content = match fs::read_to_string(file_path) {
             Ok(c) => c,
             Err(_) => continue,
         };
+        if &content_hash(&content) != expected {
+            skipped += 1;
+            continue;
+        }
 
         let count = re.find_iter(&content).count();
         if count == 0 {
@@ -188,6 +284,7 @@ pub fn replace_in_vault(
                     summaries,
                     error: Some(format!("Failed to snapshot '{}': {e}", file_path.display())),
                     trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+                    skipped,
                 });
             }
         }
@@ -196,6 +293,7 @@ pub fn replace_in_vault(
                 summaries,
                 error: Some(format!("Failed to snapshot '{}': {e}", file_path.display())),
                 trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+                skipped,
             });
         }
         if let Err(e) = crate::io_atomic::write_atomic(file_path, new_content.as_bytes()) {
@@ -203,6 +301,7 @@ pub fn replace_in_vault(
                 summaries,
                 error: Some(format!("Failed to write '{}': {e}", file_path.display())),
                 trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+                skipped,
             });
         }
 
@@ -213,6 +312,7 @@ pub fn replace_in_vault(
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             replacements: count,
+            content_hash: content_hash(&content),
         });
     }
 
@@ -225,6 +325,7 @@ pub fn replace_in_vault(
         summaries,
         error: None,
         trash_dir,
+        skipped,
     })
 }
 
@@ -281,7 +382,41 @@ pub fn preview_replace_in_vault(
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default(),
             replacements: count,
+            content_hash: content_hash(&content),
         });
     }
     Ok(summaries)
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::dir_size;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use std::time::Instant;
+
+    #[test]
+    fn trash_size_does_not_follow_parent_links() {
+        let root = std::env::temp_dir().join(format!(
+            "metis-trash-size-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        symlink("..", root.join("up")).unwrap();
+        symlink("..", root.join("up2")).unwrap();
+        let started = Instant::now();
+        let size = dir_size(&root);
+        assert!(started.elapsed().as_millis() < 1000, "size walk followed links");
+        assert_eq!(size, 0);
+        let _ = fs::remove_dir_all(&root);
+    }
+}
+
+fn content_hash(text: &str) -> String {
+    let mut hash: u32 = 5381;
+    for unit in text.encode_utf16() {
+        hash = hash.wrapping_shl(5).wrapping_add(hash) ^ u32::from(unit);
+    }
+    format!("{hash:x}")
 }

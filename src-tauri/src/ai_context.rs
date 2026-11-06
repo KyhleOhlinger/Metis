@@ -47,7 +47,7 @@ pub(crate) fn never_send_folders(app: &tauri::AppHandle, vault: &Path) -> Vec<St
     let Ok(file) = load_never_send(app) else {
         return Vec::new();
     };
-    let key = vault.to_string_lossy();
+    let key = crate::vault_identity::decision_key(app, vault);
     file.vaults
         .into_iter()
         .find(|row| row.vault_path == key)
@@ -109,7 +109,7 @@ pub fn set_never_send_folders(
     }
     clean.truncate(50);
     let mut file = load_never_send(&app)?;
-    let key = vault.to_string_lossy().into_owned();
+    let key = crate::vault_identity::decision_key(&app, &vault);
     if let Some(row) = file.vaults.iter_mut().find(|row| row.vault_path == key) {
         row.folders = clean.clone();
     } else {

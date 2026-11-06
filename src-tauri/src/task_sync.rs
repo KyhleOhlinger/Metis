@@ -9,8 +9,16 @@ use std::path::Path;
 
 const MAX_BYTES: usize = 512 * 1024;
 
-fn snapshot_path(vault: &Path) -> std::path::PathBuf {
-    vault.join(".metis").join("task-sync.json")
+fn snapshot_path(vault: &Path) -> Result<std::path::PathBuf, String> {
+    let dir = vault.join(".metis");
+    if fs::symlink_metadata(&dir)
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return Err(
+            "The .metis folder is a link. Replace it with a real folder inside the vault.".into(),
+        );
+    }
+    Ok(dir.join("task-sync.json"))
 }
 
 #[tauri::command]
@@ -20,7 +28,7 @@ pub fn load_task_sync_snapshot(
 ) -> Result<String, String> {
     reject_untrusted_webview(&window)?;
     let vault = registered_vault(&window, &vault_state)?;
-    let path = snapshot_path(&vault);
+    let path = snapshot_path(&vault)?;
     if !path.exists() {
         return Ok("{\"tasks\":[]}".into());
     }
@@ -50,7 +58,8 @@ pub fn save_task_sync_snapshot(
     serde_json::from_str::<serde_json::Value>(&json)
         .map_err(|e| format!("Task sync snapshot is not JSON: {e}"))?;
     let vault = registered_vault(&window, &vault_state)?;
-    let path = snapshot_path(&vault);
+    crate::security::ensure_real_metis(&vault)?;
+    let path = snapshot_path(&vault)?;
     if path.exists()
         && fs::symlink_metadata(&path)
             .map(|meta| meta.file_type().is_symlink())

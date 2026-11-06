@@ -309,7 +309,7 @@ function serializeChirpyFrontmatter(args: {
   lines.push(`description: ${yamlString(args.description, "Description")}`);
   if (args.heroImagePath) {
     lines.push("image:");
-    lines.push(`  path: ${args.heroImagePath}`);
+    lines.push(`  path: ${yamlString(args.heroImagePath, "Image path")}`);
     lines.push("  width: 800");
     lines.push("  height: 500");
   }
@@ -338,7 +338,7 @@ export function convertNoteToJekyll(
   const { rewrittenBody, imageCopies, heroImagePath } = buildImageMap(body, options);
   body = rewrittenBody.trim();
   if (!options.allowLiquid) {
-    body = body.replace(/\{%\s*endraw\s*%\}/gi, "{% end raw %}");
+    body = body.replace(/\{%-?\s*endraw\s*-?%\}/gi, "{% end raw %}");
     body = `{% raw %}\n${body}\n{% endraw %}`;
   }
 

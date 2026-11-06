@@ -268,12 +268,10 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
               toastInfo("No local images found in this note.");
               return;
             }
-            const destDir = await invoke<string | null>("pick_folder");
-            if (!destDir) return;
-            const copied = await invoke<number>("copy_files_to_folder", {
+            const copied = await invoke<number | null>("copy_images_via_dialog", {
               sourcePaths: imagePaths,
-              destDir,
             });
+            if (copied == null) return;
             toastSuccess(`Copied ${copied} image${copied === 1 ? "" : "s"}.`);
             await refreshVault();
           } catch (err) {
