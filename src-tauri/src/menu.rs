@@ -254,7 +254,14 @@ pub fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
         _ => None,
     };
     if let Some(action) = action {
-        let _ = app.emit("menu-event", action);
+        let windows = app.webview_windows();
+        let target = windows
+            .values()
+            .find(|window| window.is_focused().unwrap_or(false))
+            .or_else(|| windows.values().find(|window| window.label() != "metis-help"));
+        if let Some(window) = target {
+            let _ = window.emit("menu-event", action);
+        }
     }
 }
 

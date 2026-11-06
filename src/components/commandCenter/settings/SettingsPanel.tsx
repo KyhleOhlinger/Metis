@@ -17,6 +17,7 @@ import { normalizeHex } from "@/utils/themeColors";
 import { useVisibleSettingsNav } from "../../settings/settingsNav";
 import { ExportSettings } from "../../settings/ExportSettings";
 import { BackupSyncSettings } from "../../settings/BackupSyncSettings";
+import { NeverSendFolders } from "../../settings/NeverSendFolders";
 import { PlannerSettingsSection } from "../../settings/PlannerSettingsSection";
 import { HotkeysSettingsSection } from "../../settings/HotkeysSettingsSection";
 import { PluginsSettingsSection } from "../../settings/PluginsSettingsSection";
@@ -110,13 +111,18 @@ export function SettingsPanel({
           </SettingsSection>
         )}
         {section === "ai" && (
-          <SettingsTab
-            filterSection="ai"
-            settings={settings}
-            upsertProviderProfile={upsertProviderProfile}
-            removeProviderProfile={removeProviderProfile}
-            onUpdateSettings={onUpdateSettings}
-          />
+          <>
+            <SettingsTab
+              filterSection="ai"
+              settings={settings}
+              upsertProviderProfile={upsertProviderProfile}
+              removeProviderProfile={removeProviderProfile}
+              onUpdateSettings={onUpdateSettings}
+            />
+            <SettingsSection title="Never send">
+              <NeverSendFolders />
+            </SettingsSection>
+          </>
         )}
         {section === "personas" && (
           <SettingsTab

@@ -75,18 +75,58 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct DeviceDate {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+}
+
+impl DeviceDate {
+    fn label(self) -> String {
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}",
+            self.year, self.month, self.day, self.hour, self.minute
+        )
+    }
+}
+
+fn parse_device_date(raw: &str) -> Option<DeviceDate> {
+    let t = raw.trim().replace('T', " ");
+    let (date, time) = t.split_once(' ')?;
+    let mut date_parts = date.split('-');
+    let year: u16 = date_parts.next()?.parse().ok()?;
+    let month: u8 = date_parts.next()?.parse().ok()?;
+    let day: u8 = date_parts.next()?.parse().ok()?;
+    if date_parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let mut time_parts = time.split(':');
+    let hour: u8 = time_parts.next()?.parse().ok()?;
+    let minute: u8 = time_parts.next()?.parse().ok()?;
+    if time_parts.next().is_some() || hour > 23 || minute > 59 {
+        return None;
+    }
+    Some(DeviceDate {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+    })
+}
+
+fn device_date_is_newer(remote: &str, stored: &str) -> bool {
+    match (parse_device_date(remote), parse_device_date(stored)) {
+        (Some(remote), Some(stored)) => remote > stored,
+        _ => false,
+    }
+}
+
 fn sanitize_device_date(raw: &str) -> Option<String> {
-    let t = raw.trim();
-    if t.is_empty() || t.len() > 40 {
-        return None;
-    }
-    if !t
-        .chars()
-        .all(|c| c.is_ascii_digit() || matches!(c, '-' | ':' | ' ' | 'T' | '.' | '/'))
-    {
-        return None;
-    }
-    Some(t.to_string())
+    parse_device_date(raw).map(DeviceDate::label)
 }
 
 fn json_date(item: &serde_json::Value) -> Option<String> {
@@ -109,7 +149,43 @@ fn load_sync_meta(vault: &Path) -> SyncMetaFile {
     if raw.len() > MAX_SYNC_META_BYTES {
         return SyncMetaFile::default();
     }
-    serde_json::from_str(&raw).unwrap_or_default()
+    let parsed: SyncMetaFile = serde_json::from_str(&raw).unwrap_or_default();
+    validate_sync_meta(parsed)
+}
+
+fn validate_sync_meta(meta: SyncMetaFile) -> SyncMetaFile {
+    let mut files = HashMap::new();
+    for (key, entry) in meta.files {
+        let key = key.replace('\\', "/");
+        if !valid_sync_meta_key(&key) {
+            continue;
+        }
+        files.insert(
+            key,
+            SyncMetaEntry {
+                pulled_at_ms: entry.pulled_at_ms,
+                device_date: entry.device_date.as_deref().and_then(sanitize_device_date),
+                size: entry.size.filter(|size| *size <= MAX_FILE_BYTES as u64),
+            },
+        );
+    }
+    SyncMetaFile { files }
+}
+
+fn valid_sync_meta_key(key: &str) -> bool {
+    if key.is_empty()
+        || key.len() > 1024
+        || key.starts_with('/')
+        || key.ends_with('/')
+        || key.contains("//")
+    {
+        return false;
+    }
+    let prefix = format!("{DEST_SPACE}/{DEST_FOLDER}/");
+    if !key.starts_with(&prefix) {
+        return false;
+    }
+    key.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
 }
 
 fn save_sync_meta(vault: &Path, meta: &SyncMetaFile) -> Result<(), String> {
@@ -147,7 +223,7 @@ fn should_pull(
     }
     if let Some(remote) = remote_date.filter(|s| !s.is_empty()) {
         match prev.and_then(|p| p.device_date.as_deref()) {
-            Some(stored) if remote > stored => return true,
+            Some(stored) if device_date_is_newer(remote, stored) => return true,
             _ => {}
         }
     }
@@ -215,9 +291,13 @@ fn vault_for_window(
 fn vault_for_sync(
     window: &tauri::WebviewWindow,
     vault_state: &tauri::State<'_, CurrentVault>,
+    app: &tauri::AppHandle,
 ) -> Result<PathBuf, String> {
     let vault = vault_for_window(window, vault_state)?;
     require_core_plugin(&vault, "supernote")?;
+    if !crate::feature_consent::supernote_approved(app, &vault) {
+        return Err("Supernote is not approved for this vault.".into());
+    }
     Ok(vault)
 }
 
@@ -370,11 +450,20 @@ fn join_url(base: &str, href: &str) -> Option<String> {
 }
 
 fn url_on_device(url: &str, ip: [u8; 4], port: u16) -> bool {
-    let prefix = format!(
-        "http://{}.{}.{}.{}:{port}",
-        ip[0], ip[1], ip[2], ip[3]
-    );
-    url.starts_with(&prefix)
+    let Ok(parsed) = url::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "http" {
+        return false;
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let expected = format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]);
+    host == expected && parsed.port() == Some(port)
 }
 
 fn listing_path_from_url(url: &str, ip: [u8; 4], port: u16) -> String {
@@ -475,12 +564,80 @@ fn encode_url_for_request(url: &str) -> String {
 }
 
 fn relative_under_note(url_path: &str) -> PathBuf {
-    let path = url_path.trim_start_matches('/');
-    let rest = path
-        .strip_prefix("Note/")
-        .or_else(|| path.strip_prefix("Note"))
-        .unwrap_or(path);
-    PathBuf::from(rest.trim_start_matches('/'))
+    let path = url_path.trim_matches('/');
+    let mut parts = path.split('/').filter(|part| !part.is_empty());
+    let rest = if parts.next() == Some("Note") {
+        parts.collect::<Vec<_>>().join("/")
+    } else {
+        path.to_string()
+    };
+    PathBuf::from(rest)
+}
+
+fn ensure_real_dir(path: &Path) -> Result<(), String> {
+    match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(format!(
+            "{} is a link. Sync will not write through it.",
+            path.display()
+        )),
+        Ok(meta) if meta.is_dir() => Ok(()),
+        Ok(_) => Err(format!("{} is not a folder.", path.display())),
+        Err(_) => {
+            if let Some(parent) = path.parent() {
+                if parent != path && !parent.as_os_str().is_empty() {
+                    ensure_real_dir(parent)?;
+                }
+            }
+            fs::create_dir(path).map_err(|e| format!("Cannot create {}: {e}", path.display()))
+        }
+    }
+}
+
+/// Canonical destination under `dest_root`. Any symlink on the way is refused.
+fn pull_destination(dest_root: &Path, rel: &Path) -> Result<PathBuf, String> {
+    let root_meta = fs::symlink_metadata(dest_root)
+        .map_err(|e| format!("Supernote folder is missing: {e}"))?;
+    if root_meta.file_type().is_symlink() || !root_meta.is_dir() {
+        return Err("Supernote folder is not a real directory.".into());
+    }
+    let root = dest_root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve Supernote folder: {e}"))?;
+    let mut cursor = root.clone();
+    let comps: Vec<_> = rel.components().collect();
+    for (index, comp) in comps.iter().enumerate() {
+        let std::path::Component::Normal(name) = comp else {
+            return Err("Invalid remote path.".into());
+        };
+        cursor.push(name);
+        let last = index + 1 == comps.len();
+        match fs::symlink_metadata(&cursor) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return Err(format!(
+                    "Refusing to write through a link at {}.",
+                    cursor.display()
+                ));
+            }
+            Ok(meta) if !last && !meta.is_dir() => {
+                return Err(format!("{} is not a folder.", cursor.display()));
+            }
+            Ok(_) => {}
+            Err(_) if last => {}
+            Err(_) => {
+                fs::create_dir(&cursor)
+                    .map_err(|e| format!("Cannot create {}: {e}", cursor.display()))?;
+            }
+        }
+    }
+    let parent = cursor.parent().ok_or("Invalid destination.")?;
+    let canon_parent = parent
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve destination: {e}"))?;
+    if canon_parent != root && !canon_parent.starts_with(&root) {
+        return Err("Destination is outside handwritten/Supernote.".into());
+    }
+    let name = cursor.file_name().ok_or("Invalid destination.")?;
+    Ok(canon_parent.join(name))
 }
 
 fn safe_dest_rel(rel: &Path) -> Result<PathBuf, String> {
@@ -757,13 +914,14 @@ fn get_listing(url: &str) -> Result<String, String> {
 #[tauri::command]
 pub fn ensure_supernote_folder(
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
-    let vault = vault_for_sync(&window, &vault_state)?;
+    let vault = vault_for_sync(&window, &vault_state, &app)?;
     let handwritten = vault.join(DEST_SPACE);
-    fs::create_dir_all(&handwritten).map_err(|e| format!("Cannot create handwritten/: {e}"))?;
+    ensure_real_dir(&handwritten)?;
     let dest = dest_dir(&vault);
-    fs::create_dir_all(&dest).map_err(|e| format!("Cannot create handwritten/Supernote/: {e}"))?;
+    ensure_real_dir(&dest)?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -772,9 +930,10 @@ pub async fn sync_supernote_browse_access(
     ip: String,
     port: Option<u16>,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<SupernoteSyncResult, String> {
-    let vault = vault_for_sync(&window, &vault_state)?;
+    let vault = vault_for_sync(&window, &vault_state, &app)?;
     tauri::async_runtime::spawn_blocking(move || pull_browse_access(vault, ip, port))
         .await
         .map_err(|e| format!("Sync task failed: {e}"))?
@@ -789,10 +948,8 @@ fn pull_browse_access(
     assert_lan_ipv4(octets)?;
     let port = normalize_port(port)?;
     let dest_root = dest_dir(&vault);
-    fs::create_dir_all(vault.join(DEST_SPACE))
-        .map_err(|e| format!("Cannot create handwritten/: {e}"))?;
-    fs::create_dir_all(&dest_root)
-        .map_err(|e| format!("Cannot create handwritten/Supernote/: {e}"))?;
+    ensure_real_dir(&vault.join(DEST_SPACE))?;
+    ensure_real_dir(&dest_root)?;
     let mut sync_meta = load_sync_meta(&vault);
 
     let origin = format!(
@@ -855,11 +1012,13 @@ fn pull_browse_access(
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let dest = dest_root.join(&rel);
-            if !dest.starts_with(&dest_root) {
-                continue;
-            }
-            let existed = dest.exists();
+            let dest = match pull_destination(&dest_root, &rel) {
+                Ok(path) => path,
+                Err(_) => continue,
+            };
+            let existed = fs::symlink_metadata(&dest)
+                .map(|meta| !meta.file_type().is_symlink())
+                .unwrap_or(false);
             let key_opt = vault_rel_key(&vault, &dest);
             let prev = key_opt
                 .as_ref()
@@ -868,7 +1027,7 @@ fn pull_browse_access(
                 skipped += 1;
                 let keep_older_device = matches!(
                     (link.date.as_deref(), prev.as_ref().and_then(|p| p.device_date.as_deref())),
-                    (Some(remote), Some(stored)) if remote < stored
+                    (Some(remote), Some(stored)) if device_date_is_newer(stored, remote)
                 );
                 record_sync_entry(
                     &mut sync_meta,
@@ -883,10 +1042,6 @@ fn pull_browse_access(
                     None,
                 );
                 continue;
-            }
-            if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
             }
             let res = match lan_http_get(&link.abs, FILE_TIMEOUT_SECS, MAX_FILE_BYTES) {
                 Ok(r) => r,
@@ -1006,6 +1161,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn device_url_rejects_userinfo_port_prefix_and_https() {
+        let ip = [10, 0, 0, 8];
+        assert!(url_on_device("http://10.0.0.8:8089/Note/a.note", ip, 8089));
+        assert!(!url_on_device("http://10.0.0.8:8089@evil.example/x", ip, 8089));
+        assert!(!url_on_device("http://10.0.0.8:80891/x", ip, 8089));
+        assert!(!url_on_device("http://10.0.0.8.evil.example:8089/x", ip, 8089));
+        assert!(!url_on_device("https://10.0.0.8:8089/x", ip, 8089));
+    }
+
+    #[test]
     fn nested_file_uses_its_own_uri_when_the_name_matches() {
         let page = "http://10.0.0.8:8089/Note/Folder%202/Subfolder%202/";
         let url = resolve_listing_file_url(
@@ -1047,5 +1212,65 @@ mod tests {
             encode_url_for_request(raw),
             "http://10.0.0.8:8089/Note/Folder%202/Note%202.note"
         );
+    }
+
+    #[test]
+    fn note_component_is_exact() {
+        assert_eq!(
+            relative_under_note("/Notebooks/a.note"),
+            PathBuf::from("Notebooks/a.note")
+        );
+        assert_eq!(
+            relative_under_note("/Note/Folder/a.note"),
+            PathBuf::from("Folder/a.note")
+        );
+    }
+
+    #[test]
+    fn device_dates_are_parsed_before_compare() {
+        assert!(device_date_is_newer("2026-11-06 10:00", "2026-11-06 09:00"));
+        assert!(!device_date_is_newer("not-a-date", "2026-11-06 09:00"));
+        assert!(!device_date_is_newer("2026-11-06 09:00", "2026-13-01 00:00"));
+    }
+
+    #[test]
+    fn sync_metadata_drops_unsafe_keys() {
+        let mut files = HashMap::new();
+        files.insert(
+            "../secret.md".into(),
+            SyncMetaEntry {
+                pulled_at_ms: 1,
+                device_date: Some("nope".into()),
+                size: Some(u64::MAX),
+            },
+        );
+        files.insert(
+            "handwritten/Supernote/a.note".into(),
+            SyncMetaEntry {
+                pulled_at_ms: 2,
+                device_date: Some("2026-01-02 03:04".into()),
+                size: Some(12),
+            },
+        );
+        let clean = validate_sync_meta(SyncMetaFile { files });
+        assert_eq!(clean.files.len(), 1);
+        let kept = clean.files.get("handwritten/Supernote/a.note").unwrap();
+        assert_eq!(kept.device_date.as_deref(), Some("2026-01-02 03:04"));
+        assert_eq!(kept.size, Some(12));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pull_refuses_a_symlinked_folder() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("metis-supernote-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("outside")).unwrap();
+        let root = dir.join("Supernote");
+        fs::create_dir_all(&root).unwrap();
+        symlink(dir.join("outside"), root.join("linked")).unwrap();
+        let err = pull_destination(&root, Path::new("linked/a.note")).unwrap_err();
+        assert!(err.contains("link"));
+        let _ = fs::remove_dir_all(&dir);
     }
 }

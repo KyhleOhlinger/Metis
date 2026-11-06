@@ -396,10 +396,26 @@ function pickByBudget(ranked: FileSummary[], budget: number): FileSummary[] {
   return selected;
 }
 
-/** Fetch and concatenate full content of a list of file paths. */
+interface VaultNoteBody {
+  path: string;
+  content: string;
+}
+
+export function wrapUntrustedNotes(files: VaultNoteBody[]): string {
+  if (files.length === 0) return "(no files selected)";
+  return files
+    .map((file) => {
+      const path = file.path.replace(/[<>&"]/g, "");
+      return `<untrusted-note path="${path}">\n${file.content}\n</untrusted-note>`;
+    })
+    .join("\n\n");
+}
+
+/** Fetch note bodies as labelled untrusted blocks. */
 async function fetchContent(paths: string[]): Promise<string> {
   if (paths.length === 0) return "(no files selected)";
-  return invoke<string>("get_files_content", { paths });
+  const files = await invoke<VaultNoteBody[]>("get_files_content", { paths });
+  return wrapUntrustedNotes(files);
 }
 
 /** Match scout-returned filenames back to full paths from the candidate list. */
@@ -504,6 +520,9 @@ export interface EgressEstimate {
   scopeLabel: string;
   requiresConfirm: boolean;
   providerLabel: string;
+  destinationHost: string;
+  profileId: string;
+  fileNames: string[];
   /** Image markdown refs in current/specific-file scope (0 if unknown). */
   estimatedImageCount: number;
   /** Folder/vault runs may attach referenced images after notes are selected. */
@@ -576,6 +595,13 @@ export async function estimateContextEgress(
   const overhead = persona.systemPrompt.length + userMessage.length + 500;
   const budget = charBudget(persona.model, overhead);
   const providerLabel = profile.name?.trim() || profile.baseUrl;
+  let destinationHost = profile.baseUrl.trim();
+  try {
+    destinationHost = new URL(profile.baseUrl).host || destinationHost;
+  } catch {
+    /* keep the raw base URL when it is not a URL */
+  }
+  const profileId = profile.id;
 
   if (scope.type === "none") {
     return {
@@ -588,6 +614,9 @@ export async function estimateContextEgress(
       scopeLabel: "No Selection",
       requiresConfirm: false,
       providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: [],
       estimatedImageCount: 0,
       imagesMayBeAttached: false,
       contentKind: "prompt",
@@ -609,6 +638,9 @@ export async function estimateContextEgress(
         scopeLabel,
         requiresConfirm: false,
         providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: [],
         estimatedImageCount: 0,
         imagesMayBeAttached: false,
         contentKind: "planner",
@@ -633,6 +665,9 @@ export async function estimateContextEgress(
       scopeLabel,
       requiresConfirm: true,
       providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: [],
       estimatedImageCount: imageCount,
       imagesMayBeAttached: imageCount > 0,
       contentKind: "planner",
@@ -652,6 +687,9 @@ export async function estimateContextEgress(
       scopeLabel: activeFilePath?.split("/").pop() ?? "Current file",
       requiresConfirm: false,
       providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: activeFilePath ? [activeFilePath.split("/").pop() ?? activeFilePath] : [],
       estimatedImageCount: imageCount,
       imagesMayBeAttached: imageCount > 0,
     };
@@ -676,6 +714,9 @@ export async function estimateContextEgress(
       scopeLabel: scope.filePath.split("/").pop() ?? "File",
       requiresConfirm: false,
       providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: [scope.filePath.split("/").pop() ?? scope.filePath],
       estimatedImageCount: imageCount,
       imagesMayBeAttached: imageCount > 0,
     };
@@ -699,6 +740,9 @@ export async function estimateContextEgress(
       scopeLabel,
       requiresConfirm: false,
       providerLabel,
+      destinationHost,
+      profileId,
+      fileNames: [],
       estimatedImageCount: 0,
       imagesMayBeAttached: false,
     };
@@ -725,6 +769,9 @@ export async function estimateContextEgress(
     budgetChars: budget,
     scopeLabel,
     providerLabel,
+    destinationHost,
+    profileId,
+    fileNames: summaries.slice(0, 8).map((file) => file.name),
     requiresConfirm:
       noteCount > 0 &&
       (scope.type === "full-vault" || scope.type === "specific-folder"),
@@ -760,10 +807,15 @@ export function egressEstimateSummary(est: EgressEstimate): string {
   } else if (est.imagesMayBeAttached) {
     imageNote = ` Referenced vault images in selected notes may be attached (max ${MAX_AGENT_VISION_IMAGES}).`;
   }
+  const names = est.fileNames.slice(0, 8);
+  const nameNote = names.length
+    ? ` Files: ${names.join(", ")}${est.noteCount > names.length ? ", …" : ""}.`
+    : "";
   return (
     `Scope: ${est.scopeLabel} — ${est.noteCount} note${est.noteCount !== 1 ? "s" : ""}, ` +
-    `~${fmtChars(est.estimatedContextChars)} chars to provider (${tier}). ` +
+    `~${fmtChars(est.estimatedContextChars)} chars to ${est.providerLabel} (${est.destinationHost}) (${tier}). ` +
     `(${fmtChars(est.totalCharsInScope)} chars total in scope; model budget ~${fmtChars(est.budgetChars)}.)` +
+    nameNote +
     imageNote
   );
 }

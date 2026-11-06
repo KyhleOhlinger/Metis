@@ -3,7 +3,7 @@ use crate::security::{
     safe_resolve, write_private_json_file,
 };
 use crate::settings::app_data_dir_for_build;
-use crate::state::{CurrentVault, ExportGrants};
+use crate::state::{CurrentVault, ExportGrants, OneShotExportGrant};
 use crate::vault_fs::{
     read_vault_meta, validate_relative_vault_dir, write_vault_meta, write_vault_meta_full,
 };
@@ -102,31 +102,32 @@ pub fn reveal_in_finder(
     reveal_impl(&resolved.to_string_lossy(), &vault_path)
 }
 
+/// Finder reveal arguments. The path is an `osascript` argv item, not text
+/// inside the AppleScript, so a quote or a trailing backslash cannot change
+/// the script.
+fn macos_reveal_osascript_args(path: &str) -> Result<Vec<String>, String> {
+    if path.is_empty() || path.contains('\0') {
+        return Err("Path contains characters unsupported for Finder reveal.".into());
+    }
+    Ok(vec![
+        "-e".to_string(),
+        "on run argv\n\
+         tell application \"Finder\"\n\
+         activate\n\
+         reveal POSIX file (item 1 of argv)\n\
+         end tell\n\
+         end run"
+            .to_string(),
+        path.to_string(),
+    ])
+}
+
 #[cfg(target_os = "macos")]
 fn reveal_impl(path: &str, vault_path: &str) -> Result<(), String> {
-    // SECURITY: AppleScript string literals have no backslash-escape mechanism.
-    // macOS APFS allows `"` in filenames, so we must reject such paths rather
-    // than risk AppleScript injection.  We also reject control characters
-    // (\n, \r) that could break the multi-line script.
-    for arg in [path, vault_path] {
-        if arg.contains('"') || arg.contains('\n') || arg.contains('\r') {
-            return Err("Path contains characters unsupported for Finder reveal.".into());
-        }
-    }
-
-    // `reveal` opens a single Finder window with the item selected inside its
-    // parent folder.  From there the user can press Cmd+Up, use the path bar
-    // (View › Show Path Bar), or click the Back button to reach the vault root
-    // or any other directory — no second window is created.
-    let _ = vault_path; // kept in signature for forward-compat; unused on macOS
-    let script = format!(
-        "tell application \"Finder\"\n\
-         activate\n\
-         reveal POSIX file \"{path}\"\n\
-         end tell"
-    );
+    let _ = vault_path;
+    let args = macos_reveal_osascript_args(path)?;
     std::process::Command::new("osascript")
-        .args(["-e", &script])
+        .args(&args)
         .spawn()
         .map_err(|e| format!("Failed to reveal in Finder: {e}"))?;
     Ok(())
@@ -191,6 +192,9 @@ pub fn open_vault_window(
     vault_path: String,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    if focus_open_vault(vault_path.clone(), app_handle.clone())? {
+        return Ok(());
+    }
     // Validate the path is an existing directory before spawning a window
     let dir = PathBuf::from(&vault_path);
     if !dir.is_dir() {
@@ -235,6 +239,36 @@ pub fn open_vault_window(
         .map_err(|e| format!("Failed to open new vault window: {e}"))?;
 
     Ok(())
+}
+
+/// Focus the window that already has this vault open. Trailing slashes and
+/// symlinks resolve to the same canonical path.
+#[tauri::command]
+pub fn focus_open_vault(vault_path: String, app_handle: tauri::AppHandle) -> Result<bool, String> {
+    use crate::security::canon_vault;
+    use crate::state::CurrentVault;
+
+    let trimmed = vault_path.trim().trim_end_matches(['/', '\\']);
+    let Ok(requested) = canon_vault(Path::new(trimmed)) else {
+        return Ok(false);
+    };
+    let vaults = app_handle.state::<CurrentVault>();
+    let map = vaults.0.lock().map_err(|_| "Vault map is busy.".to_string())?;
+    for (label, stored) in map.iter() {
+        let stored_trimmed = stored.trim().trim_end_matches(['/', '\\']);
+        let Ok(stored_canon) = canon_vault(Path::new(stored_trimmed)) else {
+            continue;
+        };
+        if stored_canon != requested {
+            continue;
+        }
+        if let Some(window) = app_handle.get_webview_window(label) {
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 // ── External URL opener ───────────────────────────────────────────────────────
@@ -308,6 +342,8 @@ pub fn copy_files_to_folder(
     source_paths: Vec<String>,
     dest_dir: String,
     window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    export_grants: tauri::State<'_, ExportGrants>,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<usize, String> {
     reject_untrusted_webview(&window)?;
@@ -318,10 +354,29 @@ pub fn copy_files_to_folder(
     let dest_resolved = if dest.exists() {
         safe_resolve(&dest).map_err(|e| format!("copy_files_to_folder: {e}"))?
     } else {
-        fs::create_dir_all(&dest)
-            .map_err(|e| format!("Failed to create destination folder: {e}"))?;
-        safe_resolve(&dest).map_err(|e| format!("copy_files_to_folder: {e}"))?
+        let parent = dest.parent().ok_or("Destination folder is not valid.")?;
+        if !parent.exists() {
+            return Err(
+                "Choose the export folder with Browse before copying files.".into(),
+            );
+        }
+        let parent_resolved = safe_resolve(parent).map_err(|e| format!("copy_files_to_folder: {e}"))?;
+        let name = dest
+            .file_name()
+            .ok_or("Destination folder is not valid.")?;
+        parent_resolved.join(name)
     };
+    let grants = load_export_directories(&app_handle)?;
+    let under_grant = grants.iter().any(|dir| dest_resolved.starts_with(dir));
+    if !under_grant {
+        return Err(
+            "This export path was not approved. Choose the Jekyll folder with Browse.".into(),
+        );
+    }
+    if !dest_resolved.exists() {
+        fs::create_dir_all(&dest_resolved)
+            .map_err(|e| format!("Failed to create destination folder: {e}"))?;
+    }
     if !dest_resolved.is_dir() {
         return Err("Destination is not a directory.".into());
     }
@@ -370,6 +425,7 @@ pub fn copy_files_to_folder(
                 }
             }
         }
+        authorize_export(&app_handle, window.label(), &export_grants, &target)?;
         fs::copy(&resolved, &target)
             .map_err(|e| format!("Failed to copy {}: {e}", resolved.display()))?;
         copied += 1;
@@ -425,17 +481,27 @@ pub async fn pick_save_path(
         }
     }
 
+    let ext_for_dialog = ext.clone();
     dialog.save_file(move |result| {
             let path = result.map(|fp| {
                 let mut p = fp.to_string();
-                if !ext.is_empty() && !p.to_lowercase().ends_with(&format!(".{ext}")) {
+                if !ext_for_dialog.is_empty()
+                    && !p.to_lowercase().ends_with(&format!(".{ext_for_dialog}"))
+                {
                     p.push('.');
-                    p.push_str(&ext);
+                    p.push_str(&ext_for_dialog);
                 }
                 p
             });
             let _ = tx.send(path);
         });
+
+    // A new dialog replaces any previous one-shot grant, including on cancel.
+    export_grants
+        .pending_files
+        .lock()
+        .unwrap()
+        .remove(window.label());
 
     let chosen = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
         .await
@@ -444,12 +510,18 @@ pub async fn pick_save_path(
         return Ok(None);
     };
     let resolved = resolve_export_path(Path::new(&path))?;
+    if export_extension(&resolved).as_deref() != Some(ext.as_str()) && !ext.is_empty() {
+        return Err("Export file extension does not match the save dialog.".into());
+    }
     // SECURITY: grant is the resolved path, not the raw dialog string.
-    export_grants
-        .pending_files
-        .lock()
-        .unwrap()
-        .insert(window.label().to_string(), resolved);
+    export_grants.pending_files.lock().unwrap().insert(
+        window.label().to_string(),
+        OneShotExportGrant {
+            path: resolved,
+            extension: ext,
+            issued_at: std::time::Instant::now(),
+        },
+    );
     Ok(Some(path))
 }
 
@@ -487,6 +559,13 @@ pub async fn pick_export_directory(window: tauri::WebviewWindow) -> Result<Optio
 
 const EXPORT_GRANTS_FILE: &str = "export-grants.json";
 const MAX_EXPORT_DIRS: usize = 32;
+const ONE_SHOT_GRANT_TTL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
+
+/// Extensions a persistent folder grant may write. One-shot save dialogs are
+/// limited to the extension the user picked instead.
+const FOLDER_EXPORT_EXTS: &[&str] = &[
+    "md", "markdown", "png", "jpg", "jpeg", "gif", "webp", "yml", "yaml", "pdf", "html",
+];
 
 #[derive(Serialize, Deserialize, Default)]
 struct ExportGrantFile {
@@ -498,6 +577,75 @@ enum ExportPermit {
     OneShot,
     /// File strictly inside a folder from `pick_export_directory`.
     UnderDirectory,
+}
+
+fn export_extension(path: &Path) -> Option<String> {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase())
+}
+
+fn user_home_canon() -> Option<PathBuf> {
+    let raw = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    PathBuf::from(raw).canonicalize().ok()
+}
+
+/// Home, its ancestors, and folders that hold credentials or login items
+/// cannot be an export root.
+fn export_root_is_allowed(canon: &Path) -> bool {
+    if canon.parent().is_none() {
+        return false;
+    }
+    let Some(home) = user_home_canon() else {
+        return true;
+    };
+    if canon == home || home.starts_with(canon) {
+        return false;
+    }
+    const SENSITIVE: &[&str] = &[".ssh", ".gnupg", "Library"];
+    for name in SENSITIVE {
+        let sensitive = home.join(name);
+        if canon == sensitive || canon.starts_with(&sensitive) {
+            return false;
+        }
+    }
+    const SYSTEM: &[&str] = &[
+        "/etc", "/usr", "/bin", "/sbin", "/System", "/private", "/var", "/opt", "/Library",
+    ];
+    for root in SYSTEM {
+        let root = Path::new(root);
+        if canon == root || canon.starts_with(root) {
+            return false;
+        }
+    }
+    true
+}
+
+fn folder_export_name_allowed(grants: &[PathBuf], resolved: &Path) -> Result<(), String> {
+    let grant = grants
+        .iter()
+        .find(|dir| resolved.starts_with(dir) && resolved != *dir)
+        .ok_or_else(|| "This export path was not approved.".to_string())?;
+    let rel = resolved
+        .strip_prefix(grant)
+        .map_err(|_| "This export path was not approved.".to_string())?;
+    for component in rel.components() {
+        let Some(name) = component.as_os_str().to_str() else {
+            return Err("Export file name is not valid.".into());
+        };
+        if name == "." || name == ".." || name.starts_with('.') {
+            return Err("Export paths cannot include hidden or parent segments.".into());
+        }
+    }
+    let ext = export_extension(resolved).ok_or_else(|| {
+        "Folder exports need a file extension such as .md, .markdown, .yml, or .html.".to_string()
+    })?;
+    if !FOLDER_EXPORT_EXTS.contains(&ext.as_str()) {
+        return Err(format!(
+            "Folder exports cannot write .{ext} files. Allowed: md, markdown, images, yml, yaml, pdf, html."
+        ));
+    }
+    Ok(())
 }
 
 /// Resolve an export path through its nearest existing ancestor.
@@ -558,7 +706,7 @@ fn load_export_directories(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, Strin
             continue;
         }
         if let Ok(canon) = candidate.canonicalize() {
-            if canon.parent().is_some() {
+            if export_root_is_allowed(&canon) {
                 out.push(canon);
             }
         }
@@ -573,9 +721,13 @@ fn remember_export_directory(app: &tauri::AppHandle, dir: &Path) -> Result<PathB
     let canon = dir
         .canonicalize()
         .map_err(|e| format!("Cannot resolve export folder: {e}"))?;
-    // SECURITY: a grant of `/` would authorize writes anywhere on the volume.
-    if canon.parent().is_none() {
-        return Err("Choose a folder inside a drive, not the drive itself.".into());
+    // SECURITY: a grant of `/`, the home folder, or a sensitive directory
+    // would authorize writes such as `~/.zshrc` or LaunchAgents plists.
+    if !export_root_is_allowed(&canon) {
+        return Err(
+            "Choose a project folder. Home, its parent folders, and sensitive folders are not export roots."
+                .into(),
+        );
     }
     let mut dirs = load_export_directories(app)?;
     dirs.retain(|existing| existing != &canon);
@@ -608,12 +760,22 @@ fn authorize_export(
         .unwrap()
         .get(window_label)
         .cloned();
-    if pending_hit.as_deref() == Some(resolved) {
-        return Ok(ExportPermit::OneShot);
+    if let Some(grant) = pending_hit {
+        if grant.issued_at.elapsed() > ONE_SHOT_GRANT_TTL {
+            grants.pending_files.lock().unwrap().remove(window_label);
+        } else if grant.path == resolved {
+            if !grant.extension.is_empty()
+                && export_extension(resolved).as_deref() != Some(grant.extension.as_str())
+            {
+                return Err("Export file extension does not match the save dialog.".into());
+            }
+            return Ok(ExportPermit::OneShot);
+        }
     }
     let dirs = load_export_directories(app)?;
     let under_grant = dirs.iter().any(|dir| resolved.starts_with(dir) && resolved != dir);
     if under_grant {
+        folder_export_name_allowed(&dirs, resolved)?;
         return Ok(ExportPermit::UnderDirectory);
     }
     Err(
@@ -669,7 +831,7 @@ pub fn write_export_bytes(
         }
     }
 
-    fs::write(&resolved, bytes).map_err(|e| format!("Failed to write export file: {e}"))?;
+    crate::io_atomic::write_atomic(&resolved, &bytes).map_err(|e| format!("Failed to write export file: {e}"))?;
 
     if matches!(permit, ExportPermit::OneShot) {
         export_grants
@@ -683,7 +845,9 @@ pub fn write_export_bytes(
 
 #[cfg(test)]
 mod export_path_tests {
-    use super::resolve_export_path;
+    use super::{
+        export_root_is_allowed, folder_export_name_allowed, resolve_export_path, user_home_canon,
+    };
     use std::fs;
     use std::path::PathBuf;
 
@@ -719,6 +883,47 @@ mod export_path_tests {
         let canon = root.canonicalize().unwrap();
         assert!(!resolved.starts_with(&canon));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn folder_grant_rejects_hidden_files_and_other_extensions() {
+        let grant = PathBuf::from("/tmp/metis-blog");
+        let grants = vec![grant.clone()];
+        assert!(folder_export_name_allowed(&grants, &grant.join("_posts").join("a.markdown")).is_ok());
+        assert!(folder_export_name_allowed(&grants, &grant.join(".zshrc")).is_err());
+        assert!(folder_export_name_allowed(&grants, &grant.join(".git").join("config")).is_err());
+        assert!(folder_export_name_allowed(&grants, &grant.join("LaunchAgents").join("x.plist")).is_err());
+    }
+
+    #[test]
+    fn home_and_its_parents_are_not_export_roots() {
+        let home = user_home_canon().expect("home");
+        assert!(!export_root_is_allowed(&home));
+        if let Some(parent) = home.parent() {
+            assert!(!export_root_is_allowed(parent));
+        }
+        assert!(!export_root_is_allowed(&home.join("Library")));
+        assert!(!export_root_is_allowed(&home.join(".ssh")));
+    }
+}
+
+#[cfg(test)]
+mod reveal_args_tests {
+    use super::macos_reveal_osascript_args;
+
+    #[test]
+    fn path_is_an_argument_not_script_text() {
+        let path = "/vault/note\\";
+        let args = macos_reveal_osascript_args(path).unwrap();
+        assert_eq!(args[0], "-e");
+        assert!(!args[1].contains(path));
+        assert!(args[1].contains("item 1 of argv"));
+        assert_eq!(args[2], path);
+
+        let quoted = "/vault/say \"hi\".md";
+        let args = macos_reveal_osascript_args(quoted).unwrap();
+        assert_eq!(args[2], quoted);
+        assert!(macos_reveal_osascript_args("").is_err());
     }
 }
 

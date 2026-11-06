@@ -45,6 +45,14 @@ export function BackupInfoSection() {
         {ready && (
           <p className="break-all font-mono text-[10px] text-text-muted">{state?.remoteUrl}</p>
         )}
+        {state?.lastSuccessMs ? (
+          <p className="text-[10px] text-text-secondary">
+            Last success: {new Date(state.lastSuccessMs).toLocaleString()}
+          </p>
+        ) : null}
+        {state?.lastError ? (
+          <p className="text-[10px] text-red-400">{state.lastError}</p>
+        ) : null}
         {!ready && <Hint>Choose GitHub in Settings → Backup. Sync uses this vault.</Hint>}
         <button
           type="button"

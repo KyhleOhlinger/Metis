@@ -30,6 +30,12 @@ interface ReplaceSummary {
   replacements: number;
 }
 
+interface ReplaceOutcome {
+  summaries: ReplaceSummary[];
+  error: string | null;
+  trash_dir: string | null;
+}
+
 interface FileGroup {
   fileName: string;
   nameMatch: SearchMatch | null;
@@ -186,21 +192,45 @@ export default function SearchPanel() {
 
   const handleReplaceAll = useCallback(async () => {
     if (!query.trim() || replacing) return;
+    let preview: ReplaceSummary[] = [];
+    try {
+      preview = await invoke<ReplaceSummary[]>("preview_replace_in_vault", {
+        query,
+        caseSensitive,
+        regexMode,
+      });
+    } catch (err) {
+      setError(String(err));
+      return;
+    }
+    const files = preview.length;
+    const hits = preview.reduce((sum, item) => sum + item.replacements, 0);
+    const names = preview
+      .slice(0, 8)
+      .map((item) => item.file_name)
+      .join(", ");
     const ok = await appConfirm(
-      `Replace all occurrences of "${query}" across the vault? This cannot be undone.`,
+      files === 0
+        ? "No matches to replace."
+        : `Replace ${hits} match${hits === 1 ? "" : "es"} in ${files} file${files === 1 ? "" : "s"} (${names}${files > 8 ? ", …" : ""})? Originals are copied to .metis/trash first.`,
       { title: "Replace all in vault", confirmLabel: "Replace all", danger: true },
     );
-    if (!ok) return;
+    if (!ok || files === 0) return;
     setReplacing(true);
     setError(null);
     try {
-      const summaries = await invoke<ReplaceSummary[]>("replace_in_vault", {
+      const outcome = await invoke<ReplaceOutcome>("replace_in_vault", {
         query,
         replacement,
         caseSensitive,
         regexMode,
       });
-      setReplaceResult(summaries);
+      setReplaceResult(outcome.summaries);
+      if (outcome.error) {
+        setError(
+          `${outcome.error}${outcome.trash_dir ? ` Originals are in ${outcome.trash_dir}.` : ""}`,
+        );
+      }
       // Re-search to update results
       doSearch(query);
       // Refresh vault tree in case filenames changed or files were modified

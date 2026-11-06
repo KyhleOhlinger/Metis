@@ -14,7 +14,7 @@ import {
 } from "@codemirror/autocomplete";
 import { useStore } from "@/store/useStore";
 import {
-  openExternalUrl,
+  confirmAndOpenExternalUrl,
   openNoteByWikilinkNameFromStore,
   resolveExternalHref,
 } from "@/utils/vaultNavigation";
@@ -538,7 +538,7 @@ const plannerLinkClickHandler = EditorView.domEventHandlers({
     if (collapsedHref && resolveExternalHref(collapsedHref)) {
       event.preventDefault();
       event.stopPropagation();
-      openExternalUrl(resolveExternalHref(collapsedHref)!);
+      confirmAndOpenExternalUrl(resolveExternalHref(collapsedHref)!);
       return true;
     }
 
@@ -559,7 +559,7 @@ const plannerLinkClickHandler = EditorView.domEventHandlers({
       if (!external) return false;
       event.preventDefault();
       event.stopPropagation();
-      openExternalUrl(external);
+      confirmAndOpenExternalUrl(external);
       return true;
     }
 

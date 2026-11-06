@@ -20,10 +20,12 @@ export interface BackupSyncState {
   vaultPlanner: boolean;
   scheduleMinutes: number;
   vaultPath: string;
+  lastSuccessMs: number;
+  lastError: string;
 }
 
 interface BackupSyncReport {
-  status: "ok" | "remote_ahead";
+  status: "ok" | "remote_ahead" | "origin_differs";
   message: string;
 }
 
@@ -76,22 +78,37 @@ export async function runBackupSync(options?: {
       }
       return;
     }
+    const vaultName = state.vaultPath.split(/[/\\]/).filter(Boolean).pop() ?? state.vaultPath;
     if (options?.confirm) {
       const included = PINNED_SPACE_NAMES.filter((name) => state.spaces[name]);
       const lines = [
+        `Vault: ${vaultName}`,
+        `Remote: ${state.remoteUrl}`,
         "Option: GitHub",
         included.length ? `Spaces: ${included.join(", ")}` : "Spaces: none",
         `Files: ${state.files ? "on" : "off"}`,
         `Vault planner: ${state.vaultPlanner && isCorePluginEnabled("planner") ? "on" : "off"}`,
       ];
       const proceed = await appConfirm(lines.join("\n"), {
-        title: "Push this vault?",
+        title: `Push ${vaultName}?`,
         confirmLabel: "Sync",
       });
       if (!proceed) return;
     }
-    const report = await invoke<BackupSyncReport>("backup_sync_run");
-    if (report.status === "remote_ahead") {
+    let report = await invoke<BackupSyncReport>("backup_sync_run", { replaceOrigin: false });
+    if (report.status === "origin_differs") {
+      if (!options?.confirm) {
+        if (!options?.quiet) toastError(report.message);
+        return;
+      }
+      const replace = await appConfirm(report.message, {
+        title: `Replace origin for ${vaultName}?`,
+        confirmLabel: "Replace and sync",
+      });
+      if (!replace) return;
+      report = await invoke<BackupSyncReport>("backup_sync_run", { replaceOrigin: true });
+    }
+    if (report.status === "remote_ahead" || report.status === "origin_differs") {
       toastError(report.message);
       return;
     }
@@ -100,5 +117,6 @@ export async function runBackupSync(options?: {
     if (!options?.quiet) toastError(String(err));
   } finally {
     running = false;
+    notifyBackupSyncChanged();
   }
 }

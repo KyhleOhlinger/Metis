@@ -4,7 +4,7 @@ import type { NoteMetadata } from "../store/useStore";
 import { formatError } from "./formatError";
 import { openVaultNotePath } from "./openVaultNote";
 import { normalizePosixPath, pathsEqual } from "./paths";
-import { toastError } from "../store/useToastStore";
+import { appConfirm, toastError } from "../store/useToastStore";
 
 /** Strip `[[target|display]]` alias and `#heading` suffix from a wikilink token. */
 export function normalizeWikilinkTarget(rawName: string): string {
@@ -125,7 +125,8 @@ export function isExternalHttpUrl(href: string): boolean {
 
 /**
  * Resolve a markdown `href` to an external http(s) URL when possible.
- * Handles bare domains (`example.com`, `www.example.com/path`) and scheme-relative URLs.
+ * A bare name is a vault path. `www.example.org` and URLs that already have a
+ * scheme are external. `report.zip` is not treated as a website.
  */
 export function resolveExternalHref(href: string): string | null {
   const trimmed = href.trim();
@@ -144,7 +145,7 @@ export function resolveExternalHref(href: string): string | null {
     return null;
   }
 
-  if (/^[\w-]+(\.[\w-]+)+([\/?#][^\s]*)?$/i.test(trimmed)) {
+  if (/^www\.[\w-]+(\.[\w-]+)+([\/?#][^\s]*)?$/i.test(trimmed)) {
     return `https://${trimmed}`;
   }
 
@@ -160,12 +161,30 @@ export function openExternalUrl(raw: string): void {
   );
 }
 
+export function externalHostLabel(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+/** Name the site before leaving the note. */
+export function confirmAndOpenExternalUrl(raw: string): void {
+  const url = raw.trim();
+  if (!isExternalHttpUrl(url)) return;
+  const host = externalHostLabel(url);
+  void appConfirm(`Open ${host}?`, { title: "Open link", confirmLabel: "Open" }).then((ok) => {
+    if (ok) openExternalUrl(url);
+  });
+}
+
 /** Open external URL, same-page fragment, vault file, or wikilink name. */
 export function followVaultHref(href: string, opts: FollowVaultHrefOptions): void {
   const trimmed = href.trim();
   const external = resolveExternalHref(trimmed);
   if (external) {
-    openExternalUrl(external);
+    confirmAndOpenExternalUrl(external);
     return;
   }
   if (!trimmed || trimmed === "#") return;

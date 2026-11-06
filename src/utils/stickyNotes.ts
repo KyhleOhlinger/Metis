@@ -112,6 +112,14 @@ export const STICKY_COLOR_PRESETS: {
   { color: "slate", label: "Slate", swatch: "#94a3b8" },
 ];
 
+const STICKY_WIDTH_RE = /^\d{1,4}(\.\d+)?(px|rem|em|%|ch)$/;
+
+/** Accept only a length token. Anything else uses the default width. */
+export function safeStickyWidth(value: string | undefined | null): string | null {
+  const width = value?.trim() ?? "";
+  return STICKY_WIDTH_RE.test(width) ? width : null;
+}
+
 const FALLBACK_ATTRS: StickyAttrs = {
   float: "right",
   width: "12rem",
@@ -141,10 +149,7 @@ export function getDefaultStickyAttrs(): StickyAttrs {
     float: VALID_FLOATS.has(base.float as StickyFloat)
       ? (base.float as StickyFloat)
       : FALLBACK_ATTRS.float,
-    width:
-      base.width && base.width.length > 0 && base.width.length <= 24
-        ? base.width
-        : FALLBACK_ATTRS.width,
+    width: safeStickyWidth(base.width) ?? FALLBACK_ATTRS.width,
     color: VALID_COLORS.has(base.color as StickyColor)
       ? (base.color as StickyColor)
       : FALLBACK_ATTRS.color,
@@ -212,8 +217,9 @@ export function parseStickyAttrs(raw: string | undefined): StickyAttrs {
     const value = (m[2] ?? m[3] ?? "").trim();
     if (key === "float" && VALID_FLOATS.has(value as StickyFloat)) {
       attrs.float = value as StickyFloat;
-    } else if (key === "width" && value.length > 0 && value.length <= 24) {
-      attrs.width = value;
+    } else if (key === "width") {
+      const width = safeStickyWidth(value);
+      if (width) attrs.width = width;
     } else if (key === "color" && VALID_COLORS.has(value as StickyColor)) {
       attrs.color = value as StickyColor;
     }
@@ -407,8 +413,7 @@ export function buildStickyPreviewHtml(
     stickyIdx !== undefined ? ` data-metis-sticky-idx="${stickyIdx}"` : "";
   return (
     `<aside class="metis-sticky metis-sticky--${attrs.color}${floatMod}"` +
-    `${idxAttr} data-metis-sticky-width="${width}" ` +
-    `style="--metis-sticky-width:${width}">${inner}</aside>`
+    `${idxAttr} data-metis-sticky-width="${width}">${inner}</aside>`
   );
 }
 

@@ -35,6 +35,23 @@ pub fn get_file_content(
     fs::read_to_string(&resolved).map_err(|e| format!("Failed to read file: {e}"))
 }
 
+/// Modification time of a vault note, in milliseconds since the Unix epoch.
+#[tauri::command]
+pub fn note_file_stamp(
+    path: String,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<u64, String> {
+    reject_untrusted_webview(&window)?;
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("note_file_stamp: {e}"))?;
+    let resolved = safe_resolve(&PathBuf::from(&path)).map_err(|e| format!("note_file_stamp: {e}"))?;
+    if !resolved.starts_with(&canon_v) {
+        return Err("note_file_stamp: path is outside the active vault.".into());
+    }
+    super::write::file_mtime_ms(&resolved)
+}
+
 /// Read a vault image as base-64 for cloud vision OCR.
 ///
 /// SECURITY: Only raster image extensions; path must stay inside the active vault.
@@ -113,6 +130,7 @@ pub fn read_vault_image_base64(
 pub fn get_file_contents_batch(
     paths: Vec<String>,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<Vec<String>, String> {
     reject_untrusted_webview(&window)?;
@@ -122,6 +140,7 @@ pub fn get_file_contents_batch(
 
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("get_file_contents_batch: {e}"))?;
+    let blocked = crate::ai_context::never_send_folders(&app, &canon_v);
 
     let mut out = Vec::with_capacity(paths.len());
     for path in paths {
@@ -139,6 +158,14 @@ pub fn get_file_contents_batch(
             }
         };
         if !resolved.starts_with(&canon_v) {
+            out.push(String::new());
+            continue;
+        }
+        if resolved
+            .strip_prefix(&canon_v)
+            .ok()
+            .is_some_and(|rel| crate::ai_context::is_never_send(&rel.to_string_lossy(), &blocked))
+        {
             out.push(String::new());
             continue;
         }

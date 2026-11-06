@@ -27,6 +27,12 @@ export interface JekyllConvertOptions {
   vaultPath: string;
   assetIndex: AssetMetadata[];
   noteIndex: NoteMetadata[];
+  /** Vault-relative paths of notes already published. */
+  exportedNotes?: string[];
+  /** When true, the body is not wrapped in a Liquid raw block. */
+  allowLiquid?: boolean;
+  /** When false, sticky-note bodies are published. Defaults to dropping them. */
+  dropStickyNotes?: boolean;
 }
 
 export interface JekyllImageCopy {
@@ -164,23 +170,24 @@ function postSlugForNote(note: NoteMetadata): string {
   return slugify(note.name.replace(/\.md$/i, ""));
 }
 
-function wikilinkToUrl(
-  raw: string,
-  siteUrl: string,
-  noteIndex: NoteMetadata[],
-  vaultPath: string,
-): { label: string; href: string } {
+function vaultRelativeNote(path: string, vaultPath: string): string {
+  const vault = vaultPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const note = path.replace(/\\/g, "/");
+  return note.startsWith(`${vault}/`) ? note.slice(vault.length + 1) : note;
+}
+
+function wikilinkReplacement(raw: string, options: JekyllConvertOptions): string {
   const pipe = raw.indexOf("|");
   const target = normalizeWikilinkTarget(pipe >= 0 ? raw.slice(0, pipe) : raw);
   const label = pipe >= 0 ? raw.slice(pipe + 1).trim() : target;
-
-  const note = findNoteByWikilinkName(target, noteIndex, vaultPath);
-  const slug = note ? postSlugForNote(note) : slugify(target);
-  const base = siteUrl.replace(/\/$/, "");
-  return { label, href: `${base}/posts/${slug}/` };
+  const note = findNoteByWikilinkName(target, options.noteIndex, options.vaultPath);
+  const exported = new Set(options.exportedNotes ?? []);
+  if (!note || !exported.has(vaultRelativeNote(note.path, options.vaultPath))) return label;
+  const base = options.siteUrl.replace(/\/$/, "");
+  return `[${label}](${base}/posts/${postSlugForNote(note)}/)`;
 }
 
-function stripMetisSyntax(body: string): string {
+function stripMetisSyntax(body: string, dropStickyNotes: boolean): string {
   const lines = body.split("\n");
   const out: string[] = [];
   let i = 0;
@@ -194,9 +201,10 @@ function stripMetisSyntax(body: string): string {
     }
 
     if (STICKY_OPEN_RE.test(line) || STICKY_WRAP_OPEN_RE.test(line)) {
+      const drop = dropStickyNotes;
       i++;
       while (i < lines.length && !FENCE_CLOSE_RE.test(lines[i])) {
-        out.push(lines[i]);
+        if (!drop) out.push(lines[i]);
         i++;
       }
       if (i < lines.length) i++;
@@ -273,10 +281,14 @@ function buildImageMap(
 }
 
 function convertWikilinks(body: string, options: JekyllConvertOptions): string {
-  return body.replace(WIKI_LINK_RE, (_full, raw: string) => {
-    const { label, href } = wikilinkToUrl(raw, options.siteUrl, options.noteIndex, options.vaultPath);
-    return `[${label}](${href})`;
-  });
+  return body.replace(WIKI_LINK_RE, (_full, raw: string) => wikilinkReplacement(raw, options));
+}
+
+function yamlString(value: string, field: string): string {
+  if (/[\r\n]/.test(value)) {
+    throw new Error(`${field} cannot contain a new line.`);
+  }
+  return JSON.stringify(value);
 }
 
 function serializeChirpyFrontmatter(args: {
@@ -288,13 +300,13 @@ function serializeChirpyFrontmatter(args: {
   heroImagePath: string | null;
 }): string {
   const lines: string[] = ["---"];
-  lines.push(`title: ${args.title}`);
-  lines.push(`author: ${args.author}`);
-  lines.push(`date: ${args.date} 12:00:00 +0200`);
+  lines.push(`title: ${yamlString(args.title, "Title")}`);
+  lines.push(`author: ${yamlString(args.author, "Author")}`);
+  lines.push(`date: ${yamlString(`${args.date} 12:00:00 +0200`, "Date")}`);
   lines.push(
-    `categories: [${args.categories.map((c) => (c.includes(" ") ? `"${c}"` : c)).join(", ")}]`,
+    `categories: [${args.categories.map((c) => yamlString(c, "Category")).join(", ")}]`,
   );
-  lines.push(`description: ${args.description}`);
+  lines.push(`description: ${yamlString(args.description, "Description")}`);
   if (args.heroImagePath) {
     lines.push("image:");
     lines.push(`  path: ${args.heroImagePath}`);
@@ -319,12 +331,16 @@ export function convertNoteToJekyll(
     : extractCategories(fields, ["Technical"]);
 
   let body = rawBody;
-  body = stripMetisSyntax(body);
+  body = stripMetisSyntax(body, options.dropStickyNotes !== false);
   body = stripDuplicateTitle(body, title);
   body = convertWikilinks(body, options);
 
   const { rewrittenBody, imageCopies, heroImagePath } = buildImageMap(body, options);
   body = rewrittenBody.trim();
+  if (!options.allowLiquid) {
+    body = body.replace(/\{%\s*endraw\s*%\}/gi, "{% end raw %}");
+    body = `{% raw %}\n${body}\n{% endraw %}`;
+  }
 
   const frontmatter = serializeChirpyFrontmatter({
     title,

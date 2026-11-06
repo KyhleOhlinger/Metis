@@ -1,4 +1,5 @@
-import { cancelNoteAutosave } from "@/hooks/noteAutosave";
+import { invoke } from "@tauri-apps/api/core";
+import { cancelNoteAutosave, rememberNoteDiskStamp } from "@/hooks/noteAutosave";
 import { useStore } from "@/store/useStore";
 import { appConfirm, toastError } from "@/store/useToastStore";
 import { formatError } from "@/utils/formatError";
@@ -35,6 +36,10 @@ export async function openVaultNotePath(
   try {
     const content = options?.content ?? (await loadVaultFile(path));
     store.setActiveFile(path, content);
+    if (path.toLowerCase().endsWith(".md")) {
+      const stamp = await invoke<number>("note_file_stamp", { path });
+      rememberNoteDiskStamp(path, stamp);
+    }
     const parent = path.substring(0, path.lastIndexOf("/"));
     if (parent) store.setActiveFolderPath(parent);
     return true;

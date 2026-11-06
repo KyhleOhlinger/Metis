@@ -86,6 +86,52 @@ pub fn create_folder(
     Ok(target.to_string_lossy().to_string())
 }
 
+/// The path to operate on. The parent is canonicalized for the vault check.
+/// The final component is not followed, so a symlink is the link itself.
+fn vault_entry(path: &Path, canon_v: &Path) -> Result<PathBuf, String> {
+    if fs::symlink_metadata(path).is_err() {
+        return Err(format!("Path does not exist: {}", path.display()));
+    }
+    let Some(name) = path.file_name() else {
+        return Err("Invalid path.".into());
+    };
+    let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) else {
+        return Err("Invalid path.".into());
+    };
+    let canon_parent = safe_resolve(parent)?;
+    if canon_parent != canon_v && !canon_parent.starts_with(canon_v) {
+        return Err("Path is outside the active vault.".into());
+    }
+    let entry = canon_parent.join(name);
+    if entry == canon_v {
+        return Err("Cannot change the vault root directory.".into());
+    }
+    let meta = fs::symlink_metadata(&entry).map_err(|e| format!("Path does not exist: {e}"))?;
+    if !meta.file_type().is_symlink() {
+        let resolved = safe_resolve(&entry)?;
+        if resolved != canon_v && !resolved.starts_with(canon_v) {
+            return Err("Path is outside the active vault.".into());
+        }
+    }
+    Ok(entry)
+}
+
+fn delete_without_following(path: &Path) -> Result<(), String> {
+    let meta = fs::symlink_metadata(path).map_err(|e| format!("Path does not exist: {e}"))?;
+    let kind = meta.file_type();
+    if kind.is_symlink() {
+        return fs::remove_file(path).map_err(|e| format!("Failed to delete link: {e}"));
+    }
+    if kind.is_dir() {
+        return fs::remove_dir_all(path).map_err(|e| format!("Failed to delete folder: {e}"));
+    }
+    if !is_allowed_ext(path) {
+        let ext = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        return Err(format!("Deleting '.{ext}' files is not permitted."));
+    }
+    fs::remove_file(path).map_err(|e| format!("Failed to delete file: {e}"))
+}
+
 /// Delete a .md file or a vault sub-directory (recursively).
 ///
 /// SECURITY: Vault boundary is enforced from server-side `CurrentVault` state so the
@@ -109,29 +155,12 @@ pub fn delete_path(
 
     let vault = PathBuf::from(&trusted_vault_path);
 
-    if !target.exists() {
-        return Err(format!("Path does not exist: {path}"));
-    }
-
     let canon_v = canon_vault(&vault).map_err(|e| format!("delete_path: {e}"))?;
-    let resolved = safe_resolve(&target).map_err(|e| format!("delete_path: {e}"))?;
-
-    if resolved == canon_v {
+    let entry = vault_entry(&target, &canon_v).map_err(|e| format!("delete_path: {e}"))?;
+    if entry == canon_v {
         return Err("Cannot delete the vault root directory.".into());
     }
-    if !resolved.starts_with(&canon_v) {
-        return Err("Cannot delete files outside the vault.".into());
-    }
-
-    if resolved.is_dir() {
-        fs::remove_dir_all(&resolved).map_err(|e| format!("Failed to delete folder: {e}"))
-    } else {
-        if !is_allowed_ext(&resolved) {
-            let ext = resolved.extension().and_then(|e| e.to_str()).unwrap_or("");
-            return Err(format!("Deleting '.{ext}' files is not permitted."));
-        }
-        fs::remove_file(&resolved).map_err(|e| format!("Failed to delete file: {e}"))
-    }
+    delete_without_following(&entry)
 }
 
 /// Move `src` into `dest_dir` (keeping its original filename).
@@ -158,7 +187,7 @@ pub fn move_path(
 
     let vault = PathBuf::from(&trusted_vault_path);
 
-    if !src_path.exists() {
+    if fs::symlink_metadata(&src_path).is_err() {
         return Err(format!("Source does not exist: {src}"));
     }
     if !dest_dir_path.is_dir() {
@@ -166,7 +195,7 @@ pub fn move_path(
     }
 
     let canon_v = canon_vault(&vault).map_err(|e| format!("move_path: {e}"))?;
-    let resolved_src = safe_resolve(&src_path).map_err(|e| format!("move_path: {e}"))?;
+    let resolved_src = vault_entry(&src_path, &canon_v).map_err(|e| format!("move_path: {e}"))?;
     let resolved_dest = safe_resolve(&dest_dir_path).map_err(|e| format!("move_path: {e}"))?;
 
     if !resolved_src.starts_with(&canon_v) {
@@ -261,19 +290,20 @@ pub fn rename_path(
     let mut new_name = sanitize_name(&new_name)?;
     let target = PathBuf::from(&path);
 
-    if !target.exists() {
+    if fs::symlink_metadata(&target).is_err() {
         return Err(format!("Path does not exist: {path}"));
     }
 
     // SECURITY: fail-closed — require a registered vault.
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("rename_path: {e}"))?;
-    let resolved = safe_resolve(&target).map_err(|e| format!("rename_path: {e}"))?;
+    let resolved = vault_entry(&target, &canon_v).map_err(|e| format!("rename_path: {e}"))?;
     if !resolved.starts_with(&canon_v) {
         return Err("rename_path: path is outside the active vault.".into());
     }
 
-    if resolved.is_file() {
+    let entry_meta = fs::symlink_metadata(&resolved).map_err(|e| format!("rename_path: {e}"))?;
+    if entry_meta.file_type().is_file() {
         let existing_ext = resolved
             .extension()
             .and_then(|ext| ext.to_str())
@@ -302,4 +332,26 @@ pub fn rename_path(
     rename_in_parent(&resolved, &new_path)?;
 
     Ok(new_path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delete_without_following;
+    use std::fs;
+
+    #[test]
+    #[cfg(unix)]
+    fn deleting_a_symlink_leaves_its_target() {
+        use std::os::unix::fs::symlink;
+        let dir = std::env::temp_dir().join(format!("metis-symlink-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("notes")).unwrap();
+        fs::write(dir.join("notes").join("a.md"), b"keep").unwrap();
+        let link = dir.join("link");
+        symlink(dir.join("notes"), &link).unwrap();
+        delete_without_following(&link).unwrap();
+        assert!(!link.exists());
+        assert_eq!(fs::read(dir.join("notes").join("a.md")).unwrap(), b"keep");
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

@@ -18,15 +18,17 @@ import { useMenuEvents } from "./hooks/useMenuEvents";
 import { openOrCreateDailyNote } from "./components/sidebar/dailyNote";
 import { useGlobalKeybindings } from "./hooks/useGlobalKeybindings";
 import { LAST_VAULT_KEY } from "./constants";
-import { flushNoteAutosaves } from "./hooks/noteAutosave";
+import { discardPendingNoteSaves, flushNoteAutosaves, pendingNoteSnapshots } from "./hooks/noteAutosave";
 import {
   flushPlannerSaves,
 } from "./planner/plannerPersistence";
-import { toastError } from "./store/useToastStore";
+import { appChoose, toastError } from "./store/useToastStore";
 import { useSourceUpdateSchedule } from "./hooks/useSourceUpdateSchedule";
 import { useSupernoteSyncSchedule } from "./hooks/useSupernoteSyncSchedule";
 import { useBackupSyncSchedule } from "./hooks/useBackupSyncSchedule";
 import { formatError } from "./utils/formatError";
+import VaultActivityBar from "./components/VaultActivityBar";
+import { recordVaultActivity } from "./store/useVaultActivityStore";
 import { CommunityPluginStyles } from "./plugins/CommunityPluginStyles";
 import { isCorePluginEnabled } from "./plugins/usePluginStore";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -351,33 +353,88 @@ export default function App() {
     let unlisten: (() => void) | undefined;
     let closing = false;
 
-    const flushWithTimeout = (ms: number) =>
-      Promise.race([
-        Promise.all([flushPlannerSaves(), flushNoteAutosaves()]),
-        new Promise<void>((resolve) => setTimeout(resolve, ms)),
-      ]);
+    const flushWithTimeout = async (ms: number): Promise<"ok" | "timeout" | "error"> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), ms);
+      });
+      try {
+        const result = await Promise.race([
+          Promise.all([flushPlannerSaves(), flushNoteAutosaves()]).then(() => "ok" as const),
+          timeout,
+        ]);
+        if (timer) clearTimeout(timer);
+        return result;
+      } catch (err) {
+        if (timer) clearTimeout(timer);
+        console.error("[planner] flush on close failed", err);
+        return "error";
+      }
+    };
+
+    const saveNotesAs = async () => {
+      for (const note of pendingNoteSnapshots()) {
+        const name = note.path.split("/").pop() || "note.md";
+        const dest = await invoke<string | null>("pick_save_path", {
+          defaultName: name,
+          extension: "md",
+        });
+        if (!dest) continue;
+        const payload = note.content.length > 0 ? note.content : "\n";
+        const bytes = new TextEncoder().encode(payload);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        await invoke("write_export_bytes", { path: dest, dataBase64: btoa(binary) });
+      }
+    };
 
     void getCurrentWindow()
       .onCloseRequested(async (event) => {
         if (closing) return;
         event.preventDefault();
         closing = true;
-        try {
-          await flushWithTimeout(3000);
-        } catch (err) {
-          console.error("[planner] flush on close failed", err);
-        } finally {
-          unlisten?.();
-          unlisten = undefined;
-          try {
-            await getCurrentWindow().destroy();
-          } catch (err) {
-            console.error("[window] destroy failed, falling back to close", err);
+        let outcome = await flushWithTimeout(3000);
+        if (outcome === "ok") {
+          recordVaultActivity(useStore.getState().vaultPath, { closeError: null });
+        }
+        if (outcome !== "ok") {
+          recordVaultActivity(useStore.getState().vaultPath, {
+            closeError: outcome === "timeout" ? "Saving timed out." : "Saving failed.",
+          });
+        }
+        while (outcome !== "ok") {
+          const choice = await appChoose(
+            "Saving did not finish. The window stays open until you retry, copy the notes elsewhere, or discard them.",
+            { title: "Unsaved changes", confirmLabel: "Retry", extraLabel: "Save as", cancelLabel: "Discard" },
+          );
+          if (choice === "cancel") {
+            discardPendingNoteSaves();
+            break;
+          }
+          if (choice === "extra") {
             try {
-              await getCurrentWindow().close();
-            } catch (closeErr) {
-              console.error("[window] close failed", closeErr);
+              await saveNotesAs();
+            } catch (err) {
+              toastError(`Save as failed: ${formatError(err)}`);
             }
+            closing = false;
+            return;
+          }
+          outcome = await flushWithTimeout(3000);
+          if (outcome === "ok") {
+            recordVaultActivity(useStore.getState().vaultPath, { closeError: null });
+          }
+        }
+        unlisten?.();
+        unlisten = undefined;
+        try {
+          await getCurrentWindow().destroy();
+        } catch (err) {
+          console.error("[window] destroy failed, falling back to close", err);
+          try {
+            await getCurrentWindow().close();
+          } catch (closeErr) {
+            console.error("[window] close failed", closeErr);
           }
         }
       })
@@ -495,6 +552,7 @@ export default function App() {
         )}
       </div>
       </div>
+      <VaultActivityBar />
     </div>
     </AppErrorBoundary>
   );

@@ -64,10 +64,13 @@ pub(crate) fn read_planner_json(path: &Path) -> Result<Option<String>, String> {
 pub(crate) fn prepare_vault_planner(app: &AppHandle, vault: &Path) -> Result<PathBuf, String> {
     let dir = ensure_vault_planner_dir(vault)?;
     let meta = read_vault_meta(vault)?;
-    // Only vaults that were on the old shared planner (or never chose a mode)
-    // receive a one-time copy. A vault already set to "vault" keeps its own files.
-    let adopt_legacy = meta.planner_mode.as_deref() != Some("vault");
-    if adopt_legacy && !planner_dir_has_content(&dir) {
+    // A vault's own planner_mode is not trusted. Copy only into a vault this
+    // user created, or one they explicitly approved in app data.
+    let consent = load_consent(app);
+    let key = path_key(vault);
+    let allowed = consent.created.iter().any(|path| path == &key)
+        || consent.approved.iter().any(|path| path == &key);
+    if allowed && !planner_dir_has_content(&dir) {
         if let Some(shared) = legacy_shared_planner_dir(app) {
             if planner_dir_has_content(&shared) {
                 copy_planner_tree(&shared, &dir)?;
@@ -92,6 +95,92 @@ pub(crate) fn copy_planner_tree(from: &Path, to: &Path) -> Result<(), String> {
         }
         let dst = to.join(file);
         fs::copy(&src, &dst).map_err(|e| format!("Failed to copy planner file {file}: {e}"))?;
+    }
+    Ok(())
+}
+
+const CONSENT_FILE: &str = "planner-adoption.json";
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PlannerConsentFile {
+    #[serde(default)]
+    created: Vec<String>,
+    #[serde(default)]
+    approved: Vec<String>,
+    #[serde(default)]
+    declined: Vec<String>,
+}
+
+fn consent_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir_for_build(app)?.join(CONSENT_FILE))
+}
+
+fn load_consent(app: &AppHandle) -> PlannerConsentFile {
+    let Ok(path) = consent_path(app) else {
+        return PlannerConsentFile::default();
+    };
+    let Ok(raw) = fs::read_to_string(path) else {
+        return PlannerConsentFile::default();
+    };
+    serde_json::from_str(&raw).unwrap_or_default()
+}
+
+fn save_consent(app: &AppHandle, file: &PlannerConsentFile) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(file).map_err(|e| format!("Cannot save planner consent: {e}"))?;
+    write_private_json_file(&consent_path(app)?, &json)
+}
+
+fn path_key(vault: &Path) -> String {
+    vault.to_string_lossy().into_owned()
+}
+
+pub(crate) fn remember_created_vault(app: &AppHandle, vault: &Path) -> Result<(), String> {
+    let mut file = load_consent(app);
+    let key = path_key(vault);
+    if !file.created.iter().any(|path| path == &key) {
+        file.created.push(key);
+    }
+    save_consent(app, &file)
+}
+
+pub(crate) fn legacy_adoption_pending(app: &AppHandle, vault: &Path) -> bool {
+    let file = load_consent(app);
+    let key = path_key(vault);
+    if file.created.iter().any(|path| path == &key)
+        || file.approved.iter().any(|path| path == &key)
+        || file.declined.iter().any(|path| path == &key)
+    {
+        return false;
+    }
+    if planner_dir_has_content(&vault_planner_dir(vault)) {
+        return false;
+    }
+    legacy_shared_planner_dir(app)
+        .map(|dir| planner_dir_has_content(&dir))
+        .unwrap_or(false)
+}
+
+pub(crate) fn decide_legacy_adoption(app: &AppHandle, vault: &Path, approve: bool) -> Result<(), String> {
+    let mut file = load_consent(app);
+    let key = path_key(vault);
+    file.approved.retain(|path| path != &key);
+    file.declined.retain(|path| path != &key);
+    if approve {
+        file.approved.push(key);
+    } else {
+        file.declined.push(key);
+    }
+    save_consent(app, &file)?;
+    if approve {
+        let dir = ensure_vault_planner_dir(vault)?;
+        if !planner_dir_has_content(&dir) {
+            if let Some(shared) = legacy_shared_planner_dir(app) {
+                if planner_dir_has_content(&shared) {
+                    copy_planner_tree(&shared, &dir)?;
+                }
+            }
+        }
     }
     Ok(())
 }

@@ -4,6 +4,7 @@ import { useStore } from "@/store/useStore";
 import { isCorePluginEnabled } from "@/plugins/usePluginStore";
 import { toastError, toastInfo, toastSuccess } from "@/store/useToastStore";
 import { formatError } from "@/utils/formatError";
+import { recordVaultActivity } from "@/store/useVaultActivityStore";
 import { SUPERNOTE_DEFAULT_PORT, notifySupernoteFilesChanged } from "@/constants/supernote";
 import { ensureSupernoteCompanionNotes } from "@/utils/openSupernoteCompanion";
 
@@ -25,6 +26,7 @@ export async function runSupernoteSync(options?: {
 }): Promise<SupernoteSyncResult | null> {
   const quiet = options?.quiet === true;
   const fail = (message: string) => {
+    recordVaultActivity(useStore.getState().vaultPath, { syncError: message });
     if (!quiet) toastError(message);
     return null;
   };
@@ -53,6 +55,7 @@ export async function runSupernoteSync(options?: {
     await useStore.getState().refreshVault();
     await ensureSupernoteCompanionNotes();
     notifySupernoteFilesChanged();
+    recordVaultActivity(useStore.getState().vaultPath, { syncAt: Date.now(), syncError: null });
     if (quiet) return result;
     if (result.downloaded === 0 && result.skipped === 0 && (result.updated ?? 0) === 0) {
       toastInfo("No files found. Enable Browse & Access on the Nomad and confirm the popup.");

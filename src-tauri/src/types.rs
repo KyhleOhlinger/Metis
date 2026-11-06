@@ -93,3 +93,11 @@ pub struct ReplaceSummary {
     pub replacements: usize,
 }
 
+/// Result of a vault replace, including a partial list when a later file fails.
+#[derive(Serialize, Clone)]
+pub struct ReplaceOutcome {
+    pub summaries: Vec<ReplaceSummary>,
+    pub error: Option<String>,
+    pub trash_dir: Option<String>,
+}
+

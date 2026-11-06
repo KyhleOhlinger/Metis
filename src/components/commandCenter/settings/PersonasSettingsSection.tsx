@@ -227,6 +227,7 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
   const [systemPrompt, setSystemPrompt] = useState(initial?.systemPrompt ?? "");
   const [error, setError] = useState("");
   const [showFullPrompt, setShowFullPrompt] = useState(false);
+  const [storeTranscripts, setStoreTranscripts] = useState(initial?.storeTranscripts === true);
 
   const profiles = settings.providerProfiles;
 
@@ -243,6 +244,7 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
       providerProfileId,
       model: model.trim(),
       systemPrompt: finalPrompt.trim(),
+      storeTranscripts,
       ...(initial?.disabled !== undefined ? { disabled: initial.disabled } : {}),
     });
   }
@@ -351,6 +353,16 @@ function PersonaInlineForm({ initial, isSystemDefault = false, onSave, onCancel 
           ].join(" ")}
         />
       </div>
+
+      <label className="flex items-start gap-2 text-[10px] text-text-secondary">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={storeTranscripts}
+          onChange={(e) => setStoreTranscripts(e.target.checked)}
+        />
+        <span>Store full transcripts for this persona. Off keeps only the short run summary.</span>
+      </label>
 
       {error && <p className="text-[10px] text-red-400">{error}</p>}
 

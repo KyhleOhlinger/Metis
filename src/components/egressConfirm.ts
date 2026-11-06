@@ -7,13 +7,34 @@ export type EgressGate =
   | { proceed: false; reason: "cancelled" }
   | { proceed: false; reason: "error"; message: string };
 
+export function destinationHostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host || baseUrl.trim();
+  } catch {
+    return baseUrl.trim();
+  }
+}
+
+let lastConsentIdentity: string | null = null;
+
+function consentIdentity(estimate: EgressEstimate): string {
+  return `${estimate.profileId}|${estimate.destinationHost}`;
+}
+
 /** Confirm dialog before a large folder/vault AI run. */
 export async function confirmEgressBeforeRun(estimate: EgressEstimate): Promise<boolean> {
-  if (!estimate.requiresConfirm) return true;
-  return appConfirm(
-    `${egressEstimateSummary(estimate)}\n\nSend this data to ${estimate.providerLabel}?`,
+  const identity = consentIdentity(estimate);
+  const providerChanged = lastConsentIdentity !== null && lastConsentIdentity !== identity;
+  if (!estimate.requiresConfirm && !providerChanged) {
+    lastConsentIdentity = identity;
+    return true;
+  }
+  const accepted = await appConfirm(
+    `${egressEstimateSummary(estimate)}\n\nSend this data to ${estimate.providerLabel} (${estimate.destinationHost})?`,
     { title: "Confirm AI egress", confirmLabel: "Send" },
   );
+  if (accepted) lastConsentIdentity = identity;
+  return accepted;
 }
 
 /**

@@ -144,6 +144,7 @@ export interface VaultPluginStateDto {
   core: Record<string, boolean>;
   enabled: string[];
   installed: InstalledCommunityPlugin[];
+  pendingSuggestions?: string[];
 }
 
 export interface CommunityCatalogEntry {

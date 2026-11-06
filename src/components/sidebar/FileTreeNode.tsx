@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Image, Copy, FileDown, FileOutput, Pin } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { cancelAutosavesUnder, retargetAutosavesUnder, retargetNoteAutosave } from "@/hooks/noteAutosave";
 import { confirmLeaveDirtyNote, openVaultNotePath } from "@/utils/openVaultNote";
 import { loadVaultFile } from "@/utils/vaultRead";
 import { useStore, FileNode } from "../../store/useStore";
@@ -320,6 +321,7 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
           return;
         }
         try {
+          cancelAutosavesUnder(node.path);
           await invoke("delete_path", { path: node.path, vaultPath });
           const persona = usePersonaStore.getState();
           const nav = persona.settings.vaultNoteNavigation?.[vaultPath];
@@ -373,7 +375,17 @@ export function FileTreeNode({ node, depth, vaultPath, expandVersion }: FileTree
     setIsRenaming(false);
     try {
       const newPath = await invoke<string>("rename_path", { path: node.path, newName });
-      if (activeFilePath === node.path) useStore.setState({ activeFilePath: newPath });
+      if (node.is_dir) {
+        retargetAutosavesUnder(node.path, newPath);
+        if (activeFilePath === node.path || activeFilePath?.startsWith(`${node.path}/`)) {
+          useStore.setState({
+            activeFilePath: newPath + (activeFilePath?.slice(node.path.length) ?? ""),
+          });
+        }
+      } else if (activeFilePath === node.path) {
+        retargetNoteAutosave(node.path, newPath);
+        useStore.setState({ activeFilePath: newPath });
+      }
       if (activeFolderPath === node.path) setActiveFolderPath(newPath);
       await refreshVault();
     } catch (err) { toastError(String(err)); }

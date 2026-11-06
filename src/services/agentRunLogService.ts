@@ -115,15 +115,19 @@ export function buildAgentRunLogEntry(input: RecordAgentRunInput): AgentRunLogEn
   };
 }
 
+function scrubbed(text: string): string {
+  return scrubSecretsFromMessage(text);
+}
+
 function buildTranscript(id: string, input: RecordAgentRunInput): AgentRunTranscript {
-  const context = input.context?.trim() ?? "";
+  const context = scrubbed(input.context?.trim() ?? "");
   const systemPrompt = input.systemPrompt?.trim() ?? "";
   return {
     id,
-    userMessage: capField(input.userMessage, TRANSCRIPT_USER_MAX),
-    response: capField(input.response ?? "", TRANSCRIPT_RESPONSE_MAX),
+    userMessage: capField(scrubbed(input.userMessage), TRANSCRIPT_USER_MAX),
+    response: capField(scrubbed(input.response ?? ""), TRANSCRIPT_RESPONSE_MAX),
     errorMessage: input.errorMessage
-      ? capField(input.errorMessage, TRANSCRIPT_ERROR_MAX)
+      ? capField(scrubbed(input.errorMessage), TRANSCRIPT_ERROR_MAX)
       : undefined,
     context: context ? capField(context, TRANSCRIPT_CONTEXT_MAX) : undefined,
     systemPrompt: systemPrompt ? capField(systemPrompt, TRANSCRIPT_SYSTEM_MAX) : undefined,
@@ -177,11 +181,12 @@ export async function recordAgentRun(input: RecordAgentRunInput): Promise<AgentR
   if (settings.storeAiHistory === false) return null;
 
   const entry = buildAgentRunLogEntry(input);
-  const transcript = buildTranscript(entry.id, input);
+  const storeTranscript = input.persona.storeTranscripts === true;
+  const transcript = storeTranscript ? buildTranscript(entry.id, input) : null;
   try {
     await invoke("append_agent_run_log", {
-      entryJson: JSON.stringify(entry),
-      transcriptJson: JSON.stringify(transcript),
+      entryJson: JSON.stringify({ ...entry, hasTranscript: storeTranscript }),
+      transcriptJson: transcript ? JSON.stringify(transcript) : null,
     });
     usePersonaStore.getState().prependAgentRunLog(entry);
     return entry;
@@ -216,6 +221,11 @@ export async function loadAgentRunTranscript(
 export async function clearAgentRunLogOnDisk(): Promise<void> {
   await invoke("clear_agent_run_log");
   usePersonaStore.getState().setAgentRunLog([]);
+}
+
+export async function deleteAgentRunsForOpenVault(): Promise<void> {
+  await invoke("delete_agent_runs_for_vault");
+  usePersonaStore.getState().setAgentRunLog(await loadAgentRunLogFromDisk());
 }
 
 export function mapParsedToolCalls(

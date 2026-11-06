@@ -8,6 +8,7 @@ import {
   previewJekyllConversion,
 } from "@/services/jekyllExportService";
 import { toastSuccess } from "@/store/useToastStore";
+import { invoke } from "@tauri-apps/api/core";
 import { slugify } from "@/utils/jekyllConverter";
 
 interface Props {
@@ -29,6 +30,9 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
+  const [allowLiquid, setAllowLiquid] = useState(false);
+  const [dropStickyNotes, setDropStickyNotes] = useState(true);
+  const [exportedNotes, setExportedNotes] = useState<string[]>([]);
 
   const defaultCategories = settings.jekyllDefaultCategories ?? [];
 
@@ -36,8 +40,12 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const body = await loadNoteContentForJekyll(notePath);
+        const [body, published] = await Promise.all([
+          loadNoteContentForJekyll(notePath),
+          invoke<string[]>("list_jekyll_exports").catch(() => [] as string[]),
+        ]);
         if (cancelled) return;
+        setExportedNotes(published);
         setContent(body);
         const initial = previewJekyllConversion({
           notePath,
@@ -45,6 +53,8 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
           categories: defaultCategories,
           imageSubfolder,
           blogRoot: blogRoot || undefined,
+          exportedNotes: published,
+          dropStickyNotes: true,
         });
         setTitle(initial.title);
         setSlug(initial.slug);
@@ -80,11 +90,14 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
         categories,
         imageSubfolder,
         blogRoot: blogRoot || undefined,
+        exportedNotes,
+        allowLiquid,
+        dropStickyNotes,
       });
     } catch {
       return null;
     }
-  }, [content, notePath, title, slug, date, categories, imageSubfolder, blogRoot]);
+  }, [content, notePath, title, slug, date, categories, imageSubfolder, blogRoot, exportedNotes, allowLiquid, dropStickyNotes]);
 
   const refreshPreview = useCallback(() => {
     if (!content) return;
@@ -98,13 +111,16 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
         categories,
         imageSubfolder,
         blogRoot: blogRoot || undefined,
+        exportedNotes,
+        allowLiquid,
+        dropStickyNotes,
       });
       setSlug(next.slug);
       setDate(next.date);
     } catch {
       /* user may be mid-edit */
     }
-  }, [content, notePath, title, slug, date, categories, imageSubfolder, blogRoot]);
+  }, [content, notePath, title, slug, date, categories, imageSubfolder, blogRoot, exportedNotes, allowLiquid, dropStickyNotes]);
 
   const pickBlogRoot = async () => {
     const picked = await pickJekyllBlogRoot();
@@ -129,6 +145,9 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
         categories,
         blogRoot: blogRoot.trim(),
         imageSubfolder: imageSubfolder.trim(),
+        allowLiquid,
+        dropStickyNotes,
+        exportedNotes,
       });
       setSavedPath(path);
       toastSuccess(`Post saved to ${path.split("/").pop()}`);
@@ -238,6 +257,23 @@ export default function ConvertToJekyllModal({ notePath, onClose }: Props) {
               </div>
             </Field>
           </div>
+
+          <label className="flex items-center gap-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              checked={dropStickyNotes}
+              onChange={(e) => setDropStickyNotes(e.target.checked)}
+            />
+            Drop sticky notes
+          </label>
+          <label className="flex items-center gap-2 text-xs text-text-secondary">
+            <input
+              type="checkbox"
+              checked={allowLiquid}
+              onChange={(e) => setAllowLiquid(e.target.checked)}
+            />
+            Allow Liquid in this post
+          </label>
 
           {preview && (
             <div className="rounded-lg border border-border bg-surface p-3">

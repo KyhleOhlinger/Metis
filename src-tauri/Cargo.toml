@@ -1,6 +1,6 @@
 [package]
 name = "metis"
-version = "0.15.24"
+version = "0.15.33"
 edition = "2021"
 description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]
@@ -45,6 +45,10 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 flate2 = "1"
 # Pure Rust Hunspell-compatible spellchecker — from the Helix editor team
 spellbook = "0.4"
+# URL parser for Supernote device links. Already used by Tauri.
+url = "2"
+# OS keychain for provider API keys. Well-known crate; apple-native uses the macOS Keychain.
+keyring = { version = "3", default-features = false, features = ["apple-native"] }
 
 [profile.release]
 # Strip debug symbols to minimise binary size in production

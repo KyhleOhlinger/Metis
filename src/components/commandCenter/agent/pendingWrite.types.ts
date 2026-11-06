@@ -28,5 +28,11 @@ export interface PendingWrite {
   cursorOffset?: number;
   status: PendingWriteStatus;
   errorMsg?: string;
+  /** Create hit an existing note. The card offers overwrite or a ` 2.md` copy. */
+  conflict?: boolean;
+  /** Hash of the open note when this suggestion was created. */
+  baseHash?: string;
+  /** The open note changed after the suggestion. Apply is held until the user confirms. */
+  stale?: boolean;
 }
 

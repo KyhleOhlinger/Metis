@@ -1,5 +1,9 @@
 // Copyright (c) 2026 Kyhle Öhlinger. Licensed under the MIT License.
 
+mod io_atomic;
+mod task_sync;
+mod feature_consent;
+mod secrets;
 mod ai_context;
 mod backup_sync;
 mod agent_run_log;
@@ -47,17 +51,42 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if !matches!(event, tauri::WindowEvent::Destroyed) {
+                return;
+            }
+            let label = window.label().to_string();
+            if let Some(vaults) = window.try_state::<CurrentVault>() {
+                if let Ok(mut map) = vaults.0.lock() {
+                    map.remove(&label);
+                }
+            }
+            if let Some(watchers) = window.try_state::<WatcherState>() {
+                if let Ok(mut map) = watchers.0.lock() {
+                    map.remove(&label);
+                }
+            }
+            if let Some(grants) = window.try_state::<ExportGrants>() {
+                if let Ok(mut map) = grants.pending_files.lock() {
+                    map.remove(&label);
+                }
+            }
+        })
         .on_menu_event(menu::handle_menu_event)
         .invoke_handler(tauri::generate_handler![
             shell::pick_folder,
             shell::reveal_in_finder,
             shell::open_url,
             shell::open_vault_window,
+            shell::focus_open_vault,
             plugins::load_vault_plugins,
             plugins::set_core_plugin_enabled,
+            plugins::decide_supernote_consent,
+            plugins::list_jekyll_exports,
+            plugins::remember_jekyll_export,
             plugins::set_plugin_restricted_mode,
             plugins::set_community_plugin_enabled,
-            plugins::install_plugin_from_folder,
+            plugins::install_plugin_from_dialog,
             plugins::install_community_plugin_files,
             plugins::uninstall_community_plugin,
             plugins::read_community_plugin_styles,
@@ -71,11 +100,19 @@ pub fn run() {
             settings::save_personas,
             settings::load_settings,
             settings::save_settings,
+            settings::update_setting,
+            settings::upsert_provider_profile,
+            settings::remove_provider_profile,
+            settings::upsert_persona,
+            settings::delete_persona,
+            settings::load_vault_navigation,
+            settings::patch_vault_navigation,
             settings::get_app_version,
             menu::sync_menu_accelerators,
             menu::set_menu_item_enabled,
             planner::get_planner_storage_dir,
             planner::planner_get_config,
+            planner::planner_decide_legacy_adoption,
             planner::planner_load_file,
             planner::planner_load_files,
             planner::planner_save_file,
@@ -83,13 +120,17 @@ pub fn run() {
             planner::planner_import_bundle,
             agent_run_log::load_agent_run_log,
             agent_run_log::append_agent_run_log,
+            agent_run_log::delete_agent_runs_for_vault,
             agent_run_log::load_agent_run_transcript,
             agent_run_log::clear_agent_run_log,
             ai_context::get_file_summaries,
             ai_context::get_files_content,
+            ai_context::get_never_send_folders,
+            ai_context::set_never_send_folders,
             ai_context::get_folder_md_contents,
             vault_fs::save_note,
             vault_fs::get_file_content,
+            vault_fs::note_file_stamp,
             vault_fs::read_vault_image_base64,
             vault_fs::get_file_contents_batch,
             vault_fs::create_vault,
@@ -107,6 +148,9 @@ pub fn run() {
             vault_fs::agent_write_note,
             watcher::set_vault_watch,
             search::search_vault,
+            task_sync::load_task_sync_snapshot,
+            task_sync::save_task_sync_snapshot,
+            search::preview_replace_in_vault,
             search::replace_in_vault,
             spellcheck::check_spelling,
             spellcheck::suggest_spelling,

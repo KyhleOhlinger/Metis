@@ -7,7 +7,11 @@ use crate::security::{
 use crate::state::CurrentVault;
 use crate::types::default_image_dir_str;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+fn is_markdown_file(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()) == Some("md")
+}
 
 /// Write `content` to `path`.
 ///
@@ -17,14 +21,17 @@ use std::path::PathBuf;
 pub fn save_note(
     path: String,
     content: String,
+    baseline_mtime_ms: Option<u64>,
+    must_exist: Option<bool>,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     reject_untrusted_webview(&window)?;
     let target = PathBuf::from(&path);
 
-    // Only allow saving markdown files
-    if target.extension().and_then(|e| e.to_str()) != Some("md") {
+    // The requested name must be markdown. A symlink named `note.md` can still
+    // point at a non-markdown file, so the resolved path is checked again below.
+    if !is_markdown_file(&target) {
         return Err("save_note only accepts .md files".into());
     }
 
@@ -34,6 +41,19 @@ pub fn save_note(
     let resolved = safe_resolve(&target).map_err(|e| format!("save_note: {e}"))?;
     if !resolved.starts_with(&canon_v) {
         return Err("save_note: path is outside the active vault.".into());
+    }
+    if !is_markdown_file(&resolved) {
+        return Err("save_note only accepts .md files".into());
+    }
+
+    if must_exist == Some(true) && !resolved.exists() {
+        return Err(format!("NOT_FOUND: {}", resolved.display()));
+    }
+    if let (Some(baseline), true) = (baseline_mtime_ms, resolved.exists()) {
+        let modified = file_mtime_ms(&resolved)?;
+        if modified > baseline.saturating_add(1500) {
+            return Err(format!("NOTE_CONFLICT: {}", resolved.display()));
+        }
     }
 
     if let Some(parent) = resolved.parent() {
@@ -45,8 +65,69 @@ pub fn save_note(
         }
     }
 
-    fs::write(&resolved, content.as_bytes())
-        .map_err(|e| format!("Failed to write file: {e}"))
+    crate::io_atomic::write_atomic(&resolved, content.as_bytes())?;
+    file_mtime_ms(&resolved)
+}
+
+pub(crate) fn file_mtime_ms(path: &Path) -> Result<u64, String> {
+    let modified = fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .map_err(|e| format!("Failed to read file time: {e}"))?;
+    Ok(modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to read file time: {e}"))?
+        .as_millis() as u64)
+}
+
+/// `create` fails when the note already exists. `overwrite` replaces it.
+fn parse_write_mode(mode: &str) -> Result<bool, String> {
+    match mode {
+        "create" => Ok(false),
+        "overwrite" => Ok(true),
+        _ => Err("agent_write_note: mode must be create or overwrite.".into()),
+    }
+}
+
+/// Reject `..`, hidden components, and any extension other than `.md`.
+/// A missing extension becomes `.md`. An existing non-markdown extension does not.
+fn agent_note_target(vault: &Path, rel_path: &str) -> Result<PathBuf, String> {
+    if rel_path.contains('\0') {
+        return Err("agent_write_note: invalid path.".into());
+    }
+    let raw = PathBuf::from(rel_path);
+    for component in raw.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                return Err("agent_write_note: path must not contain '..'.".into());
+            }
+            std::path::Component::Normal(name) => {
+                let name = name.to_string_lossy();
+                if name.starts_with('.') {
+                    return Err("agent_write_note: hidden path segments are not allowed.".into());
+                }
+            }
+            _ => {}
+        }
+    }
+    let joined = if raw.is_absolute() {
+        raw
+    } else {
+        vault.join(&PathBuf::from(rel_path))
+    };
+    let mut target = normalize_path(&joined)?;
+    match target.extension().and_then(|ext| ext.to_str()) {
+        Some("md") => {}
+        Some(_) => {
+            return Err("agent_write_note: only .md notes can be written.".into());
+        }
+        None => {
+            target.set_extension("md");
+        }
+    }
+    if !target.starts_with(vault) {
+        return Err("Path is outside the active vault.".into());
+    }
+    Ok(target)
 }
 
 /// Write (or create) a note at a vault-relative **or** absolute path.
@@ -55,11 +136,10 @@ pub fn save_note(
 /// requests a file to be created or modified.
 ///
 /// SECURITY controls:
-///  - Path is normalised to resolve `..` before the vault-boundary check.
-///  - Absolute paths that escape the vault are rejected.
-///  - Relative paths are joined against the vault root — they can never
-///    escape the vault boundary after normalisation.
-///  - `.md` extension is enforced.
+///  - `..` is rejected per path component, not as a substring.
+///  - Hidden components (`.git`, `.metis`, `.obsidian`) are rejected.
+///  - Only `.md` is written. A different extension is an error, not a rename.
+///  - `mode=create` leaves an existing file untouched.
 ///  - Parent directories are created if they don't exist (but only within the
 ///    vault boundary).
 ///  - Returns the absolute path of the written file so the UI can open / refresh it.
@@ -67,28 +147,15 @@ pub fn save_note(
 pub fn agent_write_note(
     rel_path: String,
     content: String,
+    mode: String,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<String, String> {
     reject_untrusted_webview(&window)?;
-    if rel_path.contains("..") {
-        return Err("agent_write_note: path must not contain '..'.".into());
-    }
+    let overwrite = parse_write_mode(&mode)?;
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("agent_write_note: {e}"))?;
-
-    let raw = PathBuf::from(&rel_path);
-    let joined = if raw.is_absolute() { raw } else { canon_v.join(&raw) };
-
-    let mut target = normalize_path(&joined)?;
-
-    if target.extension().and_then(|e| e.to_str()) != Some("md") {
-        target.set_extension("md");
-    }
-
-    if !target.starts_with(&canon_v) {
-        return Err("Path is outside the active vault.".into());
-    }
+    let target = agent_note_target(&canon_v, &rel_path)?;
 
     if let Some(parent) = target.parent() {
         create_dir_all_inside_vault(parent, &canon_v)?;
@@ -100,9 +167,17 @@ pub fn agent_write_note(
     if !resolved.starts_with(&canon_v) {
         return Err("agent_write_note: resolved path is outside the active vault.".into());
     }
+    if !is_markdown_file(&resolved) {
+        return Err("agent_write_note: only .md notes can be written.".into());
+    }
+    if !overwrite && resolved.exists() {
+        return Err(format!(
+            "NOTE_EXISTS: {}",
+            resolved.to_string_lossy()
+        ));
+    }
 
-    fs::write(&resolved, content.as_bytes())
-        .map_err(|e| format!("Failed to write note: {e}"))?;
+    crate::io_atomic::write_atomic(&resolved, content.as_bytes())?;
 
     Ok(resolved.to_string_lossy().to_string())
 }
@@ -186,8 +261,44 @@ pub fn save_asset(
     }
 
     let target = resolved_dir.join(&name);
-    fs::write(&target, &data)
-        .map_err(|e| format!("Failed to save asset: {e}"))?;
+    crate::io_atomic::write_atomic(&target, &data).map_err(|e| format!("Failed to save asset: {e}"))?;
 
     Ok(format!("{subdir}/{name}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_named_md_does_not_count_as_markdown_after_resolve() {
+        use std::os::unix::fs::symlink;
+
+        let dir = std::env::temp_dir().join(format!("metis-save-note-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("secret.txt");
+        fs::write(&target, b"secret").unwrap();
+        let link = dir.join("note.md");
+        symlink(&target, &link).unwrap();
+
+        assert!(is_markdown_file(&link));
+        let resolved = safe_resolve(&link).unwrap();
+        assert!(!is_markdown_file(&resolved));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn agent_note_target_rejects_hidden_segments_and_other_extensions() {
+        let vault = PathBuf::from("/tmp/metis-vault");
+        assert!(agent_note_target(&vault, "notes/plan.md").is_ok());
+        assert!(agent_note_target(&vault, "notes/foo..bar.md").is_ok());
+        assert!(agent_note_target(&vault, "notes/plan.txt").is_err());
+        assert!(agent_note_target(&vault, ".git/config.md").is_err());
+        assert!(agent_note_target(&vault, "notes/../secret.md").is_err());
+        let created = agent_note_target(&vault, "notes/plan").unwrap();
+        assert_eq!(created.extension().and_then(|ext| ext.to_str()), Some("md"));
+    }
 }

@@ -19,6 +19,7 @@ const empty: VaultPluginStateDto = {
   core: {},
   enabled: [],
   installed: [],
+  pendingSuggestions: [],
 };
 
 interface PluginStore extends VaultPluginStateDto {
@@ -29,7 +30,7 @@ interface PluginStore extends VaultPluginStateDto {
   setCoreEnabled: (id: CorePluginId, enabled: boolean) => Promise<void>;
   setRestrictedMode: (restricted: boolean) => Promise<void>;
   setCommunityEnabled: (id: string, enabled: boolean) => Promise<void>;
-  installFromFolder: (sourcePath: string) => Promise<void>;
+  installFromDialog: () => Promise<void>;
   installFiles: (manifestJson: string, stylesCss?: string | null) => Promise<void>;
   uninstall: (id: string) => Promise<void>;
 }
@@ -41,6 +42,7 @@ function applyDto(set: (p: Partial<PluginStore>) => void, state: VaultPluginStat
     core: state.core ?? {},
     enabled: state.enabled ?? [],
     installed: state.installed ?? [],
+    pendingSuggestions: state.pendingSuggestions ?? [],
   });
 }
 
@@ -107,9 +109,9 @@ export const usePluginStore = create<PluginStore>((set) => ({
       toastError(`Could not update community plugin: ${formatError(err)}`);
     }
   },
-  installFromFolder: async (sourcePath) => {
+  installFromDialog: async () => {
     const epoch = nextPluginEpoch();
-    const state = await invoke<VaultPluginStateDto>("install_plugin_from_folder", { sourcePath });
+    const state = await invoke<VaultPluginStateDto>("install_plugin_from_dialog");
     if (!pluginEpochCurrent(epoch)) return;
     applyDto(set, state);
   },

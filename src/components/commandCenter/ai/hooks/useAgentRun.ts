@@ -6,6 +6,7 @@ import { buildSmartContext, estimateContextEgress } from "@/services/contextBuil
 import { loadAgentVisionImages } from "@/services/agentVisionContext";
 import { confirmEstimatedEgress } from "@/components/egressConfirm";
 import { profileForPersona, findProviderProfile } from "@/utils/providerProfiles";
+import { noteContentHash } from "@/hooks/noteAutosave";
 import { sanitizeAgentNoteRelativePath } from "@/utils/paths";
 import {
   mapParsedToolCalls,
@@ -282,6 +283,7 @@ export function useAgentRun(ui: AgentRunUi) {
             path: runActiveFilePath,
             content: text.trim(),
             cursorOffset: selectionEndOffsetRef.current,
+            baseHash: noteContentHash(runActiveFileContent),
             status: "pending",
           }]);
           insertAfterSelectionRef.current = false;
@@ -303,6 +305,7 @@ export function useAgentRun(ui: AgentRunUi) {
                 tool: tc.name as PendingWriteTool,
                 path: runActiveFilePath,
                 content: String(tc.args.content ?? ""),
+                baseHash: noteContentHash(runActiveFileContent),
                 status: "pending",
               });
             } else if (tc.name === "insert_at_cursor" && runActiveFilePath) {
@@ -312,13 +315,14 @@ export function useAgentRun(ui: AgentRunUi) {
                 path: runActiveFilePath,
                 content: String(tc.args.content ?? ""),
                 cursorOffset: runCursorOffset,
+                baseHash: noteContentHash(runActiveFileContent),
                 status: "pending",
               });
             } else if (tc.name === "create_new_note") {
-              const rel =
-                sanitizeAgentNoteRelativePath(
-                  String(tc.args.relative_path ?? "agent-note.md"),
-                ) ?? "agent-note.md";
+              const rel = sanitizeAgentNoteRelativePath(
+                String(tc.args.relative_path ?? "agent-note.md"),
+              );
+              if (!rel) continue;
               writes.push({
                 id: tc.id,
                 tool: "create_new_note",
@@ -371,7 +375,9 @@ export function useAgentRun(ui: AgentRunUi) {
         activeRunRef.current = null;
       },
     },
-    agentFileTools,
+    runScope.type === "full-vault" || runScope.type === "specific-folder"
+      ? undefined
+      : agentFileTools,
     visionImages,
   );
   if (runToken !== runTokenRef.current) {

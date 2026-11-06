@@ -24,7 +24,6 @@ export const PACKAGED_HTTPS_HOSTS = [
   "api.deepseek.com",
   "api.x.ai",
   "api.cerebras.ai",
-  "llm-gateway.prod.plat.unauth.wayfair.io",
   "date.nager.at",
   "raw.githubusercontent.com",
 ] as const;

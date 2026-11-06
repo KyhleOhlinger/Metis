@@ -27,7 +27,6 @@
         { "url": "https://api.deepseek.com/**" },
         { "url": "https://api.x.ai/**" },
         { "url": "https://api.cerebras.ai/**" },
-        { "url": "https://llm-gateway.prod.plat.unauth.wayfair.io/**" },
         { "url": "https://*" },
         { "url": "https://*:*/*" },
         { "url": "https://*.openai.azure.com/**" },

@@ -21,5 +21,6 @@ pub(crate) const PLANNER_FILES: &[&str] = &[
 #[derive(Serialize)]
 pub struct PlannerConfig {
     pub active_dir: String,
+    pub legacy_adoption_pending: bool,
 }
 
