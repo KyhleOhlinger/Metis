@@ -27,8 +27,6 @@
         { "url": "https://api.deepseek.com/**" },
         { "url": "https://api.x.ai/**" },
         { "url": "https://api.cerebras.ai/**" },
-        { "url": "https://*" },
-        { "url": "https://*:*/*" },
         { "url": "https://*.openai.azure.com/**" },
         { "url": "https://*.cognitiveservices.azure.com/**" },
         { "url": "https://date.nager.at/**" },

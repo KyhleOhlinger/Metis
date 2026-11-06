@@ -28,12 +28,14 @@ interface ReplaceSummary {
   file_path: string;
   file_name: string;
   replacements: number;
+  content_hash: string;
 }
 
 interface ReplaceOutcome {
   summaries: ReplaceSummary[];
   error: string | null;
   trash_dir: string | null;
+  skipped: number;
 }
 
 interface FileGroup {
@@ -224,12 +226,22 @@ export default function SearchPanel() {
         replacement,
         caseSensitive,
         regexMode,
+        confirmed: preview.map((item) => ({
+          filePath: item.file_path,
+          contentHash: item.content_hash,
+        })),
       });
       setReplaceResult(outcome.summaries);
+      const skippedNote =
+        outcome.skipped > 0
+          ? `${outcome.skipped} file${outcome.skipped === 1 ? "" : "s"} changed after the preview and were left as they are.`
+          : "";
       if (outcome.error) {
         setError(
-          `${outcome.error}${outcome.trash_dir ? ` Originals are in ${outcome.trash_dir}.` : ""}`,
+          `${outcome.error}${outcome.trash_dir ? ` Originals are in ${outcome.trash_dir}.` : ""}${skippedNote ? ` ${skippedNote}` : ""}`,
         );
+      } else if (skippedNote) {
+        setError(skippedNote);
       }
       // Re-search to update results
       doSearch(query);

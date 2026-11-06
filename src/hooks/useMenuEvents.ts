@@ -86,7 +86,7 @@ export function useMenuEvents({
         // Uses the Rust `pick_folder` command (instead of the JS plugin) so the
         // native dialog is correctly parented to THIS window in multi-window setups.
         case "open-vault": {
-          const selected = await invoke<string | null>("pick_folder");
+          const selected = await invoke<string | null>("pick_folder", { grantAsVault: true });
           if (!selected) break;
           if (await invoke<boolean>("focus_open_vault", { vaultPath: selected })) break;
 

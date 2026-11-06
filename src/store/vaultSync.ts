@@ -1,7 +1,9 @@
+import { rememberNoteDiskStamp } from "../hooks/noteAutosave";
 import { pathsEqual } from "../utils/paths";
 import { loadVaultFile } from "../utils/vaultRead";
 import type { DiskWrite } from "./vaultTypes";
 import { useStore } from "./useStore";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
  * Refresh the vault tree and push new content into the open editor / visual
@@ -20,6 +22,7 @@ export async function syncUiAfterDiskWrites(
     const content =
       match?.content ?? (await loadVaultFile(openPath));
     setActiveFile(openPath, content);
+    await stampOpenNote(openPath, content);
     return;
   }
 
@@ -31,4 +34,15 @@ export async function syncUiAfterDiskWrites(
     activeWrite.content ??
     (await loadVaultFile(activeFilePath));
   setActiveFile(activeFilePath, content);
+  await stampOpenNote(activeFilePath, content);
+}
+
+async function stampOpenNote(path: string, content: string): Promise<void> {
+  if (!path.toLowerCase().endsWith(".md")) return;
+  try {
+    const stamp = await invoke<number>("note_file_stamp", { path });
+    rememberNoteDiskStamp(path, stamp, content);
+  } catch {
+    rememberNoteDiskStamp(path, Date.now(), content);
+  }
 }

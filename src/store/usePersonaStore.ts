@@ -64,7 +64,6 @@ function enqueueSettingsWrite(): Promise<void> {
   const run = settingsWrite.then(async () => {
     const settings = settingsWithHosts(usePersonaStore.getState().settings);
     usePersonaStore.setState({ settings });
-    await invoke("save_settings", { json: JSON.stringify(settings) });
     await syncMenuAccelerators(settings);
   });
   settingsWrite = run.then(
@@ -79,8 +78,7 @@ function enqueueSettingsWrite(): Promise<void> {
 
 function enqueuePersonaWrite(): Promise<void> {
   const run = personaWrite.then(async () => {
-    const personas = usePersonaStore.getState().personas;
-    await invoke("save_personas", { json: JSON.stringify(personas) });
+    // Personas are written one at a time by upsert_persona / delete_persona.
   });
   personaWrite = run.then(
     () => undefined,

@@ -51,11 +51,37 @@ const PREVIEW_EXTRA_ATTR = [
   "id",
 ] as const;
 
+let purifyHooksInstalled = false;
+
+function installPurifyHooks(): void {
+  if (purifyHooksInstalled) return;
+  purifyHooksInstalled = true;
+  DOMPurify.addHook("uponSanitizeElement", (node, data) => {
+    if (data.tagName !== "input") return;
+    const type = node instanceof Element ? node.getAttribute("type")?.toLowerCase() : "";
+    if (type !== "checkbox") node.parentNode?.removeChild(node);
+  });
+  DOMPurify.addHook("uponSanitizeAttribute", (_node, data) => {
+    if (data.attrName === "background") {
+      data.keepAttr = false;
+      return;
+    }
+    if (data.attrName === "style" && /url\s*\(/i.test(data.attrValue)) {
+      const onlyVars = data.attrValue
+        .split(/url\s*\(/i)
+        .slice(1)
+        .every((part) => part.trimStart().startsWith("var(--"));
+      if (!onlyVars) data.keepAttr = false;
+    }
+  });
+}
+
 /** Sanitize marked HTML for React `dangerouslySetInnerHTML`. */
 export function sanitizeMarkdownHtml(
   rawHtml: string,
   options: SanitizeMarkdownOptions = {},
 ): string {
+  installPurifyHooks();
   const addTags: string[] = options.taskLists ? ["input"] : [];
   if (options.stickyNotes) addTags.push("aside", "div");
   const addAttr: string[] = ["type", "checked", "disabled"];
@@ -63,13 +89,24 @@ export function sanitizeMarkdownHtml(
   if (options.previewAttrs) addAttr.push(...PREVIEW_EXTRA_ATTR);
   else if (options.headingIds) addAttr.push("id");
 
-  return DOMPurify.sanitize(rawHtml, {
+  const clean = DOMPurify.sanitize(rawHtml, {
     ADD_TAGS: [...addTags],
     ADD_ATTR: addAttr,
-    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form"],
+    FORBID_TAGS: ["script", "style", "iframe", "object", "embed", "form", "picture", "source", "audio", "video", "svg", "image"],
+    FORBID_ATTR: ["srcset", "background"],
     // Full http(s)/mailto URLs, fragments, and vault-relative paths — not bare scheme prefixes.
     ALLOWED_URI_REGEXP:
       /^(?:https?:\/\/[^\s<>"']+|mailto:[^\s<>"']+|#(?:[^\s<>"']*)?|\/[^\s<>"']*|\.\/[^\s<>"']*|[^:\s<>"']+(?:\/[^\s<>"']*)*)$/i,
+  });
+  return stripRemoteImageSrc(clean);
+}
+
+/** Remote image URLs are removed. Vault images use `asset:` or `data:`. */
+function stripRemoteImageSrc(html: string): string {
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /\ssrc\s*=\s*["']([^"']*)["']/i.exec(tag)?.[1] ?? "";
+    if (/^https?:/i.test(src)) return "";
+    return tag;
   });
 }
 

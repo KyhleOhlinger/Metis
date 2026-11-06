@@ -1,6 +1,6 @@
 [package]
 name = "metis"
-version = "0.15.33"
+version = "0.15.38"
 edition = "2021"
 description = "A local-first, AI-augmented personal knowledge ecosystem."
 authors = ["Kyhle Öhlinger"]
@@ -18,7 +18,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "dynamic-acl"] }
 # Official Tauri plugin for native folder/file picker dialogs
 tauri-plugin-dialog = "2"
 # Native HTTP client (reqwest) that bypasses WebKit CORS restrictions.
@@ -47,8 +47,6 @@ flate2 = "1"
 spellbook = "0.4"
 # URL parser for Supernote device links. Already used by Tauri.
 url = "2"
-# OS keychain for provider API keys. Well-known crate; apple-native uses the macOS Keychain.
-keyring = { version = "3", default-features = false, features = ["apple-native"] }
 
 [profile.release]
 # Strip debug symbols to minimise binary size in production

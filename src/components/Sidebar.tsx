@@ -121,7 +121,7 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
   }, [pendingMenuAction]);
 
   const handleOpenVault = async () => {
-    const selected = await invoke<string | null>("pick_folder");
+    const selected = await invoke<string | null>("pick_folder", { grantAsVault: true });
     if (!selected) return;
     if (await invoke<boolean>("focus_open_vault", { vaultPath: selected })) return;
 

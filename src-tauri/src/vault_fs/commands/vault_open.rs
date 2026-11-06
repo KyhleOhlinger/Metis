@@ -8,6 +8,7 @@ use crate::state::{CurrentVault, ExportGrants, WatcherState};
 use crate::types::*;
 use std::fs;
 use std::path::PathBuf;
+use tauri::Manager;
 
 fn release_previous_vault(
     window: &tauri::WebviewWindow,
@@ -31,6 +32,8 @@ fn release_previous_vault(
     if let Ok(mut map) = grants.pending_files.lock() {
         map.remove(&label);
     }
+    // The previous vault stays allowed. Tauri never lifts a forbidden path,
+    // so forbidding it here would hide images after switching back.
 }
 
 /// Receive the vault root path (chosen by the frontend folder-picker dialog),
@@ -43,6 +46,7 @@ fn release_previous_vault(
 pub fn open_vault(
     path: String,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
     watchers: tauri::State<'_, WatcherState>,
     grants: tauri::State<'_, ExportGrants>,
@@ -55,6 +59,19 @@ pub fn open_vault(
     }
     if !root.is_dir() {
         return Err(format!("Path is not a directory: {path}"));
+    }
+    crate::security::vault_open_permitted(&app, &root)?;
+    crate::security::cleanup_stale_tmp(&root);
+
+    // A linked `.metis` would make later writes follow the link out of the vault.
+    if root
+        .join(".metis")
+        .symlink_metadata()
+        .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        return Err(
+            "The .metis folder is a link. Replace it with a real folder inside the vault.".into(),
+        );
     }
 
     // Detect whether this is already a Metis vault by looking for the marker.
@@ -86,6 +103,9 @@ pub fn open_vault(
         Some(detect_vault_hint(&root))
     };
 
+    if let Ok(canon) = crate::security::canon_vault(&root) {
+        let _ = app.asset_protocol_scope().allow_directory(&canon, true);
+    }
     release_previous_vault(&window, &vault_state, &watchers, &grants, &path);
     vault_state.0.lock().unwrap().insert(window.label().to_string(), path.clone());
 
@@ -154,6 +174,10 @@ pub fn create_vault(
     // vault on every subsequent open.  Failure is non-fatal — the vault works
     // normally; the user would just see the conversion prompt next time.
     let _ = write_vault_meta(&vault);
+    crate::security::remember_vault_grant(&app, &vault)?;
+    if let Ok(canon) = crate::security::canon_vault(&vault) {
+        let _ = app.asset_protocol_scope().allow_directory(&canon, true);
+    }
     if let Ok(canon) = crate::security::canon_vault(&vault) {
         let _ = crate::planner::remember_created_vault(&app, &canon);
     }

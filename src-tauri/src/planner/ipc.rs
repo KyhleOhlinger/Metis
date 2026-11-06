@@ -145,6 +145,17 @@ pub fn planner_import_bundle(
 }
 
 #[tauri::command]
+pub fn planner_local_import_allowed(
+    vault_path: String,
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<bool, String> {
+    let vault = planner_vault(&vault_path, &window, &vault_state)?;
+    Ok(local_import_allowed(&app, &vault))
+}
+
+#[tauri::command]
 pub fn get_planner_storage_dir(
     vault_path: String,
     app: AppHandle,

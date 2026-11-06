@@ -38,7 +38,7 @@ export async function openVaultNotePath(
     store.setActiveFile(path, content);
     if (path.toLowerCase().endsWith(".md")) {
       const stamp = await invoke<number>("note_file_stamp", { path });
-      rememberNoteDiskStamp(path, stamp);
+      rememberNoteDiskStamp(path, stamp, content);
     }
     const parent = path.substring(0, path.lastIndexOf("/"));
     if (parent) store.setActiveFolderPath(parent);

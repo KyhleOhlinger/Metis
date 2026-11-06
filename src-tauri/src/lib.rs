@@ -3,7 +3,6 @@
 mod io_atomic;
 mod task_sync;
 mod feature_consent;
-mod secrets;
 mod ai_context;
 mod backup_sync;
 mod agent_run_log;
@@ -15,6 +14,7 @@ mod supernote_render;
 mod menu;
 mod search;
 mod security;
+mod vault_identity;
 mod settings;
 mod shell;
 mod spellcheck;
@@ -97,9 +97,7 @@ pub fn run() {
             vault_fs::open_vault,
             conversion::convert_vault_to_metis,
             settings::load_personas,
-            settings::save_personas,
             settings::load_settings,
-            settings::save_settings,
             settings::update_setting,
             settings::upsert_provider_profile,
             settings::remove_provider_profile,
@@ -113,6 +111,7 @@ pub fn run() {
             planner::get_planner_storage_dir,
             planner::planner_get_config,
             planner::planner_decide_legacy_adoption,
+            planner::planner_local_import_allowed,
             planner::planner_load_file,
             planner::planner_load_files,
             planner::planner_save_file,
@@ -142,6 +141,7 @@ pub fn run() {
             vault_fs::save_asset,
             shell::set_vault_default_image_dir,
             shell::copy_files_to_folder,
+            shell::copy_images_via_dialog,
             shell::pick_save_path,
             shell::pick_export_directory,
             shell::write_export_bytes,

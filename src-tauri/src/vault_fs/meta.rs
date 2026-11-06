@@ -85,9 +85,7 @@ pub(crate) fn is_allowed_ext(path: &Path) -> bool {
 /// Metis vault.  The `.metis` directory is hidden (dot-prefix) so it never
 /// appears in the sidebar file tree.
 pub(crate) fn write_vault_meta(vault: &Path) -> Result<(), String> {
-    let metis_dir = vault.join(".metis");
-    fs::create_dir_all(&metis_dir)
-        .map_err(|e| format!("Cannot create .metis directory: {e}"))?;
+    let metis_dir = crate::security::ensure_real_metis(vault)?;
 
     let name = vault
         .file_name()
@@ -142,9 +140,7 @@ pub(crate) fn read_vault_meta(vault: &Path) -> Result<VaultMeta, String> {
 }
 
 pub(crate) fn write_vault_meta_full(vault: &Path, meta: &VaultMeta) -> Result<(), String> {
-    let metis_dir = vault.join(".metis");
-    fs::create_dir_all(&metis_dir)
-        .map_err(|e| format!("Cannot create .metis directory: {e}"))?;
+    let metis_dir = crate::security::ensure_real_metis(vault)?;
     let json = serde_json::to_string_pretty(meta)
         .map_err(|e| format!("Failed to serialise vault meta: {e}"))?;
     crate::io_atomic::write_atomic(&metis_dir.join("vault.json"), json.as_bytes())

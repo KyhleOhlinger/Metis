@@ -406,7 +406,11 @@ export function wrapUntrustedNotes(files: VaultNoteBody[]): string {
   return files
     .map((file) => {
       const path = file.path.replace(/[<>&"]/g, "");
-      return `<untrusted-note path="${path}">\n${file.content}\n</untrusted-note>`;
+      const body = file.content
+        .split("</untrusted-note>").join("<\\/untrusted-note>")
+        .split("<untrusted-context>").join("<\\/untrusted-context>")
+        .split("</untrusted-context>").join("<\\/untrusted-context>");
+      return `<untrusted-note path="${path}">\n${body}\n</untrusted-note>`;
     })
     .join("\n\n");
 }

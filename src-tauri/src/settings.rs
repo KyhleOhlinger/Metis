@@ -93,65 +93,31 @@ fn emit_changed(app: &tauri::AppHandle) {
     let _ = app.emit("settings-changed", ());
 }
 
-fn profile_list(file: &mut Value) -> Option<&mut Vec<Value>> {
-    object_mut(file)
-        .get_mut("providerProfiles")
-        .and_then(|value| value.as_array_mut())
-}
-
-/// Move plaintext keys into the keychain. An empty key is left alone so a
-/// sealed file does not delete the stored secret.
-fn migrate_plaintext_keys(file: &mut Value) -> Result<bool, String> {
-    let Some(list) = profile_list(file) else {
-        return Ok(false);
+/// Shipped preset ids stay on their vendor host. Custom `prov-*` profiles are not pinned.
+fn preset_host_error(profile: &Value) -> Result<(), String> {
+    let id = profile.get("id").and_then(|value| value.as_str()).unwrap_or("");
+    let pinned = match id {
+        "preset-openai" => "api.openai.com",
+        "preset-gemini" => "generativelanguage.googleapis.com",
+        "preset-groq" => "api.groq.com",
+        "preset-perplexity" => "api.perplexity.ai",
+        "preset-anthropic" => "api.anthropic.com",
+        "preset-litellm" => "loopback",
+        _ => return Ok(()),
     };
-    let mut changed = false;
-    for profile in list.iter_mut() {
-        let key = profile.get("apiKey").and_then(|value| value.as_str()).unwrap_or("");
-        if key.is_empty() {
-            continue;
+    let base = profile.get("baseUrl").and_then(|value| value.as_str()).unwrap_or("");
+    let url = url::Url::parse(base).map_err(|_| "Invalid provider Base URL.".to_string())?;
+    let host = url.host_str().unwrap_or("");
+    if pinned == "loopback" {
+        if matches!(host, "localhost" | "127.0.0.1" | "::1") {
+            return Ok(());
         }
-        let id = profile.get("id").and_then(|value| value.as_str()).unwrap_or("").to_string();
-        if id.is_empty() {
-            continue;
-        }
-        crate::secrets::store_api_key(&id, key)?;
-        if let Some(obj) = profile.as_object_mut() {
-            obj.insert("apiKey".into(), Value::String(String::new()));
-            changed = true;
-        }
+        return Err(format!(
+            "The local preset stays on this computer. {host} was rejected."
+        ));
     }
-    Ok(changed)
-}
-
-fn reveal_keys(file: &mut Value) {
-    let Some(list) = profile_list(file) else {
-        return;
-    };
-    for profile in list.iter_mut() {
-        let id = profile.get("id").and_then(|value| value.as_str()).unwrap_or("");
-        if id.is_empty() {
-            continue;
-        }
-        let stored = crate::secrets::load_api_key(id);
-        if stored.is_empty() {
-            continue;
-        }
-        if let Some(obj) = profile.as_object_mut() {
-            obj.insert("apiKey".into(), Value::String(stored));
-        }
-    }
-}
-
-fn seal_profile(profile: &mut Value) -> Result<(), String> {
-    let id = profile.get("id").and_then(|value| value.as_str()).unwrap_or("").to_string();
-    if id.is_empty() {
-        return Ok(());
-    }
-    let key = profile.get("apiKey").and_then(|value| value.as_str()).unwrap_or("").to_string();
-    crate::secrets::store_api_key(&id, &key)?;
-    if let Some(obj) = profile.as_object_mut() {
-        obj.insert("apiKey".into(), Value::String(String::new()));
+    if host != pinned {
+        return Err(format!("This preset only talks to {pinned}."));
     }
     Ok(())
 }
@@ -180,22 +146,6 @@ pub fn load_personas(
         return Ok("[]".into());
     }
     fs::read_to_string(&path).map_err(|e| format!("Failed to read personas: {e}"))
-}
-
-#[tauri::command]
-pub fn save_personas(
-    window: tauri::WebviewWindow,
-    app_handle: tauri::AppHandle,
-    json: String,
-) -> Result<(), String> {
-    reject_untrusted_webview(&window)?;
-    serde_json::from_str::<serde_json::Value>(&json)
-        .map_err(|e| format!("Invalid personas JSON: {e}"))?;
-    let _guard = io_lock()?;
-    let path = app_data_file(&app_handle, "personas.json")?;
-    write_private_json_file(&path, &json)?;
-    emit_changed(&app_handle);
-    Ok(())
 }
 
 #[tauri::command]
@@ -255,38 +205,22 @@ pub fn load_settings(
         return Ok("{}".into());
     }
     let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read settings: {e}"))?;
-    let mut file: Value = match serde_json::from_str::<Value>(&raw) {
-        Ok(value) if value.is_object() => value,
-        _ => return Ok(raw),
-    };
-    if migrate_plaintext_keys(&mut file)? {
-        write_json_value(&path, &file)?;
-    }
-    reveal_keys(&mut file);
-    serde_json::to_string(&file).map_err(|e| format!("Failed to read settings: {e}"))
+    grant_saved_hosts(&app_handle, &raw);
+    Ok(raw)
 }
 
-#[tauri::command]
-pub fn save_settings(
-    window: tauri::WebviewWindow,
-    app_handle: tauri::AppHandle,
-    json: String,
-) -> Result<(), String> {
-    reject_untrusted_webview(&window)?;
-    let mut file: Value = serde_json::from_str(&json)
-        .map_err(|e| format!("Invalid settings JSON: {e}"))?;
-    let _guard = io_lock()?;
-    if file.is_object() {
-        if let Some(list) = profile_list(&mut file) {
-        for profile in list.iter_mut() {
-            seal_profile(profile)?;
+fn grant_saved_hosts(app: &tauri::AppHandle, raw: &str) {
+    let Ok(value) = serde_json::from_str::<Value>(raw) else {
+        return;
+    };
+    let Some(list) = value.get("providerProfiles").and_then(|item| item.as_array()) else {
+        return;
+    };
+    for profile in list {
+        if let Some(base) = profile.get("baseUrl").and_then(|item| item.as_str()) {
+            let _ = crate::shell::allow_ai_host(app, base);
         }
     }
-    }
-    let path = app_data_file(&app_handle, "settings.json")?;
-    write_json_value(&path, &file)?;
-    emit_changed(&app_handle);
-    Ok(())
 }
 
 #[tauri::command]
@@ -327,8 +261,10 @@ pub fn upsert_provider_profile(
         .and_then(|value| value.as_str())
         .ok_or("Provider profile is missing an id.")?
         .to_string();
-    let mut profile = profile;
-    seal_profile(&mut profile)?;
+    preset_host_error(&profile)?;
+    if let Some(base) = profile.get("baseUrl").and_then(|value| value.as_str()) {
+        crate::shell::allow_ai_host(&app_handle, base)?;
+    }
     let _guard = io_lock()?;
     let path = app_data_file(&app_handle, "settings.json")?;
     let mut file = read_json_value(&path, Value::Object(Map::new()))?;
@@ -353,7 +289,6 @@ pub fn remove_provider_profile(
     id: String,
 ) -> Result<(), String> {
     reject_untrusted_webview(&window)?;
-    crate::secrets::delete_api_key(&id)?;
     let _guard = io_lock()?;
     let settings_path = app_data_file(&app_handle, "settings.json")?;
     let mut settings = read_json_value(&settings_path, Value::Object(Map::new()))?;

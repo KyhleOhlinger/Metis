@@ -25,7 +25,7 @@ export async function buildTaskContext(
 
   for (let i = 0; i < mdNotes.length; i += BATCH) {
     const slice = mdNotes.slice(i, i + BATCH);
-    const contents = await loadVaultFiles(slice.map((n) => n.path));
+    const contents = await loadVaultFiles(slice.map((n) => n.path), { forAi: true });
     contents.forEach((content, j) => {
       const note = slice[j];
       // Match incomplete markdown tasks across list marker styles (including indented items):
@@ -153,6 +153,25 @@ export function planTaskSync(input: {
     const note = input.notes.find((item) => item.source === entry.sourcePath);
     if (!note) {
       conflicts.push(`${entry.sourcePath}: source note was not found`);
+      continue;
+    }
+    const hashCount = new Map<string, number>();
+    for (const raw of note.content.split("\n")) {
+      const found = raw.match(/^[ \t]*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+(.+)$/);
+      if (!found) continue;
+      const hash = taskLineHash(found[1].trim());
+      hashCount.set(hash, (hashCount.get(hash) ?? 0) + 1);
+    }
+    if ((hashCount.get(entry.hash) ?? 0) > 1) {
+      conflicts.push(`${entry.sourcePath}: "${entry.text}" matches more than one line`);
+      continue;
+    }
+    const sameHash = note.content.split("\n").filter((raw) => {
+      const match = raw.match(/^[ \t]*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+(.+)$/);
+      return match ? taskLineHash(match[1].trim()) === entry.hash : false;
+    }).length;
+    if (sameHash > 1) {
+      conflicts.push(`${entry.sourcePath}: "${entry.text}" matches more than one task`);
       continue;
     }
     const previous = snap.get(`${entry.sourcePath}\n${entry.hash}`);
