@@ -230,6 +230,12 @@ export function BackupSyncSettings() {
         </>
       )}
 
+      {state.lastSuccessMs > 0 && (
+        <p className="text-xs text-text-secondary">
+          Last successful backup: {new Date(state.lastSuccessMs).toLocaleString()}
+        </p>
+      )}
+      {state.lastError && <p className="text-xs text-red-400">{state.lastError}</p>}
       {error && <p className="text-xs text-red-400">{error}</p>}
 
       <button

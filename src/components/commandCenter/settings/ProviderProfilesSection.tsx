@@ -5,7 +5,7 @@ import {
   assertSafeAiProviderUrl,
   assertSafeCustomGatewayUrl,
 } from "@/utils/providerUrlSafety";
-import { providerKindForProfile } from "@/utils/providerProfiles";
+import { hostFromBaseUrl, presetHostError, providerKindForProfile } from "@/utils/providerProfiles";
 
 export type TestStatus =
   | { phase: "idle" }
@@ -72,7 +72,24 @@ export function ProviderProfilesSection({
     setDefaultModel(profile.defaultModel ?? "");
   }, [profile.id, profile.name, profile.baseUrl, profile.apiKey, profile.defaultModel]);
 
+  function hostChangeClearsKey(): boolean {
+    const previous = hostFromBaseUrl(profile.baseUrl);
+    const nextHost = hostFromBaseUrl(baseUrl);
+    return Boolean(
+      previous &&
+        nextHost &&
+        previous !== nextHost &&
+        profile.apiKey.trim() &&
+        apiKey.trim() === profile.apiKey.trim(),
+    );
+  }
+
   function commit(): AiProviderProfile | null {
+    const pinned = presetHostError(profile, baseUrl.trim());
+    if (pinned) {
+      setTestStatus({ phase: "error", message: pinned });
+      return null;
+    }
     try {
       const kind = providerKindForProfile({
         ...profile,
@@ -87,14 +104,24 @@ export function ProviderProfilesSection({
       });
       return null;
     }
+    const previous = hostFromBaseUrl(profile.baseUrl);
+    const nextHost = hostFromBaseUrl(baseUrl);
+    const clearKey = hostChangeClearsKey();
     const next: AiProviderProfile = {
       ...profile,
       name: name.trim() || profile.name,
       baseUrl: baseUrl.trim(),
-      apiKey: apiKey.trim(),
+      apiKey: clearKey ? "" : apiKey.trim(),
       defaultModel: defaultModel.trim() || undefined,
       providerKind: profile.providerKind ?? "openai-compatible",
     };
+    if (clearKey) {
+      setApiKey("");
+      setTestStatus({
+        phase: "error",
+        message: `Host changed from ${previous} to ${nextHost}. The API key was cleared. Enter the key for ${nextHost}.`,
+      });
+    }
     onSave(next);
     return next;
   }
@@ -102,6 +129,21 @@ export function ProviderProfilesSection({
   async function runTest() {
     if (!apiKey.trim() || !baseUrl.trim()) {
       setTestStatus({ phase: "error", message: "Enter base URL and API key." });
+      return;
+    }
+    const pinned = presetHostError(profile, baseUrl.trim());
+    if (pinned) {
+      setTestStatus({ phase: "error", message: pinned });
+      return;
+    }
+    if (hostChangeClearsKey()) {
+      const previous = hostFromBaseUrl(profile.baseUrl);
+      const nextHost = hostFromBaseUrl(baseUrl);
+      setApiKey("");
+      setTestStatus({
+        phase: "error",
+        message: `Host changed from ${previous} to ${nextHost}. Enter a new API key before testing.`,
+      });
       return;
     }
     setTestStatus({ phase: "testing" });

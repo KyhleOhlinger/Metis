@@ -20,6 +20,7 @@ import {
   openNoteByWikilinkName,
   revealPlatformLabel,
   revealInFinder,
+  externalHostLabel,
   resolveExternalHref,
 } from "../utils/vaultNavigation";
 import { findImageSourceOffsets } from "../utils/noteImages";
@@ -37,6 +38,7 @@ import {
 } from "../utils/previewLinkHandlers";
 import {
   listStickyPairOffsets,
+  safeStickyWidth,
   preprocessStickyBlocksForPreview,
   type StickyPairOffsets,
 } from "../utils/stickyNotes";
@@ -314,7 +316,7 @@ export default function MarkdownPreview({
         e.stopPropagation();
         openDomContextMenu(e.clientX, e.clientY, [
           {
-            label: "Open Link",
+            label: `Open ${externalHostLabel(external)}`,
             onClick: () => openExternalUrl(external),
           },
         ]);
@@ -371,7 +373,7 @@ export default function MarkdownPreview({
       }
     });
     el.querySelectorAll<HTMLElement>(".metis-sticky[data-metis-sticky-width]").forEach((node) => {
-      const w = node.dataset.metisStickyWidth?.trim();
+      const w = safeStickyWidth(node.dataset.metisStickyWidth);
       if (w) node.style.setProperty("--metis-sticky-width", w);
     });
     return () => {

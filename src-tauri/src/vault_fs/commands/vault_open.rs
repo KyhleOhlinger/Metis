@@ -4,10 +4,34 @@ use super::super::meta::{
 };
 use super::sanitize::sanitize_name;
 use crate::security::reject_untrusted_webview;
-use crate::state::CurrentVault;
+use crate::state::{CurrentVault, ExportGrants, WatcherState};
 use crate::types::*;
 use std::fs;
 use std::path::PathBuf;
+
+fn release_previous_vault(
+    window: &tauri::WebviewWindow,
+    vault_state: &tauri::State<'_, CurrentVault>,
+    watchers: &tauri::State<'_, WatcherState>,
+    grants: &tauri::State<'_, ExportGrants>,
+    next_path: &str,
+) {
+    let label = window.label().to_string();
+    let previous = vault_state
+        .0
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&label).cloned());
+    if previous.as_deref() == Some(next_path) {
+        return;
+    }
+    if let Ok(mut map) = watchers.0.lock() {
+        map.remove(&label);
+    }
+    if let Ok(mut map) = grants.pending_files.lock() {
+        map.remove(&label);
+    }
+}
 
 /// Receive the vault root path (chosen by the frontend folder-picker dialog),
 /// walk the directory tree, and return the structured file list.
@@ -20,6 +44,8 @@ pub fn open_vault(
     path: String,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
+    watchers: tauri::State<'_, WatcherState>,
+    grants: tauri::State<'_, ExportGrants>,
 ) -> Result<VaultData, String> {
     reject_untrusted_webview(&window)?;
     let root = PathBuf::from(&path);
@@ -60,8 +86,7 @@ pub fn open_vault(
         Some(detect_vault_hint(&root))
     };
 
-    // Record the vault path for this specific window so file-operation commands
-    // can enforce the correct vault boundary per-window.
+    release_previous_vault(&window, &vault_state, &watchers, &grants, &path);
     vault_state.0.lock().unwrap().insert(window.label().to_string(), path.clone());
 
     let files = build_file_tree(&root)?;
@@ -101,7 +126,10 @@ pub fn create_vault(
     parent_path: String,
     name: String,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
+    watchers: tauri::State<'_, WatcherState>,
+    grants: tauri::State<'_, ExportGrants>,
 ) -> Result<VaultData, String> {
     reject_untrusted_webview(&window)?;
     let name = sanitize_name(&name)?;
@@ -126,6 +154,9 @@ pub fn create_vault(
     // vault on every subsequent open.  Failure is non-fatal — the vault works
     // normally; the user would just see the conversion prompt next time.
     let _ = write_vault_meta(&vault);
+    if let Ok(canon) = crate::security::canon_vault(&vault) {
+        let _ = crate::planner::remember_created_vault(&app, &canon);
+    }
     if let Ok(mut meta) = read_vault_meta(&vault) {
         meta.planner_mode = Some("vault".into());
         meta.planner_setup_required = false;
@@ -134,8 +165,7 @@ pub fn create_vault(
 
     let vault_path_str = vault.to_string_lossy().to_string();
 
-    // Record the vault path for this window so file-operation commands can
-    // enforce the correct vault boundary.
+    release_previous_vault(&window, &vault_state, &watchers, &grants, &vault_path_str);
     vault_state.0.lock().unwrap().insert(window.label().to_string(), vault_path_str.clone());
 
     let files = build_file_tree(&vault).unwrap_or_default();

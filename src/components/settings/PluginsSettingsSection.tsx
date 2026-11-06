@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { CORE_PLUGINS, type CommunityCatalogEntry, type CorePluginId } from "@/plugins/corePlugins";
 import { isCoreEnabledWhenLoaded } from "@/plugins/corePlugins";
 import { usePluginStore } from "@/plugins/usePluginStore";
@@ -55,7 +54,7 @@ export function PluginsSettingsSection() {
   const setRestrictedMode = usePluginStore((s) => s.setRestrictedMode);
   const setCommunityEnabled = usePluginStore((s) => s.setCommunityEnabled);
   const uninstall = usePluginStore((s) => s.uninstall);
-  const installFromFolder = usePluginStore((s) => s.installFromFolder);
+  const installFromDialog = usePluginStore((s) => s.installFromDialog);
   const installFiles = usePluginStore((s) => s.installFiles);
 
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -110,12 +109,12 @@ export function PluginsSettingsSection() {
   const installFolder = async () => {
     setBusy(true);
     try {
-      const selected = await invoke<string | null>("pick_folder");
-      if (!selected) return;
-      await installFromFolder(selected);
+      await installFromDialog();
       toastInfo("Plugin installed in this vault.");
     } catch (err) {
-      toastError(`Install failed: ${formatError(err)}`);
+      const message = formatError(err);
+      if (/cancelled/i.test(message)) return;
+      toastError(`Install failed: ${message}`);
     } finally {
       setBusy(false);
     }

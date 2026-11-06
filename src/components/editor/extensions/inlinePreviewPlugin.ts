@@ -27,6 +27,7 @@ import {
   findStickyPairs,
   insertStickyNoteAt,
   parseStickyDragPayload,
+  safeStickyWidth,
 } from "@/utils/stickyNotes";
 import { escapeHtml } from "@/utils/markdownHtml";
 import {
@@ -483,7 +484,7 @@ class CollapsedStickyPreviewWidget extends WidgetType {
     wrap.innerHTML = this.html;
 
     wrap.querySelectorAll<HTMLElement>(".metis-sticky[data-metis-sticky-width]").forEach((node) => {
-      const w = node.dataset.metisStickyWidth?.trim();
+      const w = safeStickyWidth(node.dataset.metisStickyWidth);
       if (w) node.style.setProperty("--metis-sticky-width", w);
     });
 

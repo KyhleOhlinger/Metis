@@ -115,6 +115,41 @@ export function makeProviderProfileId(): string {
   return `prov-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/** Shipped preset ids stay on one host. Custom `prov-*` profiles do not. */
+export function presetHostError(profile: AiProviderProfile, baseUrl: string): string | null {
+  const host = hostFromBaseUrl(baseUrl);
+  if (!host) return "Invalid provider Base URL — could not parse hostname.";
+  const pinned = (() => {
+    switch (profile.id) {
+      case PRESET_OPENAI:
+        return "api.openai.com";
+      case PRESET_GEMINI:
+        return "generativelanguage.googleapis.com";
+      case PRESET_GROQ:
+        return "api.groq.com";
+      case PRESET_PERPLEXITY:
+        return "api.perplexity.ai";
+      case PRESET_ANTHROPIC:
+        return "api.anthropic.com";
+      case PRESET_LITELLM:
+        return "loopback";
+      default:
+        return null;
+    }
+  })();
+  if (!pinned) return null;
+  if (pinned === "loopback") {
+    return LOOPBACK_HOSTS.has(host)
+      ? null
+      : `${profile.name} stays on this computer. ${host} was rejected. Create a custom profile for another host.`;
+  }
+  return host === pinned
+    ? null
+    : `${profile.name} stays on ${pinned}. ${host} was rejected. Create a custom profile for another host.`;
+}
+
 /** SDK factory selection — see `providerRegistry.ts`. */
 export function providerKindForProfile(profile: AiProviderProfile): ProviderKind {
   if (profile.providerKind) return profile.providerKind;

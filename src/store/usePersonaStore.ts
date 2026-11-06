@@ -23,6 +23,12 @@ import {
 import type { LegacyAIProvider } from "../types/persona";
 import { formatError } from "../utils/formatError";
 import { scrubSecretsFromMessage } from "../utils/scrubSecrets";
+
+function patchSetting(key: string, value: unknown): void {
+  void invoke("update_setting", { key, valueJson: JSON.stringify(value) }).catch((error) => {
+    console.warn("[Metis] Setting patch failed:", scrubSecretsFromMessage(formatError(error)));
+  });
+}
 import { syncMenuAccelerators } from "../services/menuAcceleratorSync";
 import { toastError } from "./useToastStore";
 
@@ -109,7 +115,7 @@ interface PersonaState {
   settingsModalOpen: boolean;
   settingsModalSection: SettingsSectionId;
 
-  loadFromDisk: () => Promise<void>;
+  loadFromDisk: (options?: { quiet?: boolean }) => Promise<void>;
   openSettings: (section?: SettingsSectionId) => void;
   setSettingsSection: (section: SettingsSectionId) => void;
   closeSettings: () => void;
@@ -193,8 +199,8 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
     }
   },
 
-  loadFromDisk: async () => {
-    set({ loading: true });
+  loadFromDisk: async (options?: { quiet?: boolean }) => {
+    if (!options?.quiet) set({ loading: true });
     try {
       const [personasJson, settingsJson] = await Promise.all([
         invoke<string>("load_personas"),
@@ -208,7 +214,15 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         persisted.length > 0 ? [...persisted, ...newDefaults] : DEFAULT_PERSONAS;
 
       const saved = JSON.parse(settingsJson) as Partial<Settings>;
-      let settings = migrateSettings(saved);
+      const navigationRaw = await invoke<string>("load_vault_navigation").catch(() => "{}");
+      let vaultNoteNavigation: Settings["vaultNoteNavigation"] = {};
+      try {
+        const parsed = JSON.parse(navigationRaw) as Settings["vaultNoteNavigation"];
+        if (parsed && typeof parsed === "object") vaultNoteNavigation = parsed;
+      } catch {
+        vaultNoteNavigation = {};
+      }
+      let settings = migrateSettings({ ...saved, vaultNoteNavigation });
       settings = settingsWithHosts(settings);
 
       const personas = rawPersonas.map((p) => {
@@ -228,9 +242,15 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         return migrated;
       });
 
+      const previousId = get().activePersonaId;
+      const activePersonaId =
+        previousId && personas.some((persona) => persona.id === previousId)
+          ? previousId
+          : (personas[0]?.id ?? null);
+
       set({
         personas,
-        activePersonaId: personas[0]?.id ?? null,
+        activePersonaId,
         settings,
       });
 
@@ -266,7 +286,9 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         : [...s.personas, persona];
       return { personas };
     });
-    get().savePersonas();
+    void invoke("upsert_persona", { personaJson: JSON.stringify(persona) }).catch((error) => {
+      console.warn("[Metis] Persona patch failed:", scrubSecretsFromMessage(formatError(error)));
+    });
   },
 
   deletePersona: (id) => {
@@ -276,7 +298,9 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         s.activePersonaId === id ? (personas[0]?.id ?? null) : s.activePersonaId;
       return { personas, activePersonaId };
     });
-    get().savePersonas();
+    void invoke("delete_persona", { id }).catch((error) => {
+      console.warn("[Metis] Persona delete failed:", scrubSecretsFromMessage(formatError(error)));
+    });
   },
 
   updateSettings: (patch) => {
@@ -284,7 +308,24 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       const next = settingsWithHosts({ ...s.settings, ...patch });
       return { settings: next };
     });
-    get().saveSettings();
+    const { vaultNoteNavigation, providerProfiles: _profiles, ...rest } = patch;
+    if (vaultNoteNavigation) {
+      void import("@/store/useStore").then(({ useStore }) => {
+        const vaultPath = useStore.getState().vaultPath;
+        if (!vaultPath) return;
+        return invoke("patch_vault_navigation", {
+          navigationJson: JSON.stringify(vaultNoteNavigation),
+        });
+      }).catch((error) => {
+        console.warn("[Metis] Navigation patch failed:", scrubSecretsFromMessage(formatError(error)));
+      });
+    }
+    for (const [key, value] of Object.entries(rest)) {
+      if (value !== undefined) patchSetting(key, value);
+    }
+    if (patch.providerProfiles || patch.defaultProviderProfileId) {
+      patchSetting("allowedAiHosts", get().settings.allowedAiHosts ?? []);
+    }
   },
 
   upsertProviderProfile: (profile) => {
@@ -295,7 +336,10 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
       else list.push(profile);
       return { settings: settingsWithHosts({ ...s.settings, providerProfiles: list }) };
     });
-    get().saveSettings();
+    void invoke("upsert_provider_profile", { profileJson: JSON.stringify(profile) }).catch((error) => {
+      console.warn("[Metis] Provider patch failed:", scrubSecretsFromMessage(formatError(error)));
+    });
+    patchSetting("allowedAiHosts", get().settings.allowedAiHosts ?? []);
   },
 
   removeProviderProfile: (id) => {
@@ -319,8 +363,10 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         personas,
       };
     });
-    get().savePersonas();
-    get().saveSettings();
+    void invoke("remove_provider_profile", { id }).catch((error) => {
+      console.warn("[Metis] Provider removal failed:", scrubSecretsFromMessage(formatError(error)));
+    });
+    patchSetting("allowedAiHosts", get().settings.allowedAiHosts ?? []);
   },
 
   setDefaultProviderProfileId: (id) => {
@@ -331,7 +377,9 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
     set((s) => ({
       personas: s.personas.map((p) => ({ ...p, providerProfileId })),
     }));
-    get().savePersonas();
+    for (const persona of get().personas) {
+      void invoke("upsert_persona", { personaJson: JSON.stringify(persona) });
+    }
   },
 
   addHistory: (entry) => {
@@ -375,7 +423,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
           : [...current, action];
       return { settings: { ...s.settings, quickActions: updated } };
     });
-    get().saveSettings();
+    patchSetting("quickActions", get().settings.quickActions ?? DEFAULT_QUICK_ACTIONS);
   },
 
   deleteQuickAction: (id) => {
@@ -388,7 +436,7 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         ),
       },
     }));
-    get().saveSettings();
+    patchSetting("quickActions", get().settings.quickActions ?? DEFAULT_QUICK_ACTIONS);
   },
 
   reorderQuickActions: (orderedIds) => {
@@ -399,9 +447,17 @@ export const usePersonaStore = create<PersonaState>((set, get) => ({
         .filter((a): a is QuickAction => a != null);
       return { settings: { ...s.settings, quickActions: reordered } };
     });
-    get().saveSettings();
+    patchSetting("quickActions", get().settings.quickActions ?? DEFAULT_QUICK_ACTIONS);
   },
 }));
+
+void import("@tauri-apps/api/webviewWindow")
+  .then(({ getCurrentWebviewWindow }) =>
+    getCurrentWebviewWindow().listen("settings-changed", () => {
+      void usePersonaStore.getState().loadFromDisk({ quiet: true });
+    }),
+  )
+  .catch(() => undefined);
 
 export function selectActivePersona(state: PersonaState): Persona | undefined {
   return state.personas.find((p) => p.id === state.activePersonaId);

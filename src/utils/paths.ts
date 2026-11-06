@@ -21,10 +21,20 @@ export function isPathWithinVault(abs: string, vaultPath: string): boolean {
 
 /** Validate LLM-supplied vault-relative note paths before agent writes. */
 export function sanitizeAgentNoteRelativePath(raw: string): string | null {
-  const p = raw.trim().replace(/\\/g, "/");
-  if (!p || p.startsWith("/") || p.includes("..")) return null;
-  for (const seg of p.split("/")) {
-    if (!seg || seg === "..") return null;
+  const p = raw.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  if (!p) return null;
+  const parts = p.split("/");
+  for (const seg of parts) {
+    if (!seg || seg === "." || seg === ".." || seg.startsWith(".")) return null;
   }
+  const file = parts[parts.length - 1] ?? "";
+  const dot = file.lastIndexOf(".");
+  if (dot <= 0) return `${p}.md`;
+  if (file.slice(dot + 1).toLowerCase() !== "md") return null;
   return p;
+}
+
+/** `notes/plan.md` → `notes/plan 2.md`, used when create hits an existing note. */
+export function agentNoteCopyPath(rel: string): string {
+  return rel.replace(/\.md$/i, " 2.md");
 }

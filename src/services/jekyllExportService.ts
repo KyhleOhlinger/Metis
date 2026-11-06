@@ -17,6 +17,19 @@ export interface JekyllExportInput {
   categories?: string[];
   blogRoot?: string;
   imageSubfolder?: string;
+  allowLiquid?: boolean;
+  dropStickyNotes?: boolean;
+  exportedNotes?: string[];
+}
+
+function noteRel(notePath: string, vaultPath: string): string {
+  const vault = vaultPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  const note = notePath.replace(/\\/g, "/");
+  return note.startsWith(`${vault}/`) ? note.slice(vault.length + 1) : note;
+}
+
+async function exportedNotes(): Promise<string[]> {
+  return invoke<string[]>("list_jekyll_exports").catch(() => []);
 }
 
 function textToBase64(text: string): string {
@@ -69,6 +82,9 @@ export function previewJekyllConversion(input: JekyllExportInput): JekyllConvert
     vaultPath,
     assetIndex,
     noteIndex,
+    exportedNotes: input.exportedNotes,
+    allowLiquid: input.allowLiquid,
+    dropStickyNotes: input.dropStickyNotes,
   });
 }
 
@@ -102,6 +118,9 @@ export async function exportNoteToJekyll(input: JekyllExportInput): Promise<stri
     vaultPath,
     assetIndex: useStore.getState().assetIndex,
     noteIndex: useStore.getState().noteIndex,
+    exportedNotes: input.exportedNotes ?? (await exportedNotes()),
+    allowLiquid: input.allowLiquid,
+    dropStickyNotes: input.dropStickyNotes,
   });
 
   const postsDir = normalizePosixPath(`${blogRoot}/_posts`);
@@ -122,6 +141,8 @@ export async function exportNoteToJekyll(input: JekyllExportInput): Promise<stri
     path: postPath,
     dataBase64: textToBase64(converted.content),
   });
+
+  await invoke("remember_jekyll_export", { relPath: noteRel(input.notePath, vaultPath) });
 
   if (!settings.blogRoot) {
     usePersonaStore.getState().updateSettings({ jekyllBlogRoot: blogRoot });

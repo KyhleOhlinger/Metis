@@ -16,7 +16,7 @@
  */
 
 import { useEffect } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { invoke } from "@tauri-apps/api/core";
 import { saveNoteNow } from "@/hooks/noteAutosave";
 import { useStore, VaultData } from "../store/useStore";
@@ -49,9 +49,21 @@ export function useMenuEvents({
 }: MenuEventHookOptions) {
   const backupMenuOn = useCorePluginEnabled("backup");
   useEffect(() => {
-    void invoke("set_menu_item_enabled", { menuId: "sync_backup", enabled: backupMenuOn }).catch(
-      () => {},
-    );
+    const syncBackupMenu = () => {
+      void invoke("set_menu_item_enabled", { menuId: "sync_backup", enabled: backupMenuOn }).catch(
+        () => {},
+      );
+    };
+    syncBackupMenu();
+    let unlistenFocus: (() => void) | undefined;
+    void getCurrentWebviewWindow()
+      .listen("tauri://focus", () => syncBackupMenu())
+      .then((unlisten) => {
+        unlistenFocus = unlisten;
+      });
+    return () => {
+      unlistenFocus?.();
+    };
   }, [backupMenuOn]);
 
   useEffect(() => {
@@ -59,7 +71,7 @@ export function useMenuEvents({
 
     // The callback is async so we can await the folder-picker dialog for the
     // "open-vault" multi-window flow.
-    listen<string>("menu-event", async (event) => {
+    void getCurrentWebviewWindow().listen<string>("menu-event", async (event) => {
       const action = event.payload;
       const store = useStore.getState();
 
@@ -76,6 +88,7 @@ export function useMenuEvents({
         case "open-vault": {
           const selected = await invoke<string | null>("pick_folder");
           if (!selected) break;
+          if (await invoke<boolean>("focus_open_vault", { vaultPath: selected })) break;
 
           const currentVault = useStore.getState().vaultPath;
 
@@ -85,6 +98,8 @@ export function useMenuEvents({
           if (!currentVault) {
             // Rule 2 — no vault in this window, open here
             try {
+              const { flushNoteAutosaves } = await import("@/hooks/noteAutosave");
+              await flushNoteAutosaves();
               const data = await invoke<VaultData>("open_vault", { path: selected });
               useStore.getState().setVault(data);
               localStorage.setItem(LAST_VAULT_KEY, selected);

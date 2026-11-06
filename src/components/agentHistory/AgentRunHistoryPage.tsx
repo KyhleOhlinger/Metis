@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePersonaStore } from "../../store/usePersonaStore";
-import { clearAgentRunLogOnDisk } from "../../services/agentRunLogService";
+import { useStore } from "../../store/useStore";
+import { clearAgentRunLogOnDisk, deleteAgentRunsForOpenVault } from "../../services/agentRunLogService";
 import { contextEgressLabel } from "../../services/contextBuilder";
 import { saveTextViaDialog } from "../../utils/saveDialogExport";
 import { todayIsoDate } from "../../utils/localDate";
@@ -260,6 +261,30 @@ export default function AgentRunHistoryPage() {
   const activeFilters = hasActiveRunFilters(filterOptions);
   const rangeLabel = formatDateRangeLabel(dateRange, totals);
 
+  const handleClearVault = async () => {
+    const vaultPath = useStore.getState().vaultPath;
+    const name = vaultPath?.split(/[/\\]/).filter(Boolean).pop() ?? "this vault";
+    if (!vaultPath) {
+      toastError("Open a vault before clearing its runs.");
+      return;
+    }
+    const ok = await appConfirm(`Clear agent runs stored for ${name}? Other vaults stay in the log.`, {
+      title: "Clear this vault",
+      confirmLabel: "Clear vault runs",
+      danger: true,
+    });
+    if (!ok) return;
+    setClearing(true);
+    try {
+      await deleteAgentRunsForOpenVault();
+      toastSuccess(`Cleared runs for ${name}.`);
+    } catch (e) {
+      toastError(typeof e === "string" ? e : "Could not clear this vault's runs.");
+    } finally {
+      setClearing(false);
+    }
+  };
+
   const handleClear = async () => {
     const ok = await appConfirm("Clear all agent run history? This cannot be undone.", {
       title: "Clear run history",
@@ -325,6 +350,14 @@ export default function AgentRunHistoryPage() {
               className="rounded-md border border-border px-2.5 py-1 text-[10px] text-text-secondary transition-colors hover:border-accent/40 hover:text-text-primary disabled:opacity-40"
             >
               Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleClearVault()}
+              disabled={clearing || agentRunLog.length === 0}
+              className="rounded-md border border-border px-2.5 py-1 text-[10px] text-text-muted transition-colors hover:border-red-500/40 hover:text-red-400 disabled:opacity-40"
+            >
+              Clear this vault
             </button>
             <button
               type="button"

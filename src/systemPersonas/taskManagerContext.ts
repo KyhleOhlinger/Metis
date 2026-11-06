@@ -55,9 +55,9 @@ export async function buildTaskContext(
     `Total: ${totalTasks} open task${totalTasks !== 1 ? "s" : ""} in ${tasksByNote.length} note${tasksByNote.length !== 1 ? "s" : ""}.`,
     `Due dates: ${dueDatedTasks} task${dueDatedTasks !== 1 ? "s" : ""} with optional due metadata (format: (due: YYYY-MM-DD)).`,
     ``,
-    ...tasksByNote.flatMap(({ name, tasks }) => [
-      `## [[${name}]]`,
-      ...tasks.map((t) => `- [ ] ${t} (source: [[${name}]])`),
+    ...tasksByNote.flatMap(({ path, tasks }) => [
+      `## [[${vaultRelativeNote(path, vaultPath)}]]`,
+      ...tasks.map((t) => `- [ ] ${t} (source: [[${vaultRelativeNote(path, vaultPath)}]])`),
       ``,
     ]),
   ];
@@ -82,10 +82,30 @@ export function extractTaskDueDate(text: string): string | null {
   return m ? m[1] : null;
 }
 
-interface ParsedTodoTaskEntry {
-  sourceName: string;
+export interface ParsedTodoTaskEntry {
+  sourcePath: string;
   text: string;
   checked: boolean;
+  hash: string;
+}
+
+export interface TaskSyncSnapshot {
+  tasks: Array<{ source: string; text: string; hash: string; checked: boolean }>;
+}
+
+export function vaultRelativeNote(absOrRel: string, vaultPath?: string | null): string {
+  const path = absOrRel.replace(/\\/g, "/");
+  const vault = (vaultPath ?? "").replace(/\\/g, "/").replace(/\/$/, "");
+  const relative = vault && path.startsWith(`${vault}/`) ? path.slice(vault.length + 1) : path;
+  return relative.replace(/\.md$/i, "");
+}
+
+export function taskLineHash(text: string): string {
+  let hash = 5381;
+  for (let i = 0; i < text.length; i++) {
+    hash = Math.imul(hash, 33) ^ text.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 export function parseTodoTaskEntries(todoContent: string): ParsedTodoTaskEntry[] {
@@ -94,48 +114,101 @@ export function parseTodoTaskEntries(todoContent: string): ParsedTodoTaskEntry[]
     /^[ \t]*(?:[-*+]|\d+\.)\s+\[([ xX])\]\s+(.+?)\s*\(source:\s*\[\[([^\]]+)\]\]\)\s*$/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(todoContent)) !== null) {
+    const text = m[2].trim();
     entries.push({
       checked: m[1].toLowerCase() === "x",
-      text: m[2].trim(),
-      sourceName: m[3].trim().replace(/\.md$/i, ""),
+      text,
+      sourcePath: vaultRelativeNote(m[3].trim()),
+      hash: taskLineHash(text),
     });
   }
   return entries;
 }
 
+export function snapshotFromNotes(
+  tasksByNote: Array<{ path: string; tasks: Array<{ text: string; checked: boolean }> }>,
+  vaultPath: string,
+): TaskSyncSnapshot {
+  return {
+    tasks: tasksByNote.flatMap((note) =>
+      note.tasks.map((task) => ({
+        source: vaultRelativeNote(note.path, vaultPath),
+        text: task.text,
+        hash: taskLineHash(task.text),
+        checked: task.checked,
+      })),
+    ),
+  };
+}
+
+export function planTaskSync(input: {
+  todoEntries: ParsedTodoTaskEntry[];
+  snapshot: TaskSyncSnapshot;
+  notes: Array<{ source: string; content: string }>;
+}): { updates: Map<string, Array<{ hash: string; checked: boolean; text: string }>>; conflicts: string[] } {
+  const snap = new Map(input.snapshot.tasks.map((task) => [`${task.source}\n${task.hash}`, task]));
+  const updates = new Map<string, Array<{ hash: string; checked: boolean; text: string }>>();
+  const conflicts: string[] = [];
+  for (const entry of input.todoEntries) {
+    const note = input.notes.find((item) => item.source === entry.sourcePath);
+    if (!note) {
+      conflicts.push(`${entry.sourcePath}: source note was not found`);
+      continue;
+    }
+    const previous = snap.get(`${entry.sourcePath}\n${entry.hash}`);
+    const line = note.content.split("\n").find((raw) => {
+      const match = raw.match(/^[ \t]*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s+(.+)$/);
+      return match ? taskLineHash(match[1].trim()) === entry.hash : false;
+    });
+    if (!line || !previous) {
+      conflicts.push(`${entry.sourcePath}: "${entry.text}" does not match the last sync`);
+      continue;
+    }
+    const currentChecked = /\[[xX]\]/.test(line);
+    if (currentChecked !== previous.checked && entry.checked !== currentChecked) {
+      conflicts.push(`${entry.sourcePath}: "${entry.text}" changed in the source note`);
+      continue;
+    }
+    if (currentChecked !== previous.checked) continue;
+    if (entry.checked === currentChecked) continue;
+    const list = updates.get(entry.sourcePath) ?? [];
+    list.push({ hash: entry.hash, checked: entry.checked, text: entry.text });
+    updates.set(entry.sourcePath, list);
+  }
+  return { updates, conflicts };
+}
+
 export function applyTaskStatusUpdates(
   content: string,
-  updates: Array<{ text: string; checked: boolean }>,
-): { content: string; changed: boolean; appliedCount: number } {
-  if (!updates.length) return { content, changed: false, appliedCount: 0 };
-  const queues = new Map<string, boolean[]>();
-  for (const u of updates) {
-    const q = queues.get(u.text) ?? [];
-    q.push(u.checked);
-    queues.set(u.text, q);
-  }
-  const cursors = new Map<string, number>();
+  updates: Array<{ hash: string; checked: boolean }>,
+): { content: string; changed: boolean; appliedCount: number; conflicts: string[] } {
+  if (!updates.length) return { content, changed: false, appliedCount: 0, conflicts: [] };
+  const byHash = new Map(updates.map((update) => [update.hash, update.checked]));
   let changed = false;
   let appliedCount = 0;
+  const conflicts: string[] = [];
   const lineRe = /^([ \t]*(?:[-*+]|\d+\.)\s+\[)([ xX])(\]\s+)(.+)$/;
+  const seen = new Set<string>();
 
   const next = content.split("\n").map((line) => {
     const m = line.match(lineRe);
     if (!m) return line;
     const text = m[4].trim();
-    const queue = queues.get(text);
-    if (!queue?.length) return line;
-    const idx = cursors.get(text) ?? 0;
-    if (idx >= queue.length) return line;
-    cursors.set(text, idx + 1);
+    const hash = taskLineHash(text);
+    if (!byHash.has(hash)) return line;
+    if (seen.has(hash)) {
+      conflicts.push(text);
+      return line;
+    }
+    seen.add(hash);
     appliedCount += 1;
-    const want = queue[idx] ? "x" : " ";
+    const want = byHash.get(hash) ? "x" : " ";
     if (m[2] === want) return line;
     changed = true;
     return `${m[1]}${want}${m[3]}${m[4]}`;
   });
 
-  return { content: next.join("\n"), changed, appliedCount };
+  return { content: next.join("\n"), changed, appliedCount, conflicts };
 }
 
 export async function collectVaultTasksForTodo(
@@ -168,7 +241,8 @@ export async function collectVaultTasksForTodo(
 }
 
 export function buildTodoSyncContent(
-  tasksByNote: Array<{ name: string; tasks: Array<{ text: string; checked: boolean; dueDate: string | null }> }>,
+  tasksByNote: Array<{ name: string; path: string; tasks: Array<{ text: string; checked: boolean; dueDate: string | null }> }>,
+  vaultPath?: string | null,
 ): string {
   const total = tasksByNote.reduce((s, n) => s + n.tasks.length, 0);
   const completed = tasksByNote.reduce(
@@ -194,11 +268,14 @@ export function buildTodoSyncContent(
     `- With due date: ${dueDated}`,
     `- Source notes: ${tasksByNote.length}`,
     "",
-    ...tasksByNote.flatMap(({ name, tasks }) => [
-      `## [[${name}]]`,
-      ...tasks.map((t) => `- [${t.checked ? "x" : " "}] ${t.text} (source: [[${name}]])`),
-      "",
-    ]),
+    ...tasksByNote.flatMap(({ path, tasks }) => {
+      const source = vaultRelativeNote(path, vaultPath);
+      return [
+        `## [[${source}]]`,
+        ...tasks.map((t) => `- [${t.checked ? "x" : " "}] ${t.text} (source: [[${source}]])`),
+        "",
+      ];
+    }),
   ];
   return lines.join("\n");
 }

@@ -58,14 +58,23 @@ export default function ToastHost() {
             <div className="mt-4 flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => resolveConfirm(false)}
+                onClick={() => resolveConfirm("cancel")}
                 className="rounded-md border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-overlay"
               >
                 {confirm.cancelLabel}
               </button>
+              {confirm.extraLabel && (
+                <button
+                  type="button"
+                  onClick={() => resolveConfirm("extra")}
+                  className="rounded-md border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-overlay"
+                >
+                  {confirm.extraLabel}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => resolveConfirm(true)}
+                onClick={() => resolveConfirm("confirm")}
                 className={[
                   "rounded-md px-3 py-1.5 text-xs font-medium",
                   confirm.danger

@@ -49,6 +49,8 @@ export interface Persona {
    * It still exists in the store and can be re-enabled at any time.
    */
   disabled?: boolean;
+  /** When true, the full prompt and reply for this persona are stored in app data. */
+  storeTranscripts?: boolean;
 }
 
 // ── Execution scope ───────────────────────────────────────────────────────────

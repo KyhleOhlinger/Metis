@@ -8,13 +8,16 @@ export interface Toast {
   variant: ToastVariant;
 }
 
+type DialogChoice = "confirm" | "cancel" | "extra";
+
 interface ConfirmRequest {
   title: string;
   message: string;
   confirmLabel: string;
   cancelLabel: string;
+  extraLabel?: string;
   danger: boolean;
-  resolve: (value: boolean) => void;
+  resolve: (value: DialogChoice) => void;
 }
 
 interface ToastState {
@@ -29,7 +32,14 @@ interface ToastState {
     cancelLabel?: string;
     danger?: boolean;
   }) => Promise<boolean>;
-  resolveConfirm: (value: boolean) => void;
+  chooseDialog: (options: {
+    title?: string;
+    message: string;
+    confirmLabel: string;
+    extraLabel: string;
+    cancelLabel: string;
+  }) => Promise<"confirm" | "extra" | "cancel">;
+  resolveConfirm: (value: "confirm" | "cancel" | "extra") => void;
 }
 
 let toastCounter = 0;
@@ -57,6 +67,21 @@ export const useToastStore = create<ToastState>((set, get) => ({
           confirmLabel: options.confirmLabel ?? "Confirm",
           cancelLabel: options.cancelLabel ?? "Cancel",
           danger: options.danger ?? false,
+          resolve: (value) => resolve(value === "confirm"),
+        },
+      });
+    }),
+
+  chooseDialog: (options) =>
+    new Promise((resolve) => {
+      set({
+        confirm: {
+          title: options.title ?? "Choose",
+          message: options.message,
+          confirmLabel: options.confirmLabel,
+          extraLabel: options.extraLabel,
+          cancelLabel: options.cancelLabel,
+          danger: false,
           resolve,
         },
       });
@@ -91,4 +116,11 @@ export async function appConfirm(
   },
 ): Promise<boolean> {
   return useToastStore.getState().confirmDialog({ message, ...options });
+}
+
+export async function appChoose(
+  message: string,
+  options: { title?: string; confirmLabel: string; extraLabel: string; cancelLabel: string },
+): Promise<"confirm" | "extra" | "cancel"> {
+  return useToastStore.getState().chooseDialog({ message, ...options });
 }

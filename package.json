@@ -1,7 +1,7 @@
 {
   "name": "metis",
   "private": true,
-  "version": "0.15.24",
+  "version": "0.15.33",
   "description": "A local-first, AI-augmented personal knowledge ecosystem.",
   "author": "Kyhle Öhlinger",
   "license": "MIT",

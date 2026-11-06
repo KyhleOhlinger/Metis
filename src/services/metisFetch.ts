@@ -7,7 +7,7 @@
 
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import type { AiProviderProfile, ProviderKind } from "../types/persona";
-import { hostFromBaseUrl, providerKindForProfile } from "../utils/providerProfiles";
+import { hostFromBaseUrl, presetHostError, providerKindForProfile } from "../utils/providerProfiles";
 import {
   assertSafeAiProviderUrl,
   assertSafeCustomGatewayUrl,
@@ -103,6 +103,8 @@ function normalizeBaseUrlForKind(kind: ProviderKind, baseUrl: string): string {
 }
 
 function assertProfileBaseUrl(profile: AiProviderProfile, raw: string): void {
+  const pinned = presetHostError(profile, raw);
+  if (pinned) throw new Error(pinned);
   if (providerKindForProfile(profile) === "openai-compatible") {
     assertSafeCustomGatewayUrl(raw);
     return;

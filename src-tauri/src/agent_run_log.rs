@@ -6,8 +6,10 @@ use std::path::{Path, PathBuf};
 
 const MAX_ENTRIES: usize = 1000;
 const MAX_RUN_ID_LEN: usize = 80;
-/// Transcripts include retrieved context + full replies; larger than settings JSON.
+/// One transcript stays under this size. The whole folder stays under the total below.
 const MAX_TRANSCRIPT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_TOTAL_TRANSCRIPT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
 fn log_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir_for_build(app_handle)?.join("agent-run-log.json"))
@@ -60,7 +62,23 @@ pub fn load_agent_run_log(
     if !path.exists() {
         return Ok("[]".into());
     }
-    fs::read_to_string(&path).map_err(|e| format!("Failed to read agent run log: {e}"))
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read agent run log: {e}"))?;
+    let mut entries: Vec<Value> = serde_json::from_str(&raw).unwrap_or_default();
+    let dir = transcripts_dir(&app_handle).ok();
+    let dropped = prune_entries(&mut entries, dir.as_deref());
+    if !dropped.is_empty() {
+        if let Some(dir) = dir.as_ref() {
+            for old in dropped {
+                if let Some(old_id) = entry_id(&old) {
+                    remove_transcript(dir, old_id);
+                }
+            }
+        }
+        if let Ok(out) = serde_json::to_string_pretty(&entries) {
+            let _ = write_private_json_file(&path, &out);
+        }
+    }
+    serde_json::to_string(&entries).map_err(|e| format!("Failed to read agent run log: {e}"))
 }
 
 #[tauri::command]
@@ -106,19 +124,12 @@ pub fn append_agent_run_log(
 
     entries.retain(|e| entry_id(e) != Some(id.as_str()));
     entries.insert(0, entry);
-
-    let dropped = if entries.len() > MAX_ENTRIES {
-        entries.split_off(MAX_ENTRIES)
-    } else {
-        Vec::new()
-    };
-
-    if !dropped.is_empty() {
-        if let Ok(dir) = transcripts_dir(&app_handle) {
-            for old in dropped {
-                if let Some(old_id) = entry_id(&old) {
-                    remove_transcript(&dir, old_id);
-                }
+    let dir = transcripts_dir(&app_handle).ok();
+    let dropped = prune_entries(&mut entries, dir.as_deref());
+    if let Some(dir) = dir.as_ref() {
+        for old in dropped {
+            if let Some(old_id) = entry_id(&old) {
+                remove_transcript(dir, old_id);
             }
         }
     }
@@ -142,6 +153,104 @@ pub fn load_agent_run_transcript(
         return Err("No transcript stored for this run.".into());
     }
     fs::read_to_string(&path).map_err(|e| format!("Failed to read transcript: {e}"))
+}
+
+fn entry_started_ms(entry: &Value) -> Option<u64> {
+    let value = entry.get("startedAt")?;
+    value
+        .as_u64()
+        .or_else(|| value.as_i64().filter(|n| *n >= 0).map(|n| n as u64))
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn transcript_len(dir: Option<&Path>, entry: &Value) -> u64 {
+    let Some(dir) = dir else {
+        return 0;
+    };
+    let Some(id) = entry_id(entry) else {
+        return 0;
+    };
+    let Ok(path) = transcript_path(dir, id) else {
+        return 0;
+    };
+    fs::metadata(path).map(|meta| meta.len()).unwrap_or(0)
+}
+
+/// Drop runs older than 30 days, then the oldest runs until the transcript folder is under 32 MiB.
+fn prune_entries(entries: &mut Vec<Value>, dir: Option<&Path>) -> Vec<Value> {
+    let cutoff = now_ms().saturating_sub(MAX_AGE_MS);
+    let mut dropped = Vec::new();
+    entries.retain(|entry| match entry_started_ms(entry) {
+        Some(started) if started < cutoff => {
+            dropped.push(entry.clone());
+            false
+        }
+        _ => true,
+    });
+    if entries.len() > MAX_ENTRIES {
+        dropped.extend(entries.split_off(MAX_ENTRIES));
+    }
+    let mut total: u64 = entries.iter().map(|entry| transcript_len(dir, entry)).sum();
+    while total > MAX_TOTAL_TRANSCRIPT_BYTES && !entries.is_empty() {
+        let Some(old) = entries.pop() else {
+            break;
+        };
+        total = total.saturating_sub(transcript_len(dir, &old));
+        dropped.push(old);
+    }
+    dropped
+}
+
+fn entry_in_vault(entry: &Value, vault: &Path) -> bool {
+    let Some(raw) = entry.get("vaultPath").and_then(|value| value.as_str()) else {
+        return false;
+    };
+    if raw == vault.to_string_lossy() {
+        return true;
+    }
+    std::path::Path::new(raw)
+        .canonicalize()
+        .map(|canon| canon == vault)
+        .unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn delete_agent_runs_for_vault(
+    window: tauri::WebviewWindow,
+    app_handle: tauri::AppHandle,
+    vault_state: tauri::State<'_, crate::state::CurrentVault>,
+) -> Result<(), String> {
+    crate::security::reject_untrusted_webview(&window)?;
+    let vault = crate::security::registered_vault(&window, &vault_state)?;
+    let path = log_path(&app_handle)?;
+    let mut entries: Vec<Value> = if path.exists() {
+        let raw = fs::read_to_string(&path).map_err(|e| format!("Failed to read agent run log: {e}"))?;
+        serde_json::from_str(&raw).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let removed: Vec<Value> = entries
+        .iter()
+        .filter(|entry| entry_in_vault(entry, &vault))
+        .cloned()
+        .collect();
+    entries.retain(|entry| !entry_in_vault(entry, &vault));
+    if let Ok(dir) = transcripts_dir(&app_handle) {
+        for old in removed {
+            if let Some(old_id) = entry_id(&old) {
+                remove_transcript(&dir, old_id);
+            }
+        }
+    }
+    let out = serde_json::to_string_pretty(&entries)
+        .map_err(|e| format!("Failed to serialize agent run log: {e}"))?;
+    write_private_json_file(&path, &out)
 }
 
 #[tauri::command]
@@ -176,5 +285,16 @@ mod tests {
         assert!(validate_run_id("run/1").is_err());
         assert!(validate_run_id("run\\1").is_err());
         assert!(validate_run_id(&"x".repeat(MAX_RUN_ID_LEN + 1)).is_err());
+    }
+
+    #[test]
+    fn old_runs_are_dropped() {
+        let old = serde_json::json!({"id": "old", "startedAt": 1});
+        let fresh = serde_json::json!({"id": "fresh", "startedAt": now_ms()});
+        let mut entries = vec![fresh, old];
+        let dropped = prune_entries(&mut entries, None);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entry_id(&entries[0]), Some("fresh"));
+        assert_eq!(dropped.len(), 1);
     }
 }

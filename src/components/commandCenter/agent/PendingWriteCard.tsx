@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { PendingWrite, PendingWriteTool } from "./pendingWrite.types";
 import { appendToEnd, insertAfterFrontmatter, insertAtOffset } from "./contentMerge";
+import { noteContentHash, writeNoteReplacingAutosave } from "@/hooks/noteAutosave";
+import { agentNoteCopyPath } from "@/utils/paths";
 
 // ── Pending write confirmation card ───────────────────────────────────────────
 
@@ -21,6 +22,8 @@ export function PendingWriteCard({
   onDone,
   onError,
   onDismiss,
+  onConflict,
+  onStale,
 }: {
   write: PendingWrite;
   vaultPath: string | null;
@@ -29,6 +32,8 @@ export function PendingWriteCard({
   onDone: (id: string, absPath: string, finalContent: string) => void;
   onError: (id: string, msg: string) => void;
   onDismiss: (id: string) => void;
+  onConflict: (id: string) => void;
+  onStale: (id: string) => void;
 }) {
   const [showFull, setShowFull] = useState(false);
   const PREVIEW_LEN = 400;
@@ -41,34 +46,69 @@ export function PendingWriteCard({
     ? write.path
     : (write.path.split("/").pop() ?? write.path);
 
-  async function handleApply() {
+  function proposedContent(): string {
+    if (write.tool === "append_to_current_file") return appendToEnd(activeFileContent, write.content);
+    if (write.tool === "prepend_to_current_file") return insertAfterFrontmatter(activeFileContent, write.content);
+    if (write.tool === "insert_at_cursor") {
+      return insertAtOffset(activeFileContent, write.cursorOffset ?? 0, write.content);
+    }
+    return write.content;
+  }
+
+  function lineDiff(before: string, after: string): string {
+    const left = before.split("\n");
+    const right = after.split("\n");
+    const lines: string[] = [];
+    const max = Math.max(left.length, right.length);
+    for (let i = 0; i < max && lines.length < 40; i++) {
+      if (left[i] === right[i]) continue;
+      if (left[i] !== undefined) lines.push(`- ${left[i]}`);
+      if (right[i] !== undefined) lines.push(`+ ${right[i]}`);
+    }
+    return lines.join("\n") || "(no line changes)";
+  }
+
+  async function handleApply(
+    mode: "create" | "overwrite" = "create",
+    pathOverride?: string,
+    allowStale = false,
+  ) {
+    if (
+      write.baseHash &&
+      !allowStale &&
+      noteContentHash(activeFileContent) !== write.baseHash
+    ) {
+      onStale(write.id);
+      return;
+    }
     onApply(write.id);
     try {
       let finalContent = write.content;
-      let relPath = write.path;
+      let relPath = pathOverride ?? write.path;
+      let writeMode: "create" | "overwrite" = "overwrite";
 
       if (write.tool === "append_to_current_file") {
         finalContent = appendToEnd(activeFileContent, write.content);
       } else if (write.tool === "prepend_to_current_file") {
-        // Insert after frontmatter + H1 so YAML and title stay at the top
         finalContent = insertAfterFrontmatter(activeFileContent, write.content);
       } else if (write.tool === "insert_at_cursor") {
-        // Insert after the line at the cursor offset frozen at run-time
         finalContent = insertAtOffset(activeFileContent, write.cursorOffset ?? 0, write.content);
       } else if (write.tool === "create_new_note") {
-        relPath = vaultPath ? `${vaultPath}/${write.path}` : write.path;
+        relPath = vaultPath ? `${vaultPath}/${pathOverride ?? write.path}` : (pathOverride ?? write.path);
+        writeMode = mode;
       }
-      // write_to_current_file: relPath (absPath) + full content as-is
 
-      const absPath = await invoke<string>("agent_write_note", {
-        relPath,
-        content: finalContent,
-      });
+      const absPath = await writeNoteReplacingAutosave(relPath, finalContent, writeMode);
       // Pass finalContent back so the caller can sync the editor immediately
       // without a separate disk read.
       onDone(write.id, absPath, finalContent);
     } catch (err) {
-      onError(write.id, err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      if (write.tool === "create_new_note" && msg.includes("NOTE_EXISTS")) {
+        onConflict(write.id);
+        return;
+      }
+      onError(write.id, msg);
     }
   }
 
@@ -101,6 +141,17 @@ export function PendingWriteCard({
         )}
       </div>
 
+      {write.tool === "write_to_current_file" && (
+        <pre className="border-t border-border px-2 py-1 max-h-32 overflow-y-auto whitespace-pre-wrap font-mono text-[10px] text-text-secondary">
+          {lineDiff(activeFileContent, proposedContent())}
+        </pre>
+      )}
+      {write.stale && (
+        <p className="border-t border-amber-500/30 px-2 py-1 text-[10px] text-amber-200/90">
+          This note changed after the suggestion was created. Apply will replace those edits.
+        </p>
+      )}
+
       {/* Content preview — shows the chunk being added (not the full merged file) */}
       <div className="border-t border-border px-2 pb-1.5 pt-1">
         <pre className="whitespace-pre-wrap break-words font-mono text-[10px] text-text-secondary leading-relaxed max-h-32 overflow-y-auto">
@@ -117,13 +168,32 @@ export function PendingWriteCard({
       </div>
 
       {/* Action buttons */}
-      {write.status === "pending" && (
+      {write.status === "pending" && write.conflict && write.tool === "create_new_note" && (
+        <div className="flex flex-wrap gap-1.5 border-t border-amber-500/30 px-2 py-1.5">
+          <p className="w-full text-[10px] text-amber-200/90">
+            {write.path} already exists. The file was not changed.
+          </p>
+          <button
+            onClick={() => void handleApply("overwrite")}
+            className="rounded bg-amber-500/20 px-2 py-1 text-[10px] font-medium text-amber-200 hover:bg-amber-500/30"
+          >
+            Overwrite
+          </button>
+          <button
+            onClick={() => void handleApply("create", agentNoteCopyPath(write.path))}
+            className="rounded bg-accent/20 px-2 py-1 text-[10px] font-medium text-accent hover:bg-accent/30"
+          >
+            Save as {agentNoteCopyPath(write.path).split("/").pop()}
+          </button>
+        </div>
+      )}
+      {write.status === "pending" && !write.conflict && (
         <div className="flex gap-1.5 border-t border-border px-2 py-1.5">
           <button
-            onClick={handleApply}
+            onClick={() => void handleApply(write.tool === "create_new_note" ? "create" : "overwrite", undefined, write.stale)}
             className="flex-1 rounded bg-accent/20 py-1 text-[10px] font-medium text-accent hover:bg-accent/30 transition-colors"
           >
-            Apply
+            {write.stale ? "Apply anyway" : "Apply"}
           </button>
           <button
             onClick={() => onDismiss(write.id)}
@@ -145,7 +215,7 @@ export function PendingWriteCard({
         <div className="border-t border-red-500/20 px-2 py-1.5">
           <p className="text-[10px] text-red-400">{write.errorMsg}</p>
           <button
-            onClick={handleApply}
+            onClick={() => void handleApply(write.tool === "create_new_note" ? "create" : "overwrite")}
             className="mt-1 text-[9px] text-accent hover:underline"
           >
             Retry

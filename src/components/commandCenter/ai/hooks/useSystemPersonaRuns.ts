@@ -12,6 +12,10 @@ import {
   applyTaskStatusUpdates,
   collectVaultTasksForTodo,
   buildTodoSyncContent,
+  planTaskSync,
+  snapshotFromNotes,
+  vaultRelativeNote,
+  type TaskSyncSnapshot,
 } from "@/systemPersonas/taskManagerContext";
 import {
   buildPlannerContext,
@@ -19,7 +23,7 @@ import {
   type PlannerPersonaJob,
 } from "@/systemPersonas/plannerContext";
 import { estimateContextEgress } from "@/services/contextBuilder";
-import { confirmEstimatedEgress } from "@/components/egressConfirm";
+import { confirmEstimatedEgress, destinationHostOf } from "@/components/egressConfirm";
 import { transcribeHandwritingImage } from "@/services/ocrService";
 import {
   recordAgentRun,
@@ -91,9 +95,32 @@ export function useSystemPersonaRuns(ui: SystemPersonaRunUi) {
     return;
   }
 
+  const { noteIndex } = useStore.getState();
+  const gate = await confirmEstimatedEgress(async () => ({
+    noteCount: noteIndex.length,
+    totalCharsInScope: noteIndex.length,
+    estimatedContextChars: noteIndex.length,
+    plannedTier: "direct",
+    budgetChars: 0,
+    extraScoutApiCall: false,
+    scopeLabel: "Librarian vault scan",
+    requiresConfirm: true,
+    providerLabel: profile.name?.trim() || profile.baseUrl,
+    destinationHost: destinationHostOf(profile.baseUrl),
+    profileId: profile.id,
+    fileNames: noteIndex.slice(0, 8).map((note) => note.name),
+    estimatedImageCount: 0,
+    imagesMayBeAttached: false,
+    contentKind: "notes",
+  }));
+  if (!gate.proceed) {
+    setStreaming(false);
+    if (gate.reason === "error") setError(gate.message);
+    return;
+  }
+
   let orphanContext: string;
   try {
-    const { noteIndex } = useStore.getState();
     orphanContext = await buildOrphanReport(noteIndex, setStatusMsg);
   } catch (e) {
     setError(`Vault scan failed: ${String(e)}`);
@@ -189,9 +216,32 @@ const handleTaskScan = useCallback(async () => {
     return;
   }
 
+  const { noteIndex } = useStore.getState();
+  const gate = await confirmEstimatedEgress(async () => ({
+    noteCount: noteIndex.length,
+    totalCharsInScope: noteIndex.length,
+    estimatedContextChars: noteIndex.length,
+    plannedTier: "direct",
+    budgetChars: 0,
+    extraScoutApiCall: false,
+    scopeLabel: "Task Manager vault scan",
+    requiresConfirm: true,
+    providerLabel: profile.name?.trim() || profile.baseUrl,
+    destinationHost: destinationHostOf(profile.baseUrl),
+    profileId: profile.id,
+    fileNames: noteIndex.slice(0, 8).map((note) => note.name),
+    estimatedImageCount: 0,
+    imagesMayBeAttached: false,
+    contentKind: "notes",
+  }));
+  if (!gate.proceed) {
+    setStreaming(false);
+    if (gate.reason === "error") setError(gate.message);
+    return;
+  }
+
   let taskContext: string;
   try {
-    const { noteIndex } = useStore.getState();
     taskContext = await buildTaskContext(noteIndex, setStatusMsg, vaultPath);
   } catch (e) {
     setError(`Task scan failed: ${String(e)}`);
@@ -297,52 +347,84 @@ const handleTaskSync = useCallback(async () => {
 
   const todoPath = `${vaultPath}/summaries/todo.md`;
   const { noteIndex } = useStore.getState();
-  const byName = new Map(
-    noteIndex.map((n) => [n.name.replace(/\.md$/i, "").toLowerCase(), n]),
-  );
 
   try {
-    // 1) Apply todo.md checkbox state changes back into source notes.
+    const { saveCleanNote, noteHasUnsavedEdits } = await import("@/hooks/noteAutosave");
     const todoContent = await loadVaultFile(todoPath).catch(() => "");
     const todoEntries = parseTodoTaskEntries(todoContent);
-
-    const updatesByPath = new Map<string, Array<{ text: string; checked: boolean }>>();
-    for (const e of todoEntries) {
-      const src = byName.get(e.sourceName.toLowerCase());
-      if (!src) continue;
-      const list = updatesByPath.get(src.path) ?? [];
-      list.push({ text: e.text, checked: e.checked });
-      updatesByPath.set(src.path, list);
+    const rawSnapshot = await invoke<string>("load_task_sync_snapshot").catch(() => "{}");
+    const snapshot = JSON.parse(rawSnapshot) as TaskSyncSnapshot;
+    const sources = [...new Set(todoEntries.map((entry) => entry.sourcePath))];
+    const absPaths = sources.map((source) => `${vaultPath}/${source}.md`);
+    const bodies = await loadVaultFiles(absPaths);
+    const planned = planTaskSync({
+      todoEntries,
+      snapshot: snapshot.tasks ? snapshot : { tasks: [] },
+      notes: sources.map((source, index) => ({ source, content: bodies[index] ?? "" })),
+    });
+    const preview = [...planned.updates.entries()].flatMap(([source, lines]) =>
+      lines.map((line) => `${source}.md: ${line.checked ? "check" : "uncheck"} ${line.text}`),
+    );
+    if (preview.length || planned.conflicts.length) {
+      const lines = [
+        preview.length ? `Will change:\n${preview.slice(0, 12).join("\n")}` : "No checkbox changes to apply.",
+        planned.conflicts.length ? `\nLeft unchanged:\n${planned.conflicts.slice(0, 8).join("\n")}` : "",
+      ];
+      const proceed = await appConfirm(lines.join("\n"), {
+        title: "Task sync preview",
+        confirmLabel: "Apply sync",
+      });
+      if (!proceed) {
+        setStreaming(false);
+        setStatusMsg("");
+        return;
+      }
     }
 
     let updatedNotes = 0;
     const diskWrites: DiskWrite[] = [];
-    const updatePaths = [...updatesByPath.keys()];
-    const updateBodies = await loadVaultFiles(updatePaths);
-    for (let i = 0; i < updatePaths.length; i++) {
-      const path = updatePaths[i];
-      const updates = updatesByPath.get(path) ?? [];
-      const content = updateBodies[i] ?? "";
+    const skippedDirty: string[] = [];
+    for (const [source, updates] of planned.updates) {
+      const path = `${vaultPath}/${source}.md`;
+      if (noteHasUnsavedEdits(path)) {
+        skippedDirty.push(vaultRelativeNote(path, vaultPath));
+        continue;
+      }
+      const content = bodies[sources.indexOf(source)] ?? "";
       if (!content) continue;
       const applied = applyTaskStatusUpdates(content, updates);
       if (!applied.changed) continue;
-      await invoke("save_note", { path, content: applied.content });
+      await saveCleanNote(path, applied.content);
       diskWrites.push({ path, content: applied.content });
       updatedNotes += 1;
     }
 
-    // 2) Rebuild todo.md from current source task state (both open + completed).
     const tasksByNote = await collectVaultTasksForTodo(noteIndex, setStatusMsg);
-    const syncedTodo = buildTodoSyncContent(tasksByNote);
-    const todoAbsPath = await invoke<string>("agent_write_note", { relPath: todoPath, content: syncedTodo });
-    diskWrites.push({ path: todoAbsPath, content: syncedTodo });
+    const syncedTodo = buildTodoSyncContent(tasksByNote, vaultPath);
+    if (noteHasUnsavedEdits(todoPath)) {
+      skippedDirty.push("summaries/todo.md");
+    } else {
+      await saveCleanNote(todoPath, syncedTodo).catch(async () => {
+        await invoke("agent_write_note", {
+          relPath: "summaries/todo.md",
+          content: syncedTodo,
+          mode: "overwrite",
+        });
+      });
+      diskWrites.push({ path: todoPath, content: syncedTodo });
+    }
+    await invoke("save_task_sync_snapshot", {
+      json: JSON.stringify(snapshotFromNotes(tasksByNote, vaultPath)),
+    });
     await syncUiAfterDiskWrites(diskWrites);
+    const dirtyNote = skippedDirty.length ? `\n- Skipped unsaved notes: ${skippedDirty.join(", ")}` : "";
+    const conflictNote = planned.conflicts.length ? `\n- Conflicts left unchanged: ${planned.conflicts.length}` : "";
 
     setResponse(
       `Task sync complete.\n\n` +
       `- Updated source notes: ${updatedNotes}\n` +
       `- Synced task notes: ${tasksByNote.length}\n` +
-      `- Wrote: summaries/todo.md`,
+      `- Wrote: summaries/todo.md${dirtyNote}${conflictNote}`,
     );
     setStatusMsg("✓ Vault task sync complete");
     if (activePersona) {
@@ -604,6 +686,7 @@ const handleTaskSync = useCallback(async () => {
         const absPath = await invoke<string>("agent_write_note", {
           relPath: img.mdPath,
           content,
+          mode: "overwrite",
         });
         diskWrites.push({ path: absPath, content });
         lines.push(`✓ ${img.fileName} → ${img.fileName.replace(/\.[^.]+$/i, ".md")}`);

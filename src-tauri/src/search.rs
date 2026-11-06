@@ -1,6 +1,6 @@
 use crate::security::{registered_vault, reject_untrusted_webview};
 use crate::state::CurrentVault;
-use crate::types::{ReplaceSummary, SearchMatch};
+use crate::types::{ReplaceOutcome, ReplaceSummary, SearchMatch};
 use std::fs;
 use std::path::PathBuf;
 
@@ -119,12 +119,16 @@ pub fn replace_in_vault(
     regex_mode: bool,
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
-) -> Result<Vec<ReplaceSummary>, String> {
+) -> Result<ReplaceOutcome, String> {
     use regex::RegexBuilder;
 
     reject_untrusted_webview(&window)?;
     if query.is_empty() {
-        return Ok(Vec::new());
+        return Ok(ReplaceOutcome {
+            summaries: Vec::new(),
+            error: None,
+            trash_dir: None,
+        });
     }
 
     const MAX_QUERY_LEN: usize = 1000;
@@ -157,6 +161,11 @@ pub fn replace_in_vault(
     collect_md_paths(&canon_v, &canon_v, &mut md_files);
     md_files.sort();
 
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0);
+    let trash_root = canon_v.join(".metis").join("trash").join(stamp.to_string());
     let mut summaries: Vec<ReplaceSummary> = Vec::new();
 
     for file_path in &md_files {
@@ -171,11 +180,30 @@ pub fn replace_in_vault(
         }
 
         let new_content = re.replace_all(&content, replacement.as_str()).into_owned();
-        if let Err(e) = fs::write(file_path, new_content.as_bytes()) {
-            return Err(format!(
-                "Failed to write '{}': {e}",
-                file_path.display()
-            ));
+        let rel = file_path.strip_prefix(&canon_v).unwrap_or(file_path);
+        let snapshot = trash_root.join(rel);
+        if let Some(parent) = snapshot.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                return Ok(ReplaceOutcome {
+                    summaries,
+                    error: Some(format!("Failed to snapshot '{}': {e}", file_path.display())),
+                    trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+                });
+            }
+        }
+        if let Err(e) = crate::io_atomic::write_atomic(&snapshot, content.as_bytes()) {
+            return Ok(ReplaceOutcome {
+                summaries,
+                error: Some(format!("Failed to snapshot '{}': {e}", file_path.display())),
+                trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+            });
+        }
+        if let Err(e) = crate::io_atomic::write_atomic(file_path, new_content.as_bytes()) {
+            return Ok(ReplaceOutcome {
+                summaries,
+                error: Some(format!("Failed to write '{}': {e}", file_path.display())),
+                trash_dir: Some(trash_root.to_string_lossy().into_owned()),
+            });
         }
 
         summaries.push(ReplaceSummary {
@@ -188,5 +216,72 @@ pub fn replace_in_vault(
         });
     }
 
+    let trash_dir = if summaries.is_empty() {
+        None
+    } else {
+        Some(trash_root.to_string_lossy().into_owned())
+    };
+    Ok(ReplaceOutcome {
+        summaries,
+        error: None,
+        trash_dir,
+    })
+}
+
+/// Files a replace would change, without writing.
+#[tauri::command]
+pub fn preview_replace_in_vault(
+    query: String,
+    case_sensitive: bool,
+    regex_mode: bool,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Vec<ReplaceSummary>, String> {
+    use regex::RegexBuilder;
+
+    reject_untrusted_webview(&window)?;
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    const MAX_QUERY_LEN: usize = 1000;
+    if query.len() > MAX_QUERY_LEN {
+        return Err(format!("Replace query is too long (max {MAX_QUERY_LEN} characters)."));
+    }
+    let canon_v = registered_vault(&window, &vault_state)
+        .map_err(|e| format!("preview_replace_in_vault: {e}"))?;
+    let re = if regex_mode {
+        RegexBuilder::new(&query)
+            .case_insensitive(!case_sensitive)
+            .size_limit(1 << 20)
+            .build()
+            .map_err(|e| format!("Invalid regex: {e}"))?
+    } else {
+        RegexBuilder::new(&regex::escape(&query))
+            .case_insensitive(!case_sensitive)
+            .size_limit(1 << 20)
+            .build()
+            .map_err(|e| format!("Replace error: {e}"))?
+    };
+    let mut md_files = Vec::new();
+    collect_md_paths(&canon_v, &canon_v, &mut md_files);
+    let mut summaries = Vec::new();
+    for file_path in md_files {
+        let content = match fs::read_to_string(&file_path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+        let count = re.find_iter(&content).count();
+        if count == 0 {
+            continue;
+        }
+        summaries.push(ReplaceSummary {
+            file_path: file_path.to_string_lossy().into_owned(),
+            file_name: file_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            replacements: count,
+        });
+    }
     Ok(summaries)
 }

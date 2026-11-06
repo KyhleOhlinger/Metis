@@ -1,8 +1,127 @@
-use crate::security::{registered_vault, reject_untrusted_webview};
+use crate::security::{registered_vault, reject_untrusted_webview, write_private_json_file};
+use crate::settings::app_data_dir_for_build;
 use crate::state::CurrentVault;
 use crate::types::FileSummary;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use crate::vault_fs::DirWalk;
+
+const NEVER_SEND_FILE: &str = "never-send.json";
+
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct NeverSendFile {
+    #[serde(default)]
+    vaults: Vec<NeverSendVault>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct NeverSendVault {
+    vault_path: String,
+    folders: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultNoteBody {
+    pub path: String,
+    pub content: String,
+}
+
+fn never_send_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_data_dir_for_build(app)?.join(NEVER_SEND_FILE))
+}
+
+fn load_never_send(app: &tauri::AppHandle) -> Result<NeverSendFile, String> {
+    let path = never_send_path(app)?;
+    if !path.exists() {
+        return Ok(NeverSendFile::default());
+    }
+    let raw = fs::read_to_string(&path).map_err(|e| format!("Cannot read never-send list: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Never-send list is invalid: {e}"))
+}
+
+pub(crate) fn never_send_folders(app: &tauri::AppHandle, vault: &Path) -> Vec<String> {
+    let Ok(file) = load_never_send(app) else {
+        return Vec::new();
+    };
+    let key = vault.to_string_lossy();
+    file.vaults
+        .into_iter()
+        .find(|row| row.vault_path == key)
+        .map(|row| row.folders)
+        .unwrap_or_default()
+}
+
+fn normalize_never_send_folder(raw: &str) -> Option<String> {
+    let folder = raw.trim().replace('\\', "/");
+    let folder = folder.trim_matches('/');
+    if folder.is_empty() || folder.len() > 240 {
+        return None;
+    }
+    if folder.split('/').any(|part| part.is_empty() || part == "." || part == "..") {
+        return None;
+    }
+    Some(folder.to_string())
+}
+
+pub(crate) fn is_never_send(relative: &str, folders: &[String]) -> bool {
+    let relative = relative.replace('\\', "/");
+    let relative = relative.trim_matches('/');
+    folders.iter().any(|folder| relative == folder || relative.starts_with(&format!("{folder}/")))
+}
+
+fn relative_to_vault(vault: &Path, path: &Path) -> Option<String> {
+    path.strip_prefix(vault)
+        .ok()
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+}
+
+#[tauri::command]
+pub fn get_never_send_folders(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Vec<String>, String> {
+    reject_untrusted_webview(&window)?;
+    let vault = registered_vault(&window, &vault_state)?;
+    Ok(never_send_folders(&app, &vault))
+}
+
+#[tauri::command]
+pub fn set_never_send_folders(
+    folders: Vec<String>,
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Vec<String>, String> {
+    reject_untrusted_webview(&window)?;
+    let vault = registered_vault(&window, &vault_state)?;
+    let mut clean = Vec::new();
+    for folder in folders {
+        if let Some(folder) = normalize_never_send_folder(&folder) {
+            if !clean.iter().any(|existing: &String| existing == &folder) {
+                clean.push(folder);
+            }
+        }
+    }
+    clean.truncate(50);
+    let mut file = load_never_send(&app)?;
+    let key = vault.to_string_lossy().into_owned();
+    if let Some(row) = file.vaults.iter_mut().find(|row| row.vault_path == key) {
+        row.folders = clean.clone();
+    } else {
+        file.vaults.push(NeverSendVault {
+            vault_path: key,
+            folders: clean.clone(),
+        });
+    }
+    let json = serde_json::to_string_pretty(&file).map_err(|e| format!("Cannot save never-send list: {e}"))?;
+    write_private_json_file(&never_send_path(&app)?, &json)?;
+    Ok(clean)
+}
 
 // ── Smart context commands ────────────────────────────────────────────────────
 //
@@ -20,11 +139,13 @@ pub fn get_file_summaries(
     folder_path: String,
     recursive: bool,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<Vec<FileSummary>, String> {
     reject_untrusted_webview(&window)?;
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("get_file_summaries: {e}"))?;
+    let blocked = never_send_folders(&app, &canon_v);
 
     let target = PathBuf::from(&folder_path)
         .canonicalize()
@@ -37,7 +158,9 @@ pub fn get_file_summaries(
     }
 
     let mut summaries: Vec<FileSummary> = Vec::new();
-    collect_md_summaries(&target, &canon_v, recursive, &mut summaries)?;
+    let mut walk = DirWalk::new();
+    let _ = walk.enter(&target, &canon_v, 0);
+    collect_md_summaries(&target, &canon_v, &blocked, recursive, 0, &mut walk, &mut summaries)?;
     summaries.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(summaries)
 }
@@ -45,7 +168,10 @@ pub fn get_file_summaries(
 fn collect_md_summaries(
     dir: &Path,
     vault: &Path,
+    blocked: &[String],
     recursive: bool,
+    depth: u32,
+    walk: &mut DirWalk,
     out: &mut Vec<FileSummary>,
 ) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("Cannot read dir: {e}"))?;
@@ -63,9 +189,16 @@ fn collect_md_summaries(
         if !canon.starts_with(vault) {
             continue;
         }
-        if path.is_dir() && recursive {
-            collect_md_summaries(&path, vault, recursive, out)?;
-        } else if path.is_file() && path.extension().and_then(|x| x.to_str()) == Some("md") {
+        if relative_to_vault(vault, &canon)
+            .is_some_and(|rel| is_never_send(&rel, blocked))
+        {
+            continue;
+        }
+        if recursive && walk.enter(&path, vault, depth + 1) {
+            collect_md_summaries(&path, vault, blocked, recursive, depth + 1, walk, out)?;
+            continue;
+        }
+        if path.is_file() && path.extension().and_then(|x| x.to_str()) == Some("md") && walk.allow_file() {
             let content = fs::read_to_string(&path).unwrap_or_default();
             let char_count = content.chars().count();
             let preview: String = content.chars().take(400).collect();
@@ -87,8 +220,9 @@ fn collect_md_summaries(
 pub fn get_files_content(
     paths: Vec<String>,
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
-) -> Result<String, String> {
+) -> Result<Vec<VaultNoteBody>, String> {
     reject_untrusted_webview(&window)?;
     if paths.len() > 100 {
         return Err("Too many paths requested in a single call (max 100).".into());
@@ -97,8 +231,10 @@ pub fn get_files_content(
 
     let canon_v = registered_vault(&window, &vault_state)
         .map_err(|e| format!("get_files_content: {e}"))?;
+    let blocked = never_send_folders(&app, &canon_v);
 
-    let mut combined = String::new();
+    let mut files = Vec::new();
+    let mut total = 0usize;
     for raw_path in &paths {
         let canon = PathBuf::from(raw_path)
             .canonicalize()
@@ -114,16 +250,21 @@ pub fn get_files_content(
         if canon.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
+        if relative_to_vault(&canon_v, &canon).is_some_and(|rel| is_never_send(&rel, &blocked)) {
+            continue;
+        }
         let content = fs::read_to_string(&canon)
             .map_err(|e| format!("Cannot read '{}': {e}", raw_path))?;
-        let name = canon.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let section = format!("\n\n---\n## {name}\n\n{content}");
-        if combined.len().saturating_add(section.len()) > MAX_TOTAL_BYTES {
+        total = total.saturating_add(content.len());
+        if total > MAX_TOTAL_BYTES {
             return Err("Requested content exceeds max response size (5 MiB). Narrow the scope.".into());
         }
-        combined.push_str(&section);
+        files.push(VaultNoteBody {
+            path: canon.to_string_lossy().into_owned(),
+            content,
+        });
     }
-    Ok(combined)
+    Ok(files)
 }
 
 /// Legacy single-call command kept for backward compatibility.

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 
 const MAX_MANIFEST_BYTES: usize = 16_384;
 const MAX_CSS_BYTES: usize = 256 * 1024;
@@ -99,6 +100,8 @@ pub struct VaultPluginState {
     pub core: HashMap<String, bool>,
     pub enabled: Vec<String>,
     pub installed: Vec<InstalledPlugin>,
+    #[serde(default)]
+    pub pending_suggestions: Vec<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -356,35 +359,53 @@ fn read_core(vault: &Path) -> HashMap<String, bool> {
     map
 }
 
-fn read_community(vault: &Path) -> (bool, Vec<String>) {
+fn community_on_disk(vault: &Path) -> (bool, Vec<String>) {
     let path = community_path(vault);
     let Ok(raw) = fs::read_to_string(&path) else {
-        return (true, Vec::new());
+        return (false, Vec::new());
     };
     match serde_json::from_str::<CommunityPluginsFile>(&raw) {
+        // A bare id list used to turn Restricted Mode off. It is only a suggestion now.
         Ok(CommunityPluginsFile::Ids(ids)) => (false, ids),
         Ok(CommunityPluginsFile::Full {
             restricted_mode,
             enabled,
-        }) => (restricted_mode, enabled),
-        Err(_) => (true, Vec::new()),
+        }) => (!restricted_mode, enabled),
+        Err(_) => (false, Vec::new()),
     }
+}
+
+fn read_community(app: &tauri::AppHandle, vault: &Path) -> (bool, Vec<String>) {
+    let (suggests_unlocked, ids) = community_on_disk(vault);
+    let restricted = crate::feature_consent::restricted_mode(app, vault, suggests_unlocked);
+    (restricted, ids)
 }
 
 fn write_json(path: &Path, json: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Cannot create .metis: {e}"))?;
     }
-    fs::write(path, json.as_bytes()).map_err(|e| format!("Failed to write plugin config: {e}"))
+    crate::io_atomic::write_atomic(path, json.as_bytes()).map_err(|e| format!("Failed to write plugin config: {e}"))
 }
 
-fn load_state(vault: &Path) -> VaultPluginState {
-    let (restricted_mode, enabled) = read_community(vault);
+fn load_state(app: &tauri::AppHandle, vault: &Path) -> VaultPluginState {
+    let (restricted_mode, enabled) = read_community(app, vault);
+    let mut core = read_core(vault);
+    let mut pending_suggestions = Vec::new();
+    let suggested = core.get("supernote").copied().unwrap_or(false);
+    let approved = crate::feature_consent::supernote_approved(app, vault);
+    if suggested && crate::feature_consent::supernote_decision(app, vault).is_none() {
+        pending_suggestions.push("supernote".into());
+    }
+    if !approved {
+        core.insert("supernote".into(), false);
+    }
     VaultPluginState {
         restricted_mode,
-        core: read_core(vault),
+        core,
         enabled,
         installed: scan_installed(vault),
+        pending_suggestions,
     }
 }
 
@@ -405,7 +426,7 @@ pub fn load_vault_plugins(
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultPluginState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
-    Ok(load_state(&vault))
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
 #[tauri::command]
@@ -422,14 +443,56 @@ pub fn set_core_plugin_enabled(
     if is_required_core_id(&id) && !enabled {
         return Err("This plugin is required and cannot be turned off.".into());
     }
+    if id == "supernote" {
+        crate::feature_consent::set_supernote_consent(&window.app_handle(), &vault, enabled)?;
+    }
     let mut core = read_core(&vault);
-    core.insert(id, enabled);
+    core.insert(id.clone(), enabled);
     let body = serde_json::json!({ "plugins": core });
     write_json(
         &core_path(&vault),
         &serde_json::to_string_pretty(&body).unwrap_or_else(|_| "{}".into()),
     )?;
-    Ok(load_state(&vault))
+    Ok(load_state(&window.app_handle(), &vault))
+}
+
+#[tauri::command]
+pub fn decide_supernote_consent(
+    approved: bool,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<VaultPluginState, String> {
+    let vault = vault_for_window(&window, &vault_state)?;
+    crate::feature_consent::set_supernote_consent(&window.app_handle(), &vault, approved)?;
+    if !approved {
+        let mut core = read_core(&vault);
+        core.insert("supernote".into(), false);
+        let body = serde_json::json!({ "plugins": core });
+        write_json(
+            &core_path(&vault),
+            &serde_json::to_string_pretty(&body).unwrap_or_else(|_| "{}".into()),
+        )?;
+    }
+    Ok(load_state(&window.app_handle(), &vault))
+}
+
+#[tauri::command]
+pub fn list_jekyll_exports(
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<Vec<String>, String> {
+    let vault = vault_for_window(&window, &vault_state)?;
+    Ok(crate::feature_consent::jekyll_exported(&window.app_handle(), &vault))
+}
+
+#[tauri::command]
+pub fn remember_jekyll_export(
+    rel_path: String,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<(), String> {
+    let vault = vault_for_window(&window, &vault_state)?;
+    crate::feature_consent::remember_jekyll_note(&window.app_handle(), &vault, &rel_path)
 }
 
 #[tauri::command]
@@ -439,9 +502,10 @@ pub fn set_plugin_restricted_mode(
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultPluginState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
-    let (_, enabled) = read_community(&vault);
+    crate::feature_consent::set_restricted_mode(&window.app_handle(), &vault, restricted)?;
+    let (_, enabled) = read_community(&window.app_handle(), &vault);
     persist_community(&vault, restricted, &enabled)?;
-    Ok(load_state(&vault))
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
 #[tauri::command]
@@ -453,21 +517,94 @@ pub fn set_community_plugin_enabled(
 ) -> Result<VaultPluginState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     validate_plugin_id(&id)?;
-    let (restricted, mut list) = read_community(&vault);
+    let (restricted, mut list) = read_community(&window.app_handle(), &vault);
     list.retain(|x| x != &id);
     if enabled {
+        let manifest = plugins_dir(&vault).join(&id).join("manifest.json");
+        if !manifest.is_file() {
+            return Err("Install the plugin before enabling it.".into());
+        }
         list.push(id);
     }
     persist_community(&vault, restricted, &list)?;
-    Ok(load_state(&vault))
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
+fn commit_plugin_dir(
+    vault: &Path,
+    id: &str,
+    manifest: &str,
+    css: Option<&str>,
+    readme: Option<&str>,
+) -> Result<(), String> {
+    if let Some(css) = css {
+        assert_safe_css(css)?;
+    }
+    let plugins = plugins_dir(vault);
+    fs::create_dir_all(&plugins).map_err(|e| format!("Cannot create plugins directory: {e}"))?;
+    let dest = plugins.join(id);
+    assert_dest_under_plugins(vault, &dest)?;
+    let tmp = plugins.join(format!(".tmp-{id}"));
+    if tmp.exists() {
+        fs::remove_dir_all(&tmp).map_err(|e| format!("Cannot clear plugin staging folder: {e}"))?;
+    }
+    fs::create_dir_all(&tmp).map_err(|e| format!("Cannot create plugin staging folder: {e}"))?;
+    crate::io_atomic::write_atomic(&tmp.join("manifest.json"), manifest.as_bytes())
+        .map_err(|e| format!("Failed to write manifest.json: {e}"))?;
+    if let Some(css) = css {
+        crate::io_atomic::write_atomic(&tmp.join("styles.css"), css.as_bytes())
+            .map_err(|e| format!("Failed to write styles.css: {e}"))?;
+    }
+    if let Some(readme) = readme {
+        if readme.len() <= MAX_README_BYTES {
+            let _ = crate::io_atomic::write_atomic(&tmp.join("README.md"), readme.as_bytes());
+        }
+    }
+    let backup = plugins.join(format!(".bak-{id}"));
+    if backup.exists() {
+        fs::remove_dir_all(&backup).map_err(|e| format!("Cannot clear plugin backup: {e}"))?;
+    }
+    if dest.exists() {
+        fs::rename(&dest, &backup).map_err(|e| format!("Cannot move the existing plugin aside: {e}"))?;
+    }
+    if let Err(err) = fs::rename(&tmp, &dest) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, &dest);
+        }
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(format!("Cannot install plugin: {err}"));
+    }
+    if backup.exists() {
+        let _ = fs::remove_dir_all(&backup);
+    }
+    Ok(())
+}
+
+/// The folder comes from the native picker inside this command, not from a path the webview supplies.
 #[tauri::command]
-pub fn install_plugin_from_folder(
-    source_path: String,
+pub async fn install_plugin_from_dialog(
     window: tauri::WebviewWindow,
     vault_state: tauri::State<'_, CurrentVault>,
 ) -> Result<VaultPluginState, String> {
+    use std::sync::mpsc;
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    window
+        .app_handle()
+        .dialog()
+        .file()
+        .set_parent(&window)
+        .set_title("Choose a plugin folder")
+        .pick_folder(move |result| {
+            let _ = tx.send(result.map(|path| path.to_string()));
+        });
+    let selected = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| format!("Plugin folder dialog failed: {e}"))?;
+    let Some(source_path) = selected else {
+        return Err("Plugin install cancelled.".into());
+    };
     let vault = vault_for_window(&window, &vault_state)?;
     let source = PathBuf::from(source_path.trim());
     if !source.is_dir() {
@@ -476,33 +613,23 @@ pub fn install_plugin_from_folder(
     let manifest_raw = fs::read_to_string(source.join("manifest.json"))
         .map_err(|_| "Folder is missing manifest.json.".to_string())?;
     let plugin = parse_manifest(&manifest_raw)?;
-    let dest = plugins_dir(&vault).join(&plugin.id);
-    assert_dest_under_plugins(&vault, &dest)?;
-    fs::create_dir_all(plugins_dir(&vault))
-        .map_err(|e| format!("Cannot create plugins directory: {e}"))?;
-    if dest.exists() {
-        fs::remove_dir_all(&dest).map_err(|e| format!("Cannot replace existing plugin: {e}"))?;
-    }
-    fs::create_dir_all(&dest).map_err(|e| format!("Cannot create plugin folder: {e}"))?;
-    fs::write(dest.join("manifest.json"), manifest_raw.as_bytes())
-        .map_err(|e| format!("Failed to write manifest.json: {e}"))?;
-
-    let css_path = source.join("styles.css");
-    if css_path.is_file() {
-        let css = fs::read_to_string(&css_path).map_err(|e| format!("Failed to read styles.css: {e}"))?;
-        assert_safe_css(&css)?;
-        fs::write(dest.join("styles.css"), css.as_bytes())
-            .map_err(|e| format!("Failed to write styles.css: {e}"))?;
-    }
-    let readme_path = source.join("README.md");
-    if readme_path.is_file() {
-        if let Ok(readme) = fs::read_to_string(&readme_path) {
-            if readme.len() <= MAX_README_BYTES {
-                let _ = fs::write(dest.join("README.md"), readme.as_bytes());
-            }
-        }
-    }
-    Ok(load_state(&vault))
+    let css = if source.join("styles.css").is_file() {
+        Some(
+            fs::read_to_string(source.join("styles.css"))
+                .map_err(|e| format!("Failed to read styles.css: {e}"))?,
+        )
+    } else {
+        None
+    };
+    let readme = fs::read_to_string(source.join("README.md")).ok();
+    commit_plugin_dir(
+        &vault,
+        &plugin.id,
+        &manifest_raw,
+        css.as_deref(),
+        readme.as_deref(),
+    )?;
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
 #[tauri::command]
@@ -514,25 +641,12 @@ pub fn install_community_plugin_files(
 ) -> Result<VaultPluginState, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     let plugin = parse_manifest(&manifest_json)?;
-    let dest = plugins_dir(&vault).join(&plugin.id);
-    assert_dest_under_plugins(&vault, &dest)?;
-    fs::create_dir_all(plugins_dir(&vault))
-        .map_err(|e| format!("Cannot create plugins directory: {e}"))?;
-    if dest.exists() {
-        fs::remove_dir_all(&dest).map_err(|e| format!("Cannot replace existing plugin: {e}"))?;
-    }
-    fs::create_dir_all(&dest).map_err(|e| format!("Cannot create plugin folder: {e}"))?;
-    fs::write(dest.join("manifest.json"), manifest_json.as_bytes())
-        .map_err(|e| format!("Failed to write manifest.json: {e}"))?;
-    if let Some(css) = styles_css {
-        let trimmed = css.trim();
-        if !trimmed.is_empty() {
-            assert_safe_css(trimmed)?;
-            fs::write(dest.join("styles.css"), trimmed.as_bytes())
-                .map_err(|e| format!("Failed to write styles.css: {e}"))?;
-        }
-    }
-    Ok(load_state(&vault))
+    let css = styles_css.and_then(|css| {
+        let trimmed = css.trim().to_string();
+        if trimmed.is_empty() { None } else { Some(trimmed) }
+    });
+    commit_plugin_dir(&vault, &plugin.id, &manifest_json, css.as_deref(), None)?;
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
 #[tauri::command]
@@ -548,10 +662,10 @@ pub fn uninstall_community_plugin(
     if dest.exists() {
         fs::remove_dir_all(&dest).map_err(|e| format!("Failed to uninstall plugin: {e}"))?;
     }
-    let (restricted, mut enabled) = read_community(&vault);
+    let (restricted, mut enabled) = read_community(&window.app_handle(), &vault);
     enabled.retain(|x| x != &id);
     persist_community(&vault, restricted, &enabled)?;
-    Ok(load_state(&vault))
+    Ok(load_state(&window.app_handle(), &vault))
 }
 
 #[tauri::command]
@@ -562,7 +676,7 @@ pub fn read_community_plugin_styles(
 ) -> Result<String, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     validate_plugin_id(&id)?;
-    let (restricted, enabled) = read_community(&vault);
+    let (restricted, enabled) = read_community(&window.app_handle(), &vault);
     if restricted {
         return Err("Community plugins are in Restricted Mode.".into());
     }
@@ -582,6 +696,12 @@ pub fn read_community_plugin_styles(
 #[cfg(test)]
 mod css_tests {
     use super::assert_safe_css;
+
+    #[test]
+    fn id_list_is_not_an_unlocked_settings_object() {
+        let parsed: super::CommunityPluginsFile = serde_json::from_str(r#"["x"]"#).unwrap();
+        assert!(matches!(parsed, super::CommunityPluginsFile::Ids(_)));
+    }
 
     #[test]
     fn rejects_hex_escaped_import() {

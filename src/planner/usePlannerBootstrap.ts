@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { initPlannerPersistence, resetPlannerPersistence } from "@/planner/plannerPersistence";
+import { appConfirm } from "@/store/useToastStore";
 import {
   type GoalSection,
   type PlannerLayoutTemplates,
@@ -39,6 +41,16 @@ export function usePlannerBootstrap(vaultPath: string | null, plannerReloadKey: 
     setHydrationComplete(false);
     void (async () => {
       try {
+        const config = await invoke<{ legacy_adoption_pending?: boolean }>("planner_get_config", {
+          vaultPath,
+        });
+        if (config.legacy_adoption_pending) {
+          const approve = await appConfirm(
+            "This vault was not created in Metis. Copy your existing planner calendar, goals, and tracker into it?",
+            { title: "Copy planner into this vault?", confirmLabel: "Copy planner" },
+          );
+          await invoke("planner_decide_legacy_adoption", { vaultPath, approve });
+        }
         await initPlannerPersistence(vaultPath);
         if (cancelled) return;
         const layout = loadLayoutTemplates();

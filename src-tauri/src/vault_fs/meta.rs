@@ -1,7 +1,58 @@
 use crate::security::canon_vault;
 use crate::types::*;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+const MAX_WALK_DEPTH: u32 = 32;
+const MAX_WALK_ENTRIES: usize = 100_000;
+
+/// Tracks directories already entered so a symlink loop cannot multiply the walk.
+pub(crate) struct DirWalk {
+    seen: HashSet<PathBuf>,
+    entries: usize,
+}
+
+impl DirWalk {
+    pub(crate) fn new() -> Self {
+        Self {
+            seen: HashSet::new(),
+            entries: 0,
+        }
+    }
+
+    pub(crate) fn enter(&mut self, path: &Path, vault: &Path, depth: u32) -> bool {
+        if depth > MAX_WALK_DEPTH || self.entries >= MAX_WALK_ENTRIES {
+            return false;
+        }
+        let Ok(meta) = fs::symlink_metadata(path) else {
+            return false;
+        };
+        // A link to a directory is not followed. The target stays unvisited.
+        if meta.file_type().is_symlink() && path.is_dir() {
+            return false;
+        }
+        if !meta.is_dir() {
+            return false;
+        }
+        let Ok(canon) = path.canonicalize() else {
+            return false;
+        };
+        if canon != *vault && !canon.starts_with(vault) {
+            return false;
+        }
+        self.entries += 1;
+        self.seen.insert(canon)
+    }
+
+    pub(crate) fn allow_file(&mut self) -> bool {
+        if self.entries >= MAX_WALK_ENTRIES {
+            return false;
+        }
+        self.entries += 1;
+        true
+    }
+}
 
 // ── Allowed file extensions for vault tree / delete operations ────────────────
 
@@ -62,7 +113,7 @@ pub(crate) fn write_vault_meta(vault: &Path) -> Result<(), String> {
     let json = serde_json::to_string_pretty(&meta)
         .map_err(|e| format!("Failed to serialise vault meta: {e}"))?;
 
-    fs::write(metis_dir.join("vault.json"), json.as_bytes())
+    crate::io_atomic::write_atomic(&metis_dir.join("vault.json"), json.as_bytes())
         .map_err(|e| format!("Failed to write vault meta: {e}"))
 }
 
@@ -96,7 +147,7 @@ pub(crate) fn write_vault_meta_full(vault: &Path, meta: &VaultMeta) -> Result<()
         .map_err(|e| format!("Cannot create .metis directory: {e}"))?;
     let json = serde_json::to_string_pretty(meta)
         .map_err(|e| format!("Failed to serialise vault meta: {e}"))?;
-    fs::write(metis_dir.join("vault.json"), json.as_bytes())
+    crate::io_atomic::write_atomic(&metis_dir.join("vault.json"), json.as_bytes())
         .map_err(|e| format!("Failed to write vault meta: {e}"))
 }
 
@@ -127,6 +178,18 @@ pub(crate) fn detect_vault_hint(root: &Path) -> String {
 }
 
 pub(crate) fn collect_md_paths(dir: &Path, vault: &Path, out: &mut Vec<PathBuf>) {
+    let mut walk = DirWalk::new();
+    let _ = walk.enter(dir, vault, 0);
+    collect_md_paths_inner(dir, vault, 0, &mut walk, out);
+}
+
+fn collect_md_paths_inner(
+    dir: &Path,
+    vault: &Path,
+    depth: u32,
+    walk: &mut DirWalk,
+    out: &mut Vec<PathBuf>,
+) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
@@ -140,14 +203,16 @@ pub(crate) fn collect_md_paths(dir: &Path, vault: &Path, out: &mut Vec<PathBuf>)
         {
             continue;
         }
-        let canon = path.canonicalize().unwrap_or_default();
-        if !canon.starts_with(vault) {
+        if walk.enter(&path, vault, depth + 1) {
+            collect_md_paths_inner(&path, vault, depth + 1, walk, out);
             continue;
         }
-        if path.is_dir() {
-            collect_md_paths(&path, vault, out);
-        } else if path.is_file() && path.extension().and_then(|x| x.to_str()) == Some("md") {
-            out.push(canon);
+        if path.is_file() && path.extension().and_then(|x| x.to_str()) == Some("md") && walk.allow_file() {
+            if let Ok(canon) = path.canonicalize() {
+                if canon.starts_with(vault) {
+                    out.push(canon);
+                }
+            }
         }
     }
 }
@@ -339,10 +404,17 @@ pub(crate) fn enrich_frontmatter(content: &str, file_path: &Path, vault_root: &P
 /// Recursively build a tree of FileNodes from `root` (symlink-safe, vault-bounded).
 pub(crate) fn build_file_tree(root: &Path) -> Result<Vec<FileNode>, String> {
     let canon_v = canon_vault(root)?;
-    build_file_tree_inner(root, &canon_v)
+    let mut walk = DirWalk::new();
+    let _ = walk.enter(root, &canon_v, 0);
+    build_file_tree_inner(root, &canon_v, 0, &mut walk)
 }
 
-pub(crate) fn build_file_tree_inner(root: &Path, canon_vault_root: &Path) -> Result<Vec<FileNode>, String> {
+pub(crate) fn build_file_tree_inner(
+    root: &Path,
+    canon_vault_root: &Path,
+    depth: u32,
+    walk: &mut DirWalk,
+) -> Result<Vec<FileNode>, String> {
     let mut children = Vec::new();
 
     let entries =
@@ -366,24 +438,25 @@ pub(crate) fn build_file_tree_inner(root: &Path, canon_vault_root: &Path) -> Res
             continue;
         }
 
-        // SECURITY: canonicalize every entry; skip symlinks that resolve outside the vault.
-        let canon = match path.canonicalize() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        if !canon.starts_with(canon_vault_root) {
-            continue;
-        }
-
-        if canon.is_dir() {
-            let sub_children = build_file_tree_inner(&path, canon_vault_root)?;
+        if walk.enter(&path, canon_vault_root, depth + 1) {
+            let sub_children = build_file_tree_inner(&path, canon_vault_root, depth + 1, walk)?;
             children.push(FileNode {
                 name,
                 path: path.to_string_lossy().to_string(),
                 is_dir: true,
                 children: Some(sub_children),
             });
-        } else if is_allowed_ext(&path) {
+            continue;
+        }
+
+        if is_allowed_ext(&path) && walk.allow_file() {
+            let canon = match path.canonicalize() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if !canon.starts_with(canon_vault_root) {
+                continue;
+            }
             children.push(FileNode {
                 name,
                 path: path.to_string_lossy().to_string(),
@@ -394,5 +467,29 @@ pub(crate) fn build_file_tree_inner(root: &Path, canon_vault_root: &Path) -> Res
     }
 
     Ok(children)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_file_tree;
+    use std::fs;
+    use std::time::Instant;
+
+    #[test]
+    #[cfg(unix)]
+    fn two_parent_symlinks_do_not_hang() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!("metis-walk-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("notes")).unwrap();
+        fs::write(root.join("notes").join("a.md"), b"hello").unwrap();
+        symlink("..", root.join("notes").join("up1")).unwrap();
+        symlink("..", root.join("notes").join("up2")).unwrap();
+        let started = Instant::now();
+        let tree = build_file_tree(&root).unwrap();
+        assert!(started.elapsed().as_secs() < 1);
+        assert!(tree.iter().any(|node| node.name == "notes"));
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 

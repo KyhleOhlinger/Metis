@@ -177,7 +177,14 @@ fn decode_ratta_rle(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Str
 }
 
 fn decode_png_layer(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
-    let img = image::load_from_memory(data).map_err(|e| format!("PNG layer: {e}"))?;
+    let mut reader = image::ImageReader::new(Cursor::new(data));
+    reader.set_format(image::ImageFormat::Png);
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_DIM);
+    limits.max_image_height = Some(MAX_DIM);
+    limits.max_alloc = Some(64 * 1024 * 1024);
+    reader.limits(limits);
+    let img = reader.decode().map_err(|e| format!("PNG layer: {e}"))?;
     let mut rgba = img.to_rgba8();
     if rgba.width() != width || rgba.height() != height {
         rgba = imageops::resize(&rgba, width, height, imageops::FilterType::Triangle);
@@ -188,11 +195,19 @@ fn decode_png_layer(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Str
 fn decode_flate(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, String> {
     use flate2::read::ZlibDecoder;
     use std::io::Read;
-    let mut dec = ZlibDecoder::new(data);
+    let pixels = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or("SN_ASA_COMPRESS page is too large.")?;
+    let needed = pixels
+        .checked_mul(2)
+        .ok_or("SN_ASA_COMPRESS page is too large.")?;
+    let mut dec = ZlibDecoder::new(data).take(needed.saturating_add(1) as u64);
     let mut raw = Vec::new();
     dec.read_to_end(&mut raw)
         .map_err(|e| format!("SN_ASA_COMPRESS: {e}"))?;
-    let needed = width as usize * height as usize * 2;
+    if raw.len() > needed {
+        return Err("SN_ASA_COMPRESS bitmap is too large.".into());
+    }
     if raw.len() < needed {
         return Err("SN_ASA_COMPRESS bitmap is truncated.".into());
     }
@@ -480,4 +495,21 @@ pub async fn render_supernote_page(
     tauri::async_runtime::spawn_blocking(move || render_path(resolved, page))
         .await
         .map_err(|e| format!("Render task failed: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_flate;
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    #[test]
+    fn inflated_bitmap_stops_at_the_page_size() {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&[0u8; 64]).unwrap();
+        let data = encoder.finish().unwrap();
+        let err = decode_flate(&data, 1, 1).unwrap_err();
+        assert!(err.contains("too large"), "{err}");
+    }
 }

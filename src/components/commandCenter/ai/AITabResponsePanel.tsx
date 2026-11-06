@@ -127,6 +127,16 @@ export function AITabResponsePanel({
                   prev.map((w) => (w.id === id ? { ...w, status: "error", errorMsg: msg } : w)),
                 );
               }}
+              onConflict={(id) => {
+                setPendingWrites((prev) =>
+                  prev.map((w) => (w.id === id ? { ...w, status: "pending", conflict: true } : w)),
+                );
+              }}
+              onStale={(id) => {
+                setPendingWrites((prev) =>
+                  prev.map((w) => (w.id === id ? { ...w, status: "pending", stale: true } : w)),
+                );
+              }}
               onDismiss={async (id) => {
                 const ok = await appConfirm("Dismiss this suggested change without applying?", {
                   title: "Dismiss change",

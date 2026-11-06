@@ -3,7 +3,8 @@ import { openDomContextMenu } from "./domContextMenu";
 import {
   followVaultHref,
   normalizeWikilinkTarget,
-  openExternalUrl,
+  confirmAndOpenExternalUrl,
+  externalHostLabel,
   openNoteByWikilinkName,
   resolveExternalHref,
   type FollowVaultHrefOptions,
@@ -60,7 +61,7 @@ export function handlePreviewAnchorClick(
   }
 
   if (external) {
-    openExternalUrl(external);
+    confirmAndOpenExternalUrl(external);
     return;
   }
 
@@ -120,8 +121,8 @@ export function bindPreviewAnchorHandlers(
     if (external) {
       openDomContextMenu(e.clientX, e.clientY, [
         {
-          label: "Open Link",
-          onClick: () => openExternalUrl(external),
+          label: `Open ${externalHostLabel(external)}`,
+          onClick: () => confirmAndOpenExternalUrl(external),
         },
       ]);
       return;

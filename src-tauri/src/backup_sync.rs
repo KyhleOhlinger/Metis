@@ -72,11 +72,16 @@ struct VaultBackupOptions {
     spaces: SpaceFlags,
     #[serde(default = "default_true")]
     files: bool,
-    #[serde(default = "default_true")]
+    /// Off until the user opts in. A vault's own config cannot turn this on.
+    #[serde(default)]
     vault_planner: bool,
     /// 0 is off. Allowed: 15, 30, 60, 360, 1440.
     #[serde(default)]
     schedule_minutes: u32,
+    #[serde(default)]
+    last_success_ms: u64,
+    #[serde(default)]
+    last_error: String,
 }
 
 fn default_true() -> bool {
@@ -92,8 +97,10 @@ impl Default for VaultBackupOptions {
             remote_url: String::new(),
             spaces: SpaceFlags::default(),
             files: true,
-            vault_planner: true,
+            vault_planner: false,
             schedule_minutes: 0,
+            last_success_ms: 0,
+            last_error: String::new(),
         }
     }
 }
@@ -132,6 +139,8 @@ pub struct BackupSyncState {
     vault_planner: bool,
     schedule_minutes: u32,
     vault_path: String,
+    last_success_ms: u64,
+    last_error: String,
 }
 
 #[derive(Serialize)]
@@ -139,7 +148,6 @@ pub struct BackupSyncState {
 pub struct BackupSyncReport {
     status: String,
     message: String,
-    deletions: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -241,6 +249,8 @@ fn state_from(vault: &Path, options: &VaultBackupOptions) -> BackupSyncState {
         vault_planner: options.vault_planner,
         schedule_minutes: options.schedule_minutes,
         vault_path: vault.to_string_lossy().into_owned(),
+        last_success_ms: options.last_success_ms,
+        last_error: options.last_error.clone(),
     }
 }
 
@@ -301,6 +311,27 @@ pub fn backup_sync_run(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     vault_state: tauri::State<'_, CurrentVault>,
+    replace_origin: Option<bool>,
+) -> Result<BackupSyncReport, String> {
+    let result = backup_sync_run_inner(
+        window.clone(),
+        app.clone(),
+        vault_state.clone(),
+        replace_origin,
+    );
+    if let Err(err) = &result {
+        if let Ok(vault) = vault_for_window(&window, &vault_state) {
+            remember_backup_result(&app, &vault, Some(err));
+        }
+    }
+    result
+}
+
+fn backup_sync_run_inner(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    vault_state: tauri::State<'_, CurrentVault>,
+    replace_origin: Option<bool>,
 ) -> Result<BackupSyncReport, String> {
     let vault = vault_for_window(&window, &vault_state)?;
     let file = load_config(&app)?;
@@ -317,13 +348,29 @@ pub fn backup_sync_run(
         return Err("Set a GitHub remote before syncing.".into());
     }
     ensure_git_repo(&vault)?;
-    ensure_origin(&vault, options.remote_url.trim())?;
-    if remote_has_commits_we_lack(&vault)? {
+    let url = options.remote_url.trim();
+    let branch = current_branch(&vault)?;
+    if let Some(existing) = current_origin(&vault)? {
+        if existing != url && !replace_origin.unwrap_or(false) {
+            let message = format!(
+                "This vault's origin is {existing}. Replace it with {url} before syncing?"
+            );
+            remember_backup_result(&app, &vault, Some(&message));
+            return Ok(BackupSyncReport {
+                status: "origin_differs".into(),
+                message,
+            });
+        }
+    }
+    ensure_origin(&vault, url)?;
+    if remote_has_commits_we_lack(&vault, &branch)? {
+        let message = format!(
+            "origin/{branch} has commits this backup does not. Sync did not pull or push."
+        );
+        remember_backup_result(&app, &vault, Some(&message));
         return Ok(BackupSyncReport {
             status: "remote_ahead".into(),
-            message: "The remote has commits this backup does not. Sync did not pull or push."
-                .into(),
-            deletions: Vec::new(),
+            message,
         });
     }
 
@@ -344,18 +391,51 @@ pub fn backup_sync_run(
         return Err("Could not read the backup commit state.".into());
     }
 
-    let branch = git(&vault, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    git(&vault, &["push", "-u", "origin", &branch])?;
+    message.push_str(&format!("Pushed {branch} to origin."));
+    remember_backup_result(&app, &vault, None);
+    Ok(BackupSyncReport {
+        status: "ok".into(),
+        message,
+    })
+}
+
+fn current_branch(repo: &Path) -> Result<String, String> {
+    let branch = git(repo, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     let branch = branch.trim();
     if branch.is_empty() || branch == "HEAD" {
         return Err("The backup repository is not on a branch.".into());
     }
-    git(&vault, &["push", "-u", "origin", branch])?;
-    message.push_str("Pushed to origin.");
-    Ok(BackupSyncReport {
-        status: "ok".into(),
-        message,
-        deletions: Vec::new(),
-    })
+    if !branch
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+        || branch.starts_with('-')
+        || branch.contains("..")
+    {
+        return Err("The backup branch name is not safe to push.".into());
+    }
+    Ok(branch.to_string())
+}
+
+fn remember_backup_result(app: &tauri::AppHandle, vault: &Path, error: Option<&str>) {
+    let Ok(mut file) = load_config(app) else {
+        return;
+    };
+    let mut options = options_for(&file, vault).cloned().unwrap_or_default();
+    match error {
+        Some(message) => {
+            options.last_error = message.chars().take(500).collect();
+        }
+        None => {
+            options.last_error.clear();
+            options.last_success_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+        }
+    }
+    upsert_options(&mut file, vault, options);
+    let _ = save_config(app, &file);
 }
 
 fn manifest_for(
@@ -495,16 +575,21 @@ fn is_github_name(name: &str) -> bool {
         && !name.ends_with('.')
 }
 
+fn current_origin(repo: &Path) -> Result<Option<String>, String> {
+    let out = git_raw(repo, &["remote", "get-url", "origin"])?;
+    if !out.status.success() {
+        return Ok(None);
+    }
+    let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if url.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(url))
+    }
+}
+
 fn ensure_origin(repo: &Path, url: &str) -> Result<(), String> {
-    let existing = Command::new("git")
-        .args(["remote", "get-url", "origin"])
-        .current_dir(repo)
-        .output();
-    let has_origin = existing
-        .as_ref()
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-    if has_origin {
+    if current_origin(repo)?.is_some() {
         git(repo, &["remote", "set-url", "origin", url])?;
     } else {
         git(repo, &["remote", "add", "origin", url])?;
@@ -540,8 +625,8 @@ fn stage_backup(repo: &Path, selected: &BackupManifest) -> Result<(), String> {
     Ok(())
 }
 
-fn remote_has_commits_we_lack(repo: &Path) -> Result<bool, String> {
-    let fetch = git_raw(repo, &["fetch", "origin"])?;
+fn remote_has_commits_we_lack(repo: &Path, branch: &str) -> Result<bool, String> {
+    let fetch = git_raw(repo, &["fetch", "origin", branch])?;
     if !fetch.status.success() {
         let err = String::from_utf8_lossy(&fetch.stderr);
         if fetch_failed_for_missing_refs(&err) {
@@ -549,7 +634,8 @@ fn remote_has_commits_we_lack(repo: &Path) -> Result<bool, String> {
         }
         return Err(format!("Could not fetch the remote: {}", err.trim()));
     }
-    let remote_ref = first_existing_ref(repo, &["origin/HEAD", "origin/main", "origin/master"])?;
+    let remote_ref = format!("origin/{branch}");
+    let remote_ref = first_existing_ref(repo, &[&remote_ref])?;
     let Some(remote_ref) = remote_ref else {
         return Ok(false);
     };
@@ -595,11 +681,68 @@ fn git(repo: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+fn hostile_git_setting(config: &str) -> Option<&'static str> {
+    let mut section = String::new();
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            continue;
+        }
+        if let Some(header) = trimmed.strip_prefix('[') {
+            section = header
+                .split([']', ' '])
+                .next()
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            continue;
+        }
+        let key = trimmed
+            .split('=')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        let found = match (section.as_str(), key.as_str()) {
+            ("core", "fsmonitor") => Some("core.fsmonitor"),
+            ("core", "sshcommand") => Some("core.sshCommand"),
+            ("core", "hookspath") => Some("core.hooksPath"),
+            ("core", "askpass") => Some("core.askpass"),
+            ("credential", "helper") => Some("credential.helper"),
+            _ => None,
+        };
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+fn refuse_hostile_git_config(repo: &Path) -> Result<(), String> {
+    let path = repo.join(".git").join("config");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    if let Some(setting) = hostile_git_setting(&text) {
+        return Err(format!(
+            "Backup refused: this vault's git config sets {setting}."
+        ));
+    }
+    Ok(())
+}
+
 fn git_raw(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
+    refuse_hostile_git_config(repo)?;
     Command::new("git")
+        .arg("-c")
+        .arg("core.fsmonitor=false")
+        .arg("-c")
+        .arg("core.hooksPath=/dev/null")
+        .arg("-c")
+        .arg("protocol.ext.allow=never")
         .args(args)
         .current_dir(repo)
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .map_err(|e| format!("Git is not available ({e}). Install Git and try again."))
 }
@@ -607,10 +750,17 @@ fn git_raw(repo: &Path, args: &[&str]) -> Result<std::process::Output, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_default_gitignore, is_files_section_name, prepare_options, validate_github_remote,
-        SpaceFlags, VaultBackupOptions,
+        ensure_default_gitignore, hostile_git_setting, is_files_section_name, prepare_options,
+        validate_github_remote, SpaceFlags, VaultBackupOptions,
     };
     use std::fs;
+
+    #[test]
+    fn hostile_repo_config_is_named() {
+        let config = "[core]\nfsmonitor = touch /tmp/pwned\n[credential]\nhelper = store\n";
+        assert_eq!(hostile_git_setting(config), Some("core.fsmonitor"));
+        assert_eq!(hostile_git_setting("[user]\nname = Metis\n"), None);
+    }
 
     #[test]
     fn github_remote_rules() {

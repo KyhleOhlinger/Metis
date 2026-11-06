@@ -20,6 +20,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { invoke } from "@tauri-apps/api/core";
+import { retargetNoteAutosave } from "@/hooks/noteAutosave";
 import { useStore } from "../store/useStore";
 import { backlinkLabels } from "../utils/linkGraph";
 import { STATUS_COLORS } from "../constants";
@@ -225,6 +226,7 @@ export default function MetadataPanel({ content, filePath, onContentChange, onLi
     if (newName === currentFileName) return;
     try {
       const newPath = await invoke<string>("rename_path", { path: filePath, newName });
+      retargetNoteAutosave(filePath, newPath);
       useStore.setState({ activeFilePath: newPath });
       await refreshVault();
     } catch (e) { setRenameError(String(e)); setDraftName(currentFileName); }

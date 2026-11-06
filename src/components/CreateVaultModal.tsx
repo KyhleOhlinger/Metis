@@ -41,6 +41,8 @@ export default function CreateVaultModal({ onClose }: CreateVaultModalProps) {
     setLoading(true);
     setError(null);
     try {
+      const { flushNoteAutosaves } = await import("@/hooks/noteAutosave");
+      await flushNoteAutosaves();
       const data = await invoke<VaultData>("create_vault", {
         parentPath,
         name: trimmed,

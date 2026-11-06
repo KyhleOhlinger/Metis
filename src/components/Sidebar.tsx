@@ -123,10 +123,14 @@ export default function Sidebar({ isOpen, onToggle, onForeignVault, vaultRestori
   const handleOpenVault = async () => {
     const selected = await invoke<string | null>("pick_folder");
     if (!selected) return;
-    if (selected === useStore.getState().vaultPath) return;
+    if (await invoke<boolean>("focus_open_vault", { vaultPath: selected })) return;
 
     setLoading(true);
     try {
+      if (useStore.getState().vaultPath) {
+        const { flushNoteAutosaves } = await import("@/hooks/noteAutosave");
+        await flushNoteAutosaves();
+      }
       const data = await invoke<VaultData>("open_vault", { path: selected });
       setVault(data);
       setActiveFolderPath(data.path);

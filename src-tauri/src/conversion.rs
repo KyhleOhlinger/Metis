@@ -106,7 +106,7 @@ pub fn convert_vault_to_metis(
         })?;
         let updated = enrich_frontmatter(&content, file_path, &root);
         if updated != content {
-            fs::write(file_path, updated.as_bytes()).map_err(|e| {
+            crate::io_atomic::write_atomic(file_path, updated.as_bytes()).map_err(|e| {
                 format!("Failed to update metadata for {display_name}: {e}")
             })?;
         }

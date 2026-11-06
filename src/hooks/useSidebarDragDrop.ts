@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "@/store/useStore";
 import { usePersonaStore } from "@/store/usePersonaStore";
 import { moveNodeInTree } from "@/utils/treeUtils";
+import { retargetAutosavesUnder, retargetNoteAutosave } from "@/hooks/noteAutosave";
 import { toastError, toastInfo } from "@/store/useToastStore";
 import { dragSlot, setDragOverEl, findDropTarget } from "@/components/sidebar/sidebarDragDrop";
 
@@ -73,17 +74,20 @@ export function useSidebarDragDrop() {
       if (destPath === drag.srcPath) return;
 
       const newTree = moveNodeInTree(files, drag.srcPath, destPath, vaultPath);
-      if (newTree) {
-        useStore.setState({ files: newTree });
-        const ap = useStore.getState().activeFilePath;
-        if (ap === drag.srcPath) {
-          const newPath = destPath + "/" + drag.srcPath.split("/").pop()!;
-          useStore.setState({ activeFilePath: newPath });
-        }
-      }
+      if (newTree) useStore.setState({ files: newTree });
 
       try {
         await invoke("move_path", { src: drag.srcPath, destDir: destPath, vaultPath });
+        const ap = useStore.getState().activeFilePath;
+        const moved = `${destPath}/${drag.srcPath.split("/").pop()}`;
+        if (ap === drag.srcPath) {
+          retargetNoteAutosave(ap, moved);
+          useStore.setState({ activeFilePath: moved });
+        } else if (drag.isDir && ap && (ap === drag.srcPath || ap.startsWith(`${drag.srcPath}/`))) {
+          const next = moved + ap.slice(drag.srcPath.length);
+          retargetAutosavesUnder(drag.srcPath, moved);
+          useStore.setState({ activeFilePath: next });
+        }
       } catch (err) {
         toastError(String(err));
       } finally {

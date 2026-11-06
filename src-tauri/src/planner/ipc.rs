@@ -59,7 +59,20 @@ pub fn planner_get_config(
     let active = prepare_vault_planner(&app, &vault)?;
     Ok(PlannerConfig {
         active_dir: active.to_string_lossy().into_owned(),
+        legacy_adoption_pending: legacy_adoption_pending(&app, &vault),
     })
+}
+
+#[tauri::command]
+pub fn planner_decide_legacy_adoption(
+    vault_path: String,
+    approve: bool,
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    vault_state: tauri::State<'_, CurrentVault>,
+) -> Result<(), String> {
+    let vault = planner_vault(&vault_path, &window, &vault_state)?;
+    decide_legacy_adoption(&app, &vault, approve)
 }
 
 #[tauri::command]

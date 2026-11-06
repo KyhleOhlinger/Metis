@@ -29,21 +29,13 @@ export async function buildOrphanReport(
     if (noteIndex.length > BATCH) {
       onStatus(`Reading notes ${i + 1}–${Math.min(i + BATCH, noteIndex.length)} of ${noteIndex.length}…`);
     }
-    const combined = await invoke<string>("get_files_content", {
+    const files = await invoke<{ path: string; content: string }[]>("get_files_content", {
       paths: batch.map((n) => n.path),
     });
-    // The Rust command formats each file as "\n\n---\n## {filename}\n\n{content}"
-    const separator = "\n\n---\n## ";
-    const parts = combined.split(separator);
-    for (const part of parts) {
-      if (!part.trim()) continue;
-      const doubleNl = part.indexOf("\n\n");
-      if (doubleNl === -1) continue;
-      const filename = part.slice(0, doubleNl).trim(); // "note-name.md"
-      const content = part.slice(doubleNl + 2);
-      // Use the stem (without .md) as the canonical note name for wikilink matching
+    for (const file of files) {
+      const filename = file.path.split(/[/\\]/).pop() ?? file.path;
       const stem = filename.replace(/\.md$/i, "");
-      noteContentByName.set(stem, content);
+      noteContentByName.set(stem, file.content);
     }
   }
 
